@@ -201,11 +201,15 @@ export const collections = { posts };
 
 ```
 yukki-rui/
-├─ astro.config.mjs              平台配置（base 路径、sitemap、mdx）
+├─ astro.config.mjs              平台配置（base 路径、sitemap、trailingSlash）
 ├─ src/
-│  ├─ consts.ts                  站名、URL、导航项、withBase()
+│  ├─ consts.ts                  站名、URL、导航、界面文案、评论区开关
 │  ├─ content.config.ts          ← 数据契约，勿改
-│  ├─ lib/posts.ts               ← 数据层函数，勿改签名
+│  ├─ content/posts/             文章（扁平存放，语言由 frontmatter 决定）
+│  ├─ lib/
+│  │  ├─ post-select.ts          纯函数数据层，被单测覆盖，勿改签名
+│  │  ├─ posts.ts                集合读取包装（getPosts/getTags/getTranslations/getTagNames），勿改签名
+│  │  └─ url.ts                  链接助手（withBase/langHref/postHref/tagHref），勿改签名
 │  ├─ styles/
 │  │  ├─ tokens.css              设计令牌：颜色/字号/间距/圆角/阴影
 │  │  └─ global.css              全局基础样式
@@ -213,7 +217,7 @@ yukki-rui/
 │  │  ├─ BaseLayout.astro        套所有页面的骨架
 │  │  └─ PostLayout.astro        文章页骨架，供中英文共用
 │  ├─ components/
-│  │  ├─ BaseHead.astro          所有 meta/OG/hreflang/JSON-LD
+│  │  ├─ BaseHead.astro          所有 meta/OG/hreflang 的唯一落点
 │  │  ├─ Header.astro            站名 + 导航 + 语言切换 + 主题切换
 │  │  ├─ Footer.astro            版权 + RSS 入口
 │  │  ├─ PostCard.astro          列表里的单篇文章条目
@@ -226,13 +230,15 @@ yukki-rui/
 │     ├─ 404.astro
 │     ├─ [lang]/index.astro
 │     ├─ [lang]/about.astro
-│     ├─ [lang]/posts/[...slug].astro
+│     ├─ [lang]/posts/[...id].astro     ← 参数是 id 不是 slug
 │     ├─ [lang]/tags/index.astro
 │     ├─ [lang]/tags/[tag].astro
 │     ├─ rss.xml.ts
 │     └─ rss-en.xml.ts
-├─ public/                       静态资源（favicon、默认 OG 图）
-└─ .github/workflows/deploy.yml  推送到两个平台的 CI
+├─ scripts/                      构建产物检查工具（链接自检、base 一致性）
+├─ tests/                        单元测试
+├─ public/                       静态资源（favicon、默认 OG 图、robots.txt）
+└─ .github/workflows/deploy.yml  双平台部署 CI
 ```
 
 ### 7.2 组件接口
@@ -241,17 +247,59 @@ yukki-rui/
 
 | 组件 | 输入 | 职责 |
 |---|---|---|
-| `BaseHead` | `title` `description` `lang` `ogType` `ogImage?` `alternate?` | 输出全部 `<head>` 内容。**所有 meta 只在这里出现一次**，页面不自己写 meta |
-| `BaseLayout` | `title` `description` `lang` | html/body 骨架、引入 tokens.css + global.css、主题脚本、Header、Footer |
-| `Header` | `lang` | 站名链接到 `/{lang}/`，导航到首页与关于，右侧放 `LangSwitch` + `ThemeToggle` |
-| `PostCard` | `post`（集合条目，含 `slug` `data`） | 一篇文章的列表条目：标题、日期、摘要、标签 |
-| `PostLayout` | `post` `translations` | 文章页骨架：标题、日期、正文 slot、标签、`LangSwitch`、`Comments` |
-| `TagList` | `tags` `lang` | 标签渲染；带 `count` 时显示计数 |
+| `BaseHead` | `title` `description` `lang` `ogType?` `ogImage?` `alternate?` | 输出全部 `<head>` 内容。**所有 meta 只在这里出现一次**，页面不自己写 meta |
+| `BaseLayout` | `title` `description` `lang` `ogType?` `ogImage?` `alternate?` | html/body 骨架、引入 tokens.css + global.css、主题防闪烁脚本、Header、Footer |
+| `Header` | `lang` `alternateUrl?` | 站名链接到 `/{lang}/`，导航到首页/标签/关于，右侧放 `LangSwitch` + `ThemeToggle` |
+| `Footer` | `lang` | 版权行 + RSS 入口 |
+| `PostCard` | `post`（集合条目） | 一篇文章的列表条目：标题、日期、摘要、标签。**用 `post.id` 生成链接，不是 `slug`** |
+| `PostLayout` | `post` `translations?` | 文章页骨架：标题、日期、正文 slot、标签、`LangSwitch`、`Comments` |
+| `TagList` | `lang` `tags` | 标签渲染；`tags` 为 `string[]` 或 `{tag, count}[]`，带 count 时显示计数 |
 | `LangSwitch` | `lang` `alternateUrl?` | 有译文跳译文，无译文跳目标语言首页 |
 | `ThemeToggle` | 无 | 切换 `<html data-theme>`，写 `localStorage`，带可读的 `aria-label` |
 | `Comments` | 无 | 见 7.3 |
 
-**`lang` 参数的取值只有 `'zh'` 和 `'en'`**，`[lang]/` 动态路由需在 `getStaticPaths` 里限定这两个值，否则会为不存在的语言生成页面。
+**精确类型**（前端实现时照抄，`Lang` 与 `OG_IMAGE` 从 `src/consts.ts` 导入，`Post` 从 `src/lib/posts.ts` 导入）：
+
+```ts
+type Lang = 'zh' | 'en';
+
+interface BaseHeadProps {
+  title: string;
+  description: string;
+  lang: Lang;
+  ogType?: 'website' | 'article';
+  ogImage?: string;
+  alternate?: string;
+}
+interface BaseLayoutProps extends BaseHeadProps {}
+interface HeaderProps     { lang: Lang; alternateUrl?: string }
+interface FooterProps     { lang: Lang }
+interface PostCardProps   { post: Post }
+interface PostLayoutProps { post: Post; translations?: Post }
+interface TagListProps    { lang: Lang; tags: string[] | { tag: string; count: number }[] }
+interface LangSwitchProps { lang: Lang; alternateUrl?: string }
+```
+
+**`Post` 的形状**（`CollectionEntry<'posts'>`，实测于 Astro 7）：
+
+```ts
+{
+  id: string;                    // 'hello-world'，Astro 7 不再提供 slug
+  data: {
+    title: string;
+    description: string;
+    pubDate: Date;               // z.coerce.date() 产出真实 Date 对象
+    lang: 'zh' | 'en';
+    tags: string[];
+    updatedDate?: Date;
+    draft: boolean;              // schema 默认值，永远存在
+    translationKey?: string;
+  };
+  render: () => Promise<{ Content: AstroComponentFactory }>;
+}
+```
+
+**`lang` 参数的取值只有 `'zh'` 和 `'en'`**，`[lang]/` 动态路由需在 `getStaticPaths` 里用 `SITE.langs` 限定这两个值，否则会为不存在的语言生成页面。
 
 ### 7.3 评论区占位
 
@@ -325,8 +373,27 @@ npm run preview  # 用生产产物起本地服务
 | 大陆访问 GitHub Pages 不稳定 | 这正是同时部署 Cloudflare Pages 的原因；两个地址都写在「关于」页里 |
 | Cloudflare 在大陆也可能受限 | 免费方案下无解，属于接受范围内的风险；不做备案的前提下没有更好的选择 |
 | 免费额度政策变动 | 两个平台互为主备，任一平台变故时另一处仍在线；源码在本地和 GitHub，随时可迁移 |
-| Node 24 与 Astro 版本的兼容性 | 实施第一步就验证 `npm run build` 能否通过；若报兼容错误，降到 Node 22 LTS 或调整 Astro 版本 |
 | `translationKey` 手写易错 | 只在需要互跳的文章上写；漏写或写错的后果仅是语言切换降级到首页，不是页面报错 |
+| **内链漏写 base 前缀** | 这是本方案唯一的「静默失败」类风险：页面照常构建、链接检查器也发现不了，只在线上 404。对策是 `npm run check:base` —— 双 base 并行构建并比较产物，已实测能抓到注入的坏链 |
+
+## 10.1 实测确认的技术事实（实施时不要凭记忆改写）
+
+以下结论来自真实构建探测，不是文档推测：
+
+| 事实 | 实测值 |
+|---|---|
+| Astro 版本与 Node 要求 | Astro 7.3.8；`engines.node` = `>=22.12.0` |
+| 集合条目字段 | `["id","data","body","filePath","digest","rendered","collection"]` |
+| 页面 slug 用哪个字段 | **`entry.id`**。Astro 7 的 `glob` loader 不再提供 `slug` |
+| `z.coerce.date()` | 产出真实 `Date` 对象，可直接 `.getTime()` |
+| `draft` 默认值 | schema 的 `.default(false)` 生效，未写该字段时 `data.draft === false` |
+| `import.meta.env.BASE_URL` | base 为 `/` 时是 `"/"`；为 `/yukki-rui` 时是 `"/yukki-rui"` —— **没有结尾斜杠**；直接拼接会得到 `"/yukki-ruizh/"` |
+| `Astro.url.pathname` | **包含** base 前缀（子路径部署下实测 `"/yukki-rui/canon/"`），canonical 不可再拼 base |
+| 页面产出形态 | `[lang]/index.astro` → `dist/zh/index.html`；`[lang]/about.astro` → `dist/en/about/index.html`。因此 `trailingSlash` 必须是 `'always'` |
+| sitemap 的 base 处理 | `@astrojs/sitemap` 自动带 base，不需手工拼接 |
+| `z` 的正确导入来源 | `astro/zod`（从 `astro:content` 导入已被标记 deprecated） |
+| TypeScript 版本约束 | 必须锁 6.x：`@astrojs/check@0.9.10` 的 peer 是 `^5.0.0 \|\| ^6.0.0`，装 7 会让 `npm install` 失败 |
+| `npm ci` 的前提 | 必须有 `package-lock.json`，否则立即退出 1。因此仓库提交 npm 锁文件、不提交 pnpm 锁文件 |
 
 ---
 

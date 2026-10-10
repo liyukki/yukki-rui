@@ -54,7 +54,72 @@ public/robots.txt
 public/og-default.png          1200×630 默认 OG 图
 ```
 
-设计文档 §7 列出了每个文件的职责和每个组件的 props 表。**照那张表实现**。
+设计文档 §7 列出了每个文件的职责。**组件的 props 契约如下**（这是权威版本，照它实现）：
+
+### 组件 props 表
+
+| 组件 | 输入 | 职责 |
+|---|---|---|
+| `BaseHead` | `title` `description` `lang` `ogType?` `ogImage?` `alternate?` | 输出全部 `<head>` 内容。**所有 meta 只在这里出现一次**，页面不自己写 meta |
+| `BaseLayout` | `title` `description` `lang` | html/body 骨架、引入 tokens.css + global.css、主题防闪烁脚本、Header、Footer |
+| `Header` | `lang` `alternateUrl?` | 站名链接到 `/{lang}/`，导航到首页/标签/关于，右侧放 `LangSwitch` + `ThemeToggle` |
+| `Footer` | `lang` | 版权行 + RSS 入口 |
+| `PostCard` | `post`（集合条目） | 一篇文章的列表条目：标题、日期、摘要、标签 |
+| `PostLayout` | `post` `translations?` | 文章页骨架：标题、日期、正文 slot、标签、`LangSwitch`、`Comments` |
+| `TagList` | `lang` `tags` | 标签渲染；`tags` 是 `string[]` 或 `{tag, count}[]`，带 count 时显示计数 |
+| `LangSwitch` | `lang` `alternateUrl?` | 有译文跳译文，无译文跳目标语言首页 |
+| `ThemeToggle` | 无 | 切换 `<html data-theme>`，写 `localStorage`，带可读的 `aria-label` |
+| `Comments` | 无 | 见 §3.3 |
+
+**精确类型**：
+
+```ts
+type Lang = 'zh' | 'en';                    // 从 src/consts.ts 导入
+
+interface BaseHeadProps {
+  title: string;
+  description: string;
+  lang: Lang;
+  ogType?: 'website' | 'article';
+  ogImage?: string;                          // 相对路径，默认 OG_IMAGE
+  alternate?: string;                        // 另一语言对应页 URL，由 PostLayout 计算
+}
+
+interface BaseLayoutProps {
+  title: string;
+  description: string;
+  lang: Lang;
+  ogType?: 'website' | 'article';
+  ogImage?: string;
+  alternate?: string;
+}
+
+interface HeaderProps   { lang: Lang; alternateUrl?: string }
+interface FooterProps   { lang: Lang }
+interface PostCardProps { post: Post }        // Post 从 src/lib/posts.ts 导入
+interface PostLayoutProps { post: Post; translations?: Post }
+interface TagListProps  { lang: Lang; tags: string[] | { tag: string; count: number }[] }
+interface LangSwitchProps { lang: Lang; alternateUrl?: string }
+```
+
+**`Post` 的形状**（`CollectionEntry<'posts'>`）：
+
+```ts
+{
+  id: string;                    // 'hello-world'
+  data: {
+    title: string;
+    description: string;
+    pubDate: Date;               // 已是 Date 对象，不是字符串
+    lang: 'zh' | 'en';
+    tags: string[];
+    updatedDate?: Date;
+    draft: boolean;              // 永远存在（schema 默认值），生产下永远是 false
+    translationKey?: string;
+  };
+  render: () => Promise<{ Content: AstroComponentFactory }>;
+}
+```
 
 ---
 
