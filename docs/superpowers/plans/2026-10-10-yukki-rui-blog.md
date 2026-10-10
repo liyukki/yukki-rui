@@ -6,7 +6,15 @@
 
 **Architecture:** Astro 7 静态输出（`output: 'static'`）。内容层是 `src/content/posts/*.md` + Zod schema 校验；数据层拆成「纯函数选择器」（可单测）+「集合读取包装」（构建期）；展示层是 Astro 组件与动态路由 `[lang]/…`。部署靠 `SITE_BASE` 环境变量适配两个平台的路径差异，GitHub Actions 一份工作流同时推两处。
 
-**Tech Stack:** Node 24.21.0 / Astro 7.3.8 / zod 4.6.5 / @astrojs/rss 4.0.19 / @astrojs/sitemap 3.7.4 / Vitest 5.0.3 / npm（或 pnpm）
+**Tech Stack（均为本机实测版本，非记忆中的版本）：** Node 24.21.0 / Astro 7.3.8 / zod 4.6.5（经 `astro/zod` 转发 zod v4）/ TypeScript 6.0.3 / @astrojs/rss 4.0.19 / @astrojs/sitemap 3.7.4 / @astrojs/check 0.9.10 / Vitest 5.0.3 / **npm**
+
+> 包管理器是 npm，不是 pnpm。原因：① 用户本机默认工具链是 npm；② `npm ci` 要求 `package-lock.json`，
+> 若仓库里只有 `pnpm-lock.yaml`，CI 的安装步骤会直接失败（已实测：`npm ci` 退出码 1）。
+> 因此仓库里必须提交 `package-lock.json`，且不提交 `pnpm-lock.yaml`。
+>
+> TypeScript 必须锁在 **6.x**：`@astrojs/check@0.9.10` 的 peer 要求是 `^5.0.0 || ^6.0.0`，
+> 装 TypeScript 7 会让 `npm install` 因 peer 冲突而失败（已实测）。不要用 `--legacy-peer-deps` 绕过 ——
+> 那只是把不兼容藏起来。
 
 **配套设计文档：** `docs/superpowers/specs/2026-10-10-yukki-rui-blog-design.md`（本计划是它的实施层；两者冲突时以设计文档为准，并要求回头看是否需要修订计划）
 
@@ -1627,15 +1635,23 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run check
       - run: npm test
       - name: Build for GitHub Pages
         run: npm run build
         env:
           SITE_BASE: /yukki-rui
           SITE_URL: https://${{ github.repository_owner }}.github.io/yukki-rui
-      - run: node scripts/check-links.mjs
+      - run: npm run check:links
         env:
           SITE_BASE: /yukki-rui
+      - run: npm run check:base
+      # check:base 会覆盖 dist，所以再构建一次给 Pages 用
+      - name: Rebuild for deployment
+        run: npm run build
+        env:
+          SITE_BASE: /yukki-rui
+          SITE_URL: https://${{ github.repository_owner }}.github.io/yukki-rui
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -1654,7 +1670,7 @@ jobs:
 
 **Cloudflare Pages 单独处理**：在 Cloudflare 后台连接同一仓库即可，不需要写进这个工作流（它的构建环境自己会跑 `npm run build`，环境变量 `SITE_BASE=/` 在后台设）。这样两边互不干扰，任一平台失败不影响另一个。
 
-`npm ci` 需要 `package-lock.json`。如果项目用 pnpm，把 `cache: npm` / `npm ci` 换成 `pnpm/action-setup` + `pnpm install --frozen-lockfile`，并提交 `pnpm-lock.yaml`。**不要**在没有 lock 文件的情况下用 `npm ci`，它会直接失败。
+安装步骤用 `npm ci`，它要求 `package-lock.json` 存在（已实测：缺锁文件时 `npm ci` 立即退出 1）。因此仓库里必须提交 `package-lock.json`，并且**不要**提交 `pnpm-lock.yaml`。
 
 - [ ] **Step 2: 把两个占位地址改成真实地址**
 

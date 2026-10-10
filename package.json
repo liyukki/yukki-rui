@@ -3,12 +3,18 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:links": "node scripts/check-links.mjs",
+    "check:base": "node scripts/check-base-parity.mjs",
+    "verify": "npm run check && npm test && node scripts/check-base-parity.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^8.0.3",
@@ -18,7 +24,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^5.0.3"
   }
 }

@@ -26,7 +26,7 @@ describe('extractRefs', () => {
 
 describe('resolveRef', () => {
   const existing = ['zh/index.html', 'en/index.html', '_astro/x.css', 'og-default.png'];
-  const fileExists = (p) => existing.includes(p);
+  const fileExists = (p: string) => existing.includes(p);
 
   it('根部署下解析目录链接', () => {
     expect(resolveRef('/zh/', '/', fileExists)).toBe('ok');
@@ -68,7 +68,7 @@ describe('resolveRef', () => {
  */
 describe('已知限制的显式记录', () => {
   const existing = ['zh/index.html'];
-  const fileExists = (p) => existing.includes(p);
+  const fileExists = (p: string) => existing.includes(p);
 
   it('漏写 base 的链接在子路径部署下也会被判为 ok（所以需要 base-parity 检查）', () => {
     expect(resolveRef('/zh/', '/yukki-rui', fileExists)).toBe('ok');

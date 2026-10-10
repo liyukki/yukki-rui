@@ -1,0 +1,5 @@
+# 统一换行符，避免 Windows 上 Git 的自动转换造成 diff 噪音
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

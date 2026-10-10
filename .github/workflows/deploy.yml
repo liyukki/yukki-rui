@@ -1,0 +1,82 @@
+name: Deploy
+
+# 一份工作流，两个平台：
+#   - GitHub Pages 由本工作流构建并部署（base = /yukki-rui）
+#   - Cloudflare Pages 在 Cloudflare 后台单独连接同一仓库（base = /）
+# 两边互不影响：任一平台失败，另一个仍在线。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 与 package.json 的 engines 保持一致；Astro 7 要求 >=22.12.0
+          node-version: 24
+          cache: npm
+
+      # 必须用 npm ci：它要求 package-lock.json 存在，且严格按锁文件安装。
+      # 若仓库里只有 pnpm-lock.yaml，这一步会直接失败。
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build (GitHub Pages, base = /yukki-rui)
+        run: npm run build
+        env:
+          SITE_BASE: /yukki-rui
+          SITE_URL: https://${{ github.repository_owner }}.github.io/yukki-rui
+
+      - name: Check internal links
+        run: npm run check:links
+        env:
+          SITE_BASE: /yukki-rui
+
+      # 抓「内链漏写 base 前缀」这类链接检查器发现不了的 bug。
+      # 脚本会自行用两种 base 各构建一次，无需额外配置。
+      - name: Check base-path parity
+        run: npm run check:base
+
+      # check:base 会覆盖 dist，所以重新构建一次给 Pages 用
+      - name: Rebuild for deployment
+        run: npm run build
+        env:
+          SITE_BASE: /yukki-rui
+          SITE_URL: https://${{ github.repository_owner }}.github.io/yukki-rui
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: verify-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,4 +1,7 @@
-import { defineCollection, z } from 'astro:content';
+import { defineCollection } from 'astro:content';
+// Astro 7 里从 'astro:content' 导入 z 已被标记 deprecated，
+// 正确来源是 'astro/zod'（转发 zod v4）。
+import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
 
 const posts = defineCollection({

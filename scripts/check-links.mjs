@@ -22,8 +22,14 @@ const isExternal = (ref) =>
   ref.startsWith('data:') ||
   !ref.startsWith('/');
 
-/** 抽出页面里所有站内引用（去掉外部链接、mailto、纯锚点、相对链接）。 */
+/**
+ * 抽出页面里所有站内引用（去掉外部链接、mailto、纯锚点、相对链接）。
+ *
+ * @param {string} html
+ * @returns {string[]}
+ */
 export function extractRefs(html) {
+  /** @type {string[]} */
   const refs = [];
   for (const match of html.matchAll(REF_PATTERN)) {
     const ref = match[1];
@@ -35,10 +41,11 @@ export function extractRefs(html) {
 /**
  * 判断一个站内引用是否可达。
  *
- * @param ref        页面里的原始引用，如 '/yukki-rui/zh/'
- * @param base       部署 base，如 '/' 或 '/yukki-rui'
- * @param fileExists 接收「相对 dist 的路径」如 'zh/index.html'，返回布尔值
- * @returns 'ok' | 'missing' | 'external'
+ * @param {string} ref        页面里的原始引用，如 '/yukki-rui/zh/'
+ * @param {string} base       部署 base，如 '/' 或 '/yukki-rui'
+ * @param {(path: string) => boolean} fileExists
+ *        接收「相对 dist 的路径」如 'zh/index.html'，返回布尔值
+ * @returns {'ok' | 'missing' | 'external'}
  */
 export function resolveRef(ref, base, fileExists) {
   if (isExternal(ref)) return 'external';
@@ -49,6 +56,7 @@ export function resolveRef(ref, base, fileExists) {
   if (root && path.startsWith(root)) path = path.slice(root.length);
   if (!path.startsWith('/')) path = `/${path}`;
 
+  /** @param {string} p */
   const toKey = (p) => p.replace(/^\//, '');
 
   if (path.endsWith('/')) return fileExists(`${toKey(path)}index.html`) ? 'ok' : 'missing';
