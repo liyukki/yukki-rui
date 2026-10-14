@@ -21,9 +21,9 @@
 | 404 | 自动 |
 | RSS 订阅 | `/rss.xml`（中）`/rss-en.xml`（英）|
 
-**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、52 项单元测试通过、两种部署路径各 18 个页面 682 条站内链接无死链、后台产物与个人资料集合集成检查通过。
+**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、59 项单元测试通过、两种部署路径各 22 个页面 851 条站内链接无死链、后台产物与个人资料集合集成检查通过。
 
-**唯一还没做的**：形象照目前还是占位（可在后台传，见 10.3）。其余个人素材（联系方式、第二件作品、自我介绍）已填好，中英文双份齐全。
+**站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages，中英双语、照片、RSS、sitemap 均实测正常）。
 
 **新增：网页后台**。现在可以不碰代码、直接在浏览器里改文章和个人资料了，见第 10 节。
 
@@ -292,18 +292,26 @@ git push
 
 **更新文章 = 改 md 文件 → push**。不用管 `dist/` 目录，那是构建产物，已忽略。
 
-### 6.1 首次部署（只做一次）
+### 6.1 部署现状与首次部署（GitHub Pages 已完成）
 
-1. 在 GitHub 创建**公开空仓库**，把代码推上去（分支 `main` 或 `master`）
-2. 仓库 Settings → Pages → Source 选 **GitHub Actions**
-3. Cloudflare Pages 连同一个仓库：构建命令填 `npm run verify:frontend`，输出目录 `dist`，环境变量按下面表格填，Node 选 24
+**当前状态（2026-10-14）**：仓库已在 https://github.com/liyukki/yukki-rui，
+GitHub Pages 已上线：**https://liyukki.github.io/yukki-rui/**（中英页面、照片、
+RSS、sitemap 全部实测正常）。
+
+已完成的首次部署步骤：
+
+1. ~~在 GitHub 创建公开空仓库并推送~~ ✓
+2. ~~仓库 Pages → Source 选 GitHub Actions~~ ✓
+3. Cloudflare Pages 连同一个仓库（**未做**，见 10.2 节）：构建命令填 `npm run verify:frontend`，输出目录 `dist`，环境变量按下面表格填，Node 选 24
 
 | 平台 | `SITE_BASE` | `SITE_URL` |
 |---|---|---|
-| GitHub Pages | `/仓库名/` | `https://用户名.github.io/仓库名/` |
+| GitHub Pages | `/yukki-rui/` | `https://liyukki.github.io/yukki-rui/` |
 | Cloudflare Pages | `/` | `https://项目名.pages.dev/` |
 
-`SITE_BASE` 和 `SITE_URL` 只在这两个平台的设置里配，**不要写进代码**。
+`SITE_BASE` 和 `SITE_URL` 只在这两个平台的设置里配，**不要写进代码**——
+GitHub Pages 用仓库 Settings → Variables 里的对应值（仓库变量），或按本仓库
+`.github/workflows/deploy.yml` 里的默认推导（`/仓库名/` 与 `用户名.github.io/仓库名/`）。
 
 ### 6.2 平台自检
 
@@ -479,8 +487,12 @@ CMS 保存的数据要经过三道关：
 
 ## 11. 还缺什么
 
-- 个人素材：头像（可用后台传，见 10.3）、邮箱、社交账号、第二件作品（4.2–4.4，可用后台）
-- 网页后台的线上配置：GitHub 仓库 + OAuth App + Cloudflare 环境变量（10.2）
-- 两个平台的实际上线部署与线上实测
+- **线上网页后台**（唯一剩下的事）：
+  1. Cloudflare Pages 连接仓库（构建命令 `npm run verify:frontend`、输出目录 `dist`、Node 24、环境变量 `SITE_BASE=/` 和 `SITE_URL=https://项目名.pages.dev/`）
+  2. 创建 GitHub OAuth App 并把 Client ID / Secret 配到 Cloudflare 环境变量
+  3. 从 `https://项目名.pages.dev/admin/` 登录后即可在网页里改内容（手机也可以）
+  详见 10.2 节。
+- 想换域名：见第 7 节。
+- 可选：开通评论（第 9 节最后一问）、给英文页单独换一张形象照（10.3）。
 
-除此之外，站点功能完整可用。
+除此之外，站点已完整上线可用。
