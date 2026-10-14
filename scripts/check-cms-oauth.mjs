@@ -111,7 +111,17 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(PORT, '127.0.0.1', resolve));
 console.log(`本地服务已启动：${ORIGIN}/admin/`);
 
-const { chromium } = await import('playwright');
+// playwright 不在 package.json 里（否则 npm ci 会给云端构建拖进浏览器内核），
+// 缺了就给一句人话，而不是 ERR_MODULE_NOT_FOUND。
+let chromium;
+try {
+  ({ chromium } = await import('playwright'));
+} catch {
+  console.error('这个自检需要 playwright：npm i -D playwright && npx playwright install chromium');
+  server.close();
+  process.exit(2);
+}
+
 const executablePath = process.env.CMS_OAUTH_CHROME || undefined;
 const browser = await chromium.launch({
   executablePath,
