@@ -83,3 +83,38 @@ GPT 中断前实际已完成全部展示层工作（组件、布局、页面、�
 ## Kimi 尚需完成
 
 个人简介与作品的真实素材（头像、邮箱、社交账号、第二件作品）；页面已按要求标注待补充，未编造。两平台实际上线部署与线上实测未做，按 README 部署后在公开地址重新检查。
+
+## 上线收尾：后台登录链路（DSH，2026-10-14）
+
+站点已在 GitHub Pages 上线（<https://liyukki.github.io/yukki-rui/>）。线上后台还需要服务端换令牌，GitHub Pages 跑不了函数，因此本轮把 `functions/api/` 的登录链路先做实、测穿，再交给站长接 Cloudflare。
+
+### 发现并修复的真实缺陷
+
+| 缺陷 | 后果 | 修复 |
+|---|---|---|
+| `callback.js` 把 postMessage 的 payload 写成对象字面量 | 字符串拼接得到 `authorization:github:success:[object Object]`，Decap 的 `JSON.parse` 抛 `SyntaxError`，**线上登录必然失败**（本地空跑看不出来，只有真浏览器握手才暴露） | payload 先 `JSON.stringify` 成字符串再内联；单元测试锁死 `var DATA = "{\"token\":..."` 形态 |
+| `postMessage` 的 targetOrigin 是 `'*'` | 任意第三方页面 `window.open` 授权入口即可骗走令牌 | targetOrigin 收紧为本站 origin；跨域后台会收到页面提示「请从本站 /admin/ 打开」 |
+| 授权被拒（`error=access_denied`）无处理 | 后台登录按钮一直转圈 | 回传 `authorization:github:error:<json>`，后台显示原因 |
+| 错误文本直接插入页面 | GitHub 回传的文本可构成脚本注入 | HTML 实体转义 + JS 字面量 `\u003c` 转义，整页只允许一个 `</script>` |
+| 令牌页与 302 可被缓存 | 令牌经代理缓存泄露 | 两处响应都加 `Cache-Control: no-store`，回调页加 `Referrer-Policy: no-referrer` |
+
+### 本轮验证记录
+
+| 命令 | 实际结果 |
+|---|---|
+| `npx astro check` | 55 文件 0 errors / 0 warnings / 0 hints |
+| `npx vitest run` | 9 个测试文件、69 项通过（新增 `tests/oauth-functions.test.ts` 10 项） |
+| `npm run check:cms-oauth` | 10/10：真实 Decap 3.8.3 客户端 + Playwright；登录按钮 → `/api/auth` 的 302 参数校验 → 弹窗回跳 `/api/callback` → 令牌写入 `localStorage.decap-cms-user` 且 `token` 字段正确 → 后台关闭弹窗 → 侧栏出现「文章」集合 |
+| `npm run verify:frontend` | 通过：双路径检查、内容集成、构建 21 页、851 条站内引用无死链、前端必需产物齐全 |
+
+### 排查中被实测否定的三条假设（记录以免重走）
+
+1. Playwright 的 `context.route` **拦不到「服务端 302 跳出去」的下一跳**（探针对比：直接导航能拦，302 之后拦不到）。
+2. `functions/api/*.js` 里的 `fetch` 跑在服务端进程（真实环境是 Cloudflare Worker），浏览器层路由对它无效，必须在 Node 层做替身。
+3. 弹窗一旦真的加载 GitHub 登录页，GitHub 的 **COOP 响应头会切断 `window.opener`**，之后无论怎么导航回来握手都回不来。
+
+因此 `scripts/check-cms-oauth.mjs` 的等价链路是：测试服务照常调用真实函数并断言它产出的授权 URL，再由测试服务等价模拟「GitHub 接受授权后带 code 回跳」那一跳；令牌端点用 Node 层替身。函数自己负责的两段（生成授权地址、处理回调）都是真跑的。
+
+### 仍未完成
+
+Cloudflare Pages 项目与 GitHub OAuth App 需要站长本人账号，线上后台登录与线上实测待站长完成注册后继续；`https://yukki-rui.pages.dev` 目前仍无 DNS 记录。

@@ -17,6 +17,7 @@
     "check:base": "node scripts/check-base-parity.mjs",
     "check:content": "node scripts/check-content.mjs",
     "check:frontend": "node scripts/check-frontend.mjs",
+    "check:cms-oauth": "node scripts/check-cms-oauth.mjs",
     "verify": "npm run check && npm test && npm run check:base && npm run check:content",
     "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:frontend"
   },

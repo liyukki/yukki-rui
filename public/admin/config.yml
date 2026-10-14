@@ -48,7 +48,7 @@ collections:
     fields:
       - { label: 标题, name: title, widget: string }
       - { label: 摘要（最多 160 字）, name: description, widget: text }
-      - { label: 发布日期, name: pubDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD' }
+      - { label: 发布日期, name: pubDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', default: '{{now}}' }
       - { label: 更新日期（可空）, name: updatedDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
       - { label: 语言, name: lang, widget: select, options: [{ label: 中文, value: zh }, { label: English, value: en }], default: zh }
       - { label: 标签, name: tags, widget: list, required: false, default: [] }
