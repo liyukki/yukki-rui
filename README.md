@@ -25,6 +25,8 @@ npm run dev
 | `npm run check:links` | 检查当前 dist 全部 HTML、RSS、sitemap、robots 的站内引用 |
 | `npm run check:base` | 两种部署路径下分别构建，并检查全部真实页面与引用 |
 | `npm run check:content` | 真实构建验证 Markdown、草稿页面、草稿译文和 RSS |
+| `npm run check:frontend` | 前端必需路由、404、分享图等发布门槛 |
+| `npm run check:cms-oauth` | 可选：用真实 Decap 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
 | `npm run verify:frontend` | 上述检查加当前构建、链接检查及前端必需路由/分享图检查 |
 | `npm run preview` | 预览已有 `dist/` |

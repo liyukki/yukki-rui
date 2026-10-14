@@ -104,7 +104,7 @@ GPT 中断前实际已完成全部展示层工作（组件、布局、页面、�
 |---|---|
 | `npx astro check` | 55 文件 0 errors / 0 warnings / 0 hints |
 | `npx vitest run` | 9 个测试文件、69 项通过（新增 `tests/oauth-functions.test.ts` 10 项） |
-| `npm run check:cms-oauth` | 10/10：真实 Decap 3.8.3 客户端 + Playwright；登录按钮 → `/api/auth` 的 302 参数校验 → 弹窗回跳 `/api/callback` → 令牌写入 `localStorage.decap-cms-user` 且 `token` 字段正确 → 后台关闭弹窗 → 侧栏出现「文章」集合 |
+| `npm run check:cms-oauth` | 12/12：真实 Decap 3.8.3 客户端 + Playwright；登录按钮 → `/api/auth` 的 302 参数校验 → 弹窗回跳 `/api/callback` → 令牌写入 `localStorage.decap-cms-user` 且 `token` 字段正确 → 后台关闭弹窗 → 侧栏出现「文章」集合 → 登录域名下不出现地址提示条、非登录域名下必须出现 |
 | `npm run verify:frontend` | 通过：双路径检查、内容集成、构建 21 页、851 条站内引用无死链、前端必需产物齐全 |
 
 ### 排查中被实测否定的三条假设（记录以免重走）
@@ -118,3 +118,7 @@ GPT 中断前实际已完成全部展示层工作（组件、布局、页面、�
 ### 仍未完成
 
 Cloudflare Pages 项目与 GitHub OAuth App 需要站长本人账号，线上后台登录与线上实测待站长完成注册后继续；`https://yukki-rui.pages.dev` 目前仍无 DNS 记录。
+
+### 顺带堵掉的一个坑
+
+`public/admin/index.html` 现在会读 `config.yml` 的 `base_url` 自查：如果当前域名不是登录域名（例如从 GitHub Pages 那份部署打开 `/admin/`），页面底部直接弹出提示条说明「登录只在 <正确地址>/admin/ 有效」。本机预览（`localhost`/`127.0.0.1`）跳过该检查，因为本地走的是 `local_backend`，不需要登录。两条断言都进了 `check:cms-oauth`。

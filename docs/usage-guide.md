@@ -340,6 +340,7 @@ GitHub 每次推送都会自动跑检查，缺关键页面时会**拒绝发布**
 | `npm run cms` | 后台的本地文件桥（配合 `npm run dev` 用，见第 10 节）|
 | `npm run check:links` | 只查死链（需先 build）|
 | `npm run check:base` | 只查两种部署路径 |
+| `npm run check:cms-oauth` | 可选：用真实 Decap 客户端在本地跑一遍后台登录握手（需先 `npm i -D playwright`，不参与发布检查）|
 
 ---
 
@@ -421,6 +422,8 @@ npm run cms
 
 **为什么只有 Cloudflare 地址能登录**：换登录令牌需要服务端代码（`functions/api/` 里的两个 Cloudflare Function），GitHub Pages 是纯静态托管跑不了函数。所以**后台固定从 Cloudflare 地址进**；GitHub Pages 那份部署只展示内容。保存的内容两边都会更新（改的是同一个仓库）。
 
+> 从别的地址（例如 `liyukki.github.io/yukki-rui/admin/`）打开后台时，页面底部会自动出现一条提示，告诉你正确地址——因为那种情况下登录按钮点了不会有反应。本机预览不会出现这条提示（本地走 `local_backend`，不需要登录）。
+
 ### 10.3 后台里能改什么
 
 | 集合 | 内容 | 改完影响 |
@@ -479,6 +482,9 @@ CMS 保存的数据要经过三道关：
 
 **问：线上登录后提示仓库不存在？**
 `config.yml` 里的 `repo` 没改成你的真实仓库，或 OAuth App 授权的账号没有这个仓库的写权限。
+
+**问：线上点了「Login with GitHub」没反应（弹窗闪一下就没了）？**
+先看地址栏：登录只在 Cloudflare 地址有效，从 GitHub Pages 那份 `/admin/` 进会没反应——页面底部会有提示条写出正确地址。地址对的话，再确认 Cloudflare 环境变量 `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` 配好并重新部署过（见 10.2 第 4 步）。
 
 **问：在后台改了内容，前台没变？**
 本地模式：确认 `npm run cms` 终端没报错，文件确实被改了（`git status` 能看到）。线上模式：保存 = 提交 commit，等平台重新部署完（GitHub Actions / Cloudflare 部署记录可查），通常几分钟。
