@@ -19,5 +19,40 @@
     <!-- 上传助手：媒体库弹窗打开时提供显眼的「选择本地图片」按钮，
          解决部分内置浏览器不支持拖拽上传的问题（详见脚本内注释）。 -->
     <script src="./upload-helper.js"></script>
+    <!--
+      登录地址提醒：换 GitHub 令牌需要服务端代码，只有 Cloudflare 那份部署有
+      （functions/api/ 两个函数）。GitHub Pages 是纯静态托管，在这里点登录，
+      握手消息会因为没有对应函数而被浏览器丢弃，表现为「点了没反应」。
+      这里读 config.yml 里的 base_url 自查，不一致就提前说明，别让人对着死按钮试。
+    -->
+    <script>
+      (async function () {
+        try {
+          // 本机预览（npm run dev + npm run cms）用的是 local_backend，不需要登录，
+          // 别在这里误报。
+          var host = window.location.hostname;
+          if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') return;
+
+          var text = await (await fetch('./config.yml', { cache: 'no-store' })).text();
+          var match = text.match(/^\s*base_url:\s*['"]?([^'"\s]+)/m);
+          if (!match) return;
+          var target = new URL(match[1]);
+          if (target.origin === window.location.origin) return;
+          var banner = document.createElement('div');
+          banner.id = 'admin-origin-notice';
+          banner.style.cssText =
+            'position:fixed;z-index:2147483000;left:0;right:0;bottom:0;padding:10px 14px;' +
+            'font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;background:#3b2f00;' +
+            'color:#ffe9a8;text-align:center;box-shadow:0 -2px 8px rgba(0,0,0,.3)';
+          banner.textContent =
+            '⚠️ 登录只在 ' + target.origin + '/admin/ 有效（换令牌需要服务端函数）。' +
+            '当前地址 ' + window.location.origin + ' 没有这个能力，登录按钮不会有反应。';
+          document.body.appendChild(banner);
+        } catch (error) {
+          /* 读不到配置就什么都不做，不要影响正常使用 */
+        }
+      })();
+    </script>
   </body>
 </html>
+

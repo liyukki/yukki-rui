@@ -67,22 +67,28 @@ const server = createServer(async (req, res) => {
   };
   if (DEBUG) console.log(`[server] ${req.method} ${url.pathname}${url.search}`);
 
+  // /mismatch/... 提供一份「base_url 仍指向线上域名」的后台副本，
+  // 用来验证「从非登录域名打开后台」时的提示条（见 public/admin/index.html）。
+  const mismatch = url.pathname.startsWith('/mismatch/');
+  const pathname = mismatch ? url.pathname.slice('/mismatch'.length) : url.pathname;
+
   try {
-    if (url.pathname === '/admin/' || url.pathname === '/admin/index.html') {
+    if (pathname === '/admin/' || pathname === '/admin/index.html') {
       return send(200, readFileSync(join(ROOT, 'public/admin/index.html'), 'utf8'), 'text/html; charset=utf-8');
     }
-    if (url.pathname === '/admin/config.yml') {
-      return send(200, localConfig(), 'text/yaml; charset=utf-8');
+    if (pathname === '/admin/config.yml') {
+      const config = mismatch ? readFileSync(join(ROOT, 'public/admin/config.yml'), 'utf8') : localConfig();
+      return send(200, config, 'text/yaml; charset=utf-8');
     }
-    if (url.pathname === '/admin/upload-helper.js') {
+    if (pathname === '/admin/upload-helper.js') {
       return send(200, readFileSync(join(ROOT, 'public/admin/upload-helper.js'), 'utf8'), 'text/javascript; charset=utf-8');
     }
-    if (url.pathname === '/api/auth' || url.pathname === '/api/callback') {
-      const handler = url.pathname === '/api/auth' ? authEndpoint : callbackEndpoint;
+    if (pathname === '/api/auth' || pathname === '/api/callback') {
+      const handler = pathname === '/api/auth' ? authEndpoint : callbackEndpoint;
       const response = await handler({ request: new Request(url.href), env: ENV });
       const body = await response.text();
       const headers = Object.fromEntries(response.headers);
-      if (url.pathname === '/api/auth') {
+      if (pathname === '/api/auth') {
         authRedirect = headers.location ?? null;
         // /api/auth 真实返回的 302 指向 github.com（上面已断言其参数）。
         // 浏览器这一侧不能真去 GitHub：未登录会落到 GitHub 登录页，而它带
@@ -107,7 +113,13 @@ console.log(`本地服务已启动：${ORIGIN}/admin/`);
 
 const { chromium } = await import('playwright');
 const executablePath = process.env.CMS_OAUTH_CHROME || undefined;
-const browser = await chromium.launch({ executablePath, headless: true });
+const browser = await chromium.launch({
+  executablePath,
+  headless: true,
+  // 造一个「非本机」的域名指向本服务，用来验证后台的登录地址提示条
+  // （提示条在本机域名下会主动静默，见 public/admin/index.html）。
+  args: ['--host-resolver-rules=MAP cms-check.test 127.0.0.1'],
+});
 const context = await browser.newContext();
 
 // 模拟 GitHub：授权页直接回跳，令牌端点返回固定令牌。
@@ -227,6 +239,28 @@ try {
     .then(() => true)
     .catch(() => false);
   check('后台进入已登录界面并列出「文章」集合', collectionVisible);
+
+  // 登录域名下不该出现「地址不对」的提示条。
+  check('登录域名下不显示地址提示条', (await page.locator('#admin-origin-notice').count()) === 0);
+
+  // 换成非登录域名时（config.yml 的 base_url 仍是线上域名），必须提前说清楚。
+  // 用 cms-check.test（DNS 映射到本服务）模拟「在别的域名打开后台」。
+  const mismatchPage = await context.newPage();
+  await mismatchPage.goto(`http://cms-check.test:${PORT}/mismatch/admin/`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60000,
+  });
+  const notice = mismatchPage.locator('#admin-origin-notice');
+  const noticeShown = await notice
+    .waitFor({ state: 'visible', timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    '从非登录域名打开后台时给出明确提示',
+    noticeShown,
+    noticeShown ? (await notice.textContent()).slice(0, 140) : '提示条没出现',
+  );
+  await mismatchPage.close();
 
   if (DEBUG) {
     const popupState = await popup
