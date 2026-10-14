@@ -62,10 +62,12 @@ export function collectTags(
 export function findTranslation<T extends PostLike>(
   entries: readonly T[],
   post: T,
+  isProd = false,
 ): T | undefined {
   const key = post.data.translationKey;
   if (!key) return undefined;
   return entries.find(
-    (entry) => entry.data.translationKey === key && entry.data.lang !== post.data.lang,
+    (entry) => entry.data.translationKey === key && entry.data.lang !== post.data.lang
+      && !(isProd && entry.data.draft),
   );
 }

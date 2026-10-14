@@ -1,0 +1,15 @@
+---
+import PixelSprite from './PixelSprite.astro';
+interface Props {
+  icon: string;
+  label: string;
+  value: string;
+  tone?: 'rin' | 'len' | 'pink';
+}
+const { icon, label, value, tone = 'rin' } = Astro.props;
+---
+<div class={`stat-item stat-${tone}`}>
+  <PixelSprite name={icon} size={22} alt="" />
+  <span>{label}</span>
+  <strong>{value}</strong>
+</div>

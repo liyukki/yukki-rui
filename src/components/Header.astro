@@ -1,0 +1,24 @@
+---
+/** 站点头部：站名、当前语言导航、语言与主题按钮。 */
+import { NAV, SITE, type Lang } from '../consts';
+import { langHref, withBase } from '../lib/url';
+import LangSwitch from './LangSwitch.astro';
+import PixelSprite from './PixelSprite.astro';
+import ThemeToggle from './ThemeToggle.astro';
+
+interface Props {
+  lang: Lang;
+  alternateUrl?: string;
+}
+const { lang, alternateUrl } = Astro.props;
+---
+<header class="site-header">
+  <div class="wrap">
+    <a class="site-name" href={langHref(lang)}><PixelSprite name="coin-sprite" size={20} />{SITE.name}</a>
+    <nav class="site-nav" aria-label={lang === 'zh' ? '主导航' : 'Main navigation'}>
+      {NAV[lang].map((item) => <a class="nav-link" href={withBase(item.path)}>{item.label}</a>)}
+      <LangSwitch lang={lang} alternateUrl={alternateUrl} />
+      <ThemeToggle lang={lang} />
+    </nav>
+  </div>
+</header>

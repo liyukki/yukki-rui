@@ -1,0 +1,26 @@
+---
+/** 原创像素音符雨：固定种子，纯装饰，不抢占交互或正文注意力。 */
+import { withBase } from '../lib/url';
+const NOTES = ['note-blue', 'note-orange', 'star-blue', 'star-gold'];
+let seed = 42;
+const rand = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+const notes = Array.from({ length: 14 }, (_, i) => ({
+  name: NOTES[i % NOTES.length],
+  left: Math.round(rand() * 94),
+  delay: (-rand() * 19).toFixed(2),
+  dur: (15 + rand() * 10).toFixed(2),
+  size: i % 3 === 0 ? 24 : 16,
+}));
+---
+<div class="note-rain" aria-hidden="true">
+  {notes.map((n) => (
+    <img class="note px-sprite" src={withBase(`pixel/${n.name}.png`)} alt="" width={n.size} height={n.size}
+      style={`left:${n.left}%;animation-delay:${n.delay}s;animation-duration:${n.dur}s;width:${n.size}px;height:${n.size}px`} />
+  ))}
+</div>
+<style>
+  .note-rain { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .note { position: absolute; top: -32px; opacity: .22; animation: note-fall linear infinite; }
+  @keyframes note-fall { from { transform: translateY(-5vh); } to { transform: translateY(110vh); } }
+  @media (prefers-reduced-motion: reduce) { .note-rain { display: none; } }
+</style>

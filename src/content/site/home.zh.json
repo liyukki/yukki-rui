@@ -1,0 +1,35 @@
+{
+  "lang": "zh",
+  "hero": {
+    "intro": "写代码，也写文字。",
+    "sub": "把日常的灵感存进像素世界，让每一段文字都有自己的小宇宙。",
+    "note": "喜欢镜音双子，喜欢像素，也喜欢把想法写下来。"
+  },
+  "heroImage": {
+    "src": "/uploads/1783138646625.jpg",
+    "width": 320,
+    "height": 320
+  },
+  "contact": {
+    "text": "qq 3378722110\n微信 ljj18277151160\n其他的熟悉了再给你哦",
+    "links": [
+      {
+        "label": "x",
+        "url": "https://x.com/7yukkito"
+      }
+    ]
+  },
+  "work": {
+    "title": "关于我自己",
+    "text": "很喜欢二次元和音乐",
+    "linkLabel": "",
+    "linkUrl": "",
+    "status": "LIVE"
+  },
+  "about": {
+    "subtitle": "每一篇记录，都是新的存档点。",
+    "heading": "这间像素小屋",
+    "body": "这里是 yukki-rui 的双语博客，用来存放文字与站点更新。你可以从文章或标签开始探索。",
+    "pending": "一名苦逼大二学生 你喜欢我=我喜欢你"
+  }
+}

@@ -91,4 +91,23 @@ describe('findTranslation', () => {
     const zh = post({ id: 'zh', translationKey: 'same' });
     expect(findTranslation([zh], zh)).toBeUndefined();
   });
+
+  it('生产环境不会把未发布的译文作为语言切换目标', () => {
+    const zh = post({ id: 'zh', translationKey: 'same' });
+    const draft = post({ id: 'en-draft', lang: 'en', translationKey: 'same', draft: true });
+    expect(findTranslation([zh, draft], zh, true)).toBeUndefined();
+  });
+
+  it('开发环境可以预览草稿译文', () => {
+    const zh = post({ id: 'zh', translationKey: 'same' });
+    const draft = post({ id: 'en-draft', lang: 'en', translationKey: 'same', draft: true });
+    expect(findTranslation([zh, draft], zh, false)?.id).toBe('en-draft');
+  });
+
+  it('生产环境跳过草稿后仍能找到已发布的译文', () => {
+    const zh = post({ id: 'zh', translationKey: 'same' });
+    const draft = post({ id: 'draft', lang: 'en', translationKey: 'same', draft: true });
+    const published = post({ id: 'published', lang: 'en', translationKey: 'same' });
+    expect(findTranslation([zh, draft, published], zh, true)?.id).toBe('published');
+  });
 });

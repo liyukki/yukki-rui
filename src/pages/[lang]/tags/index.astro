@@ -1,0 +1,23 @@
+---
+/** 标签总览：按数量倒序列出当前语言全部标签。 */
+import TagList from '../../../components/TagList.astro';
+import PixelSprite from '../../../components/PixelSprite.astro';
+import { SITE, UI, type Lang } from '../../../consts';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getTags } from '../../../lib/posts';
+
+export function getStaticPaths() {
+  return SITE.langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const tags = await getTags(lang);
+---
+<BaseLayout title={`${UI[lang].allTags} · ${SITE.title}`} description={UI[lang].allTags} lang={lang}>
+  <article class="prose rise subpage">
+    <header class="subpage-heading"><PixelSprite name="gem" size={48} /><span class="eyebrow">TOPIC INVENTORY</span><h1>{UI[lang].allTags}</h1><p>{lang === 'zh' ? '按主题寻找下一篇记录。' : 'Find your next entry by topic.'}</p></header>
+    <section class="card tag-inventory" aria-label={UI[lang].allTags}>
+      {tags.length === 0 ? <p>{UI[lang].noTags}</p> : <TagList lang={lang} tags={tags} />}
+    </section>
+  </article>
+</BaseLayout>

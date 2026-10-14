@@ -1,0 +1,42 @@
+---
+/** 唯一 head 元信息入口：canonical、OG、Twitter Card、RSS 与 hreflang 只在这里输出。 */
+import { OG_IMAGE, RSS_PATH, type Lang } from '../consts';
+import { absoluteHref, withBase } from '../lib/url';
+
+interface Props {
+  title: string;
+  description: string;
+  lang: Lang;
+  ogType?: 'website' | 'article';
+  /** public 相对路径，尚未添加 base */
+  ogImage?: string;
+  /** 真正对应页面的路径（已添加 base）；无对应页则不传 */
+  alternate?: string;
+}
+
+const {
+  title,
+  description,
+  lang,
+  ogType = 'website',
+  ogImage = OG_IMAGE,
+  alternate,
+} = Astro.props;
+
+const canonical = absoluteHref(Astro.url.pathname);
+const image = absoluteHref(withBase(ogImage));
+---
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+<link rel="alternate" hreflang={lang === 'zh' ? 'zh-CN' : 'en'} href={canonical} />
+{alternate && <link rel="alternate" hreflang={lang === 'zh' ? 'en' : 'zh-CN'} href={absoluteHref(alternate)} />}
+<meta property="og:type" content={ogType} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonical} />
+<meta property="og:image" content={image} />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="alternate" type="application/rss+xml" title="RSS" href={withBase(RSS_PATH[lang])} />

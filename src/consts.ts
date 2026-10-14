@@ -1,16 +1,13 @@
 /**
- * 全站常量。改站名、改地址、开评论区，都只动这个文件。
- *
- * ⚠️ 部署前必须把 SITE.url 改成真实地址，否则 canonical、hreflang、
- *    sitemap、RSS 里的链接全部是假地址。检查方法：
- *      Select-String -Path src/consts.ts,public/robots.txt -Pattern "example"
- *    应当没有输出。
+ * 全站文案与开关。站点地址由 astro.config.mjs 读取 SITE_URL / SITE_BASE，
+ * Astro 将唯一地址注入 import.meta.env.SITE，页面、RSS 与 sitemap 共用它。
  */
+import { LOCAL_SITE_URL } from './lib/site-config.mjs';
 export const SITE = {
   name: 'yukki rui',
   title: 'yukki rui',
   description: '一个用 Markdown 写的中英双语个人博客。',
-  url: 'https://example.github.io/yukki-rui',
+  url: import.meta.env.SITE ?? LOCAL_SITE_URL,
   author: 'yukki rui',
   defaultLang: 'zh' as const,
   langs: ['zh', 'en'] as const,
@@ -82,6 +79,20 @@ export const COMMENTS = {
 
 /** 默认 OG 图，相对 public/ 的路径。1200×630。 */
 export const OG_IMAGE = '/og-default.png';
+
+/**
+ * 首页英雄区与关于页的形象图片。
+ *
+ * 把图片放进 public/ 后把 src 改成对应路径（例如 '/hero.png'），
+ * 并填上真实宽高；src 为空字符串时显示待补充占位，不产出坏链。
+ */
+export const HERO_IMAGE = {
+  src: '',
+  altZh: 'yukki rui 的形象照片',
+  altEn: 'Portrait of yukki rui',
+  width: 320,
+  height: 320,
+} as const;
 
 /** RSS 文件路径，按语言区分。 */
 export const RSS_PATH: Record<Lang, string> = {

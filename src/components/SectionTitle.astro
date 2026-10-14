@@ -1,0 +1,14 @@
+---
+import PixelSprite from './PixelSprite.astro';
+interface Props {
+  title: string;
+  icon?: string;
+  tail?: string;
+}
+const { title, icon = 'star-blue', tail = 'SECTION' } = Astro.props;
+---
+<div class="section-head">
+  <PixelSprite name={icon} size={28} class="section-icon" alt="" />
+  <h2 class="section-title">{title}</h2>
+  <span class="section-tail"><span aria-hidden="true">//</span> {tail}</span>
+</div>

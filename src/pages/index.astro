@@ -1,4 +1,35 @@
-﻿---
-import { withBase, postHref } from '../lib/url';
 ---
-<html lang="zh-CN"><head><title>t</title></head><body><a href={withBase('zh/')}>zh</a><a href={postHref('zh','hello-world')}>post</a></body></html>
+/** 根入口：无 JS 时两个语言入口都可用；有 JS 时按已保存语言或浏览器偏好跳一次。 */
+import { SITE } from '../consts';
+import { langHref } from '../lib/url';
+import '../styles/tokens.css';
+import '../styles/global.css';
+---
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{SITE.name}</title>
+    <meta name="description" content={SITE.description} />
+    <script is:inline define:vars={{ zh: langHref('zh'), en: langHref('en') }}>
+      (() => {
+        let saved;
+        try { saved = localStorage.getItem('lang'); } catch {}
+        const target = saved === 'zh' || saved === 'en'
+          ? saved
+          : (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+        location.replace(target === 'zh' ? zh : en);
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="wrap hero">
+      <h1>{SITE.name}</h1>
+      <p class="tagline">{SITE.description}</p>
+      <p style="display:flex;gap:1rem;justify-content:center;margin-top:2rem">
+        <a class="icon-btn" href={langHref('zh')}>中文</a>
+        <a class="icon-btn" href={langHref('en')}>English</a>
+      </p>
+    </main>
+  </body>
+</html>

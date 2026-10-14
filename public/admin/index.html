@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>站点后台 · yukki rui</title>
+    <!--
+      Decap CMS 是纯浏览器端应用：这个页面只是加载它，
+      真正的编辑规则在同目录 config.yml 里。
+      本地编辑模式：另开一个终端跑 npm run cms，再访问 /admin/index.html。
+      线上编辑模式：见 docs/usage-guide.md 第 10 节（需要 GitHub OAuth）。
+    -->
+  </head>
+  <body>
+    <!-- 脚本必须在 body 内：Decap 挂载时需要 document.body 已存在，
+         放在 head 里会在 body 解析前同步执行导致挂载失败。 -->
+    <script src="https://unpkg.com/decap-cms@3.8.3/dist/decap-cms.js"></script>
+    <!-- 上传助手：媒体库弹窗打开时提供显眼的「选择本地图片」按钮，
+         解决部分内置浏览器不支持拖拽上传的问题（详见脚本内注释）。 -->
+    <script src="./upload-helper.js"></script>
+  </body>
+</html>

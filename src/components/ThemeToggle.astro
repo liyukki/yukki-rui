@@ -1,0 +1,31 @@
+---
+/** 像素日月按钮：显示当前主题，保持存储禁用时可切换。 */
+import { UI, type Lang } from '../consts';
+import PixelSprite from './PixelSprite.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+---
+<button id="theme-toggle" class="icon-btn theme-toggle" type="button" aria-label={UI[lang].themeToggle} aria-pressed="false">
+  <span class="theme-sun" aria-hidden="true"><PixelSprite name="sun" size={20} /></span>
+  <span class="theme-moon" aria-hidden="true"><PixelSprite name="moon" size={20} /></span>
+</button>
+<script is:inline>
+  (() => {
+    const button = document.getElementById('theme-toggle');
+    const sync = () => button?.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
+    sync();
+    button?.addEventListener('click', () => {
+      const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = theme;
+      try { localStorage.setItem('theme', theme); } catch {}
+      sync();
+    });
+  })();
+</script>
+<style>
+  .theme-toggle { min-width: 44px; min-height: 44px; justify-content: center; padding: 6px; }
+  .theme-sun, .theme-moon { display: flex; }
+  .theme-moon { display: none; }
+  :global([data-theme='dark']) .theme-sun { display: none; }
+  :global([data-theme='dark']) .theme-moon { display: flex; }
+</style>

@@ -1,13 +1,14 @@
 name: Deploy
 
 # 一份工作流，两个平台：
-#   - GitHub Pages 由本工作流构建并部署（base = /yukki-rui）
+#   - GitHub Pages 由本工作流构建并部署（base = /仓库名/）
 #   - Cloudflare Pages 在 Cloudflare 后台单独连接同一仓库（base = /）
 # 两边互不影响：任一平台失败，另一个仍在线。
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -16,7 +17,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,36 +43,35 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Build (GitHub Pages, base = /yukki-rui)
+      - name: Verify real builds and content contracts
+        run: npm run check:base && npm run check:content
+
+      - name: Build for this GitHub Pages repository
         run: npm run build
         env:
-          SITE_BASE: /yukki-rui
-          SITE_URL: https://${{ github.repository_owner }}.github.io/yukki-rui
+          SITE_BASE: /${{ github.event.repository.name }}/
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       - name: Check internal links
         run: npm run check:links
         env:
-          SITE_BASE: /yukki-rui
+          SITE_BASE: /${{ github.event.repository.name }}/
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
-      # 抓「内链漏写 base 前缀」这类链接检查器发现不了的 bug。
-      # 脚本会自行用两种 base 各构建一次，无需额外配置。
-      - name: Check base-path parity
-        run: npm run check:base
-
-      # check:base 会覆盖 dist，所以重新构建一次给 Pages 用
-      - name: Rebuild for deployment
-        run: npm run build
-        env:
-          SITE_BASE: /yukki-rui
-          SITE_URL: https://${{ github.repository_owner }}.github.io/yukki-rui
+      - name: Require completed frontend before publishing
+        if: github.event_name != 'pull_request'
+        run: npm run check:frontend
 
       - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
 
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
         with:
           path: dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: verify-and-build
     runs-on: ubuntu-latest
     environment:

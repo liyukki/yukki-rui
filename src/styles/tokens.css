@@ -1,0 +1,79 @@
+/*
+ * 设计令牌：像素风镜音双子主题（铃 = 暖黄，连 = 冷蓝）。
+ * 深浅两套主题仅通过 data-theme 切换变量，组件不写死颜色。
+ */
+:root {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace;
+  /* 像素感标题字：等宽 + 大写字距，模拟 8-bit HUD */
+  --font-pixel: var(--font-mono);
+
+  --fs-hero: clamp(2rem, 6vw, 3.6rem);
+  --fs-h1: clamp(1.6rem, 4vw, 2.2rem);
+  --fs-h2: 1.3rem;
+  --fs-body: 1rem;
+  --fs-small: 0.85rem;
+  --fs-tiny: 0.72rem;
+
+  --space-1: 0.35rem;
+  --space-2: 0.6rem;
+  --space-3: 1rem;
+  --space-4: 1.6rem;
+  --space-5: 2.6rem;
+  --space-6: 4rem;
+
+  --radius: 2px;
+  --maxw: 72ch;
+  --maxw-wide: 1080px;
+
+  /* 镜音双子强调色 */
+  --rin: #f5a623;
+  --len: #3ba7ff;
+  --accent-gradient: linear-gradient(120deg, var(--rin), var(--len));
+
+  /* 像素边框：阶梯 box-shadow 的厚度单位 */
+  --px: 3px;
+
+  --dur: 0.2s;
+  --dur-long: 0.5s;
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #fdf3e3;
+  --bg-soft: #fffaf0;
+  --card: #fffdf7;
+  --card-edge: #d8c9a8;
+  --text: #2c2438;
+  --text-dim: #716688;
+  --line: #e2d5bd;
+  --accent: var(--rin);
+  --accent-2: var(--len);
+  --link: #9a5f00;
+  --code-bg: #f3ead6;
+  --glow-a: rgba(245, 166, 35, 0.4);
+  --glow-b: rgba(59, 167, 255, 0.35);
+  --shadow: 0 var(--px) 0 0 var(--card-edge);
+  --shadow-hover: 0 calc(var(--px) * 2) 0 0 var(--card-edge);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #100d1c;
+  --bg-soft: #171329;
+  --card: #1e1932;
+  --card-edge: #0a0812;
+  --text: #f2edf8;
+  --text-dim: #a89cc0;
+  --line: #342b52;
+  --accent: var(--rin);
+  --accent-2: var(--len);
+  --link: #ffc766;
+  --code-bg: #262040;
+  --glow-a: rgba(245, 166, 35, 0.3);
+  --glow-b: rgba(59, 167, 255, 0.28);
+  --shadow: 0 var(--px) 0 0 var(--card-edge);
+  --shadow-hover: 0 calc(var(--px) * 2) 0 0 var(--card-edge);
+}

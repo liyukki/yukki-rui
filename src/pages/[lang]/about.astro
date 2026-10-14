@@ -1,0 +1,47 @@
+---
+/**
+ * 关于页：双语对应页。
+ * 个人资料读自 site 集合（可在 /admin 后台编辑），字段留空时用这里的默认文案。
+ * 形象照片：后台「个人资料 → 形象照片」上传（存到 public/uploads/）；
+ * 也可以把图片放到 public/hero.png 并设置 consts.ts 的 HERO_IMAGE.src 兜底。
+ */
+import { SITE, HERO_IMAGE, type Lang } from '../../consts';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PixelSprite from '../../components/PixelSprite.astro';
+import { getSiteInfo, getHeroImage } from '../../lib/site-info';
+import { withBase, langHref } from '../../lib/url';
+export function getStaticPaths() { return SITE.langs.map((lang) => ({ params: { lang } })); }
+const lang = Astro.params.lang as Lang;
+const zh = lang === 'zh';
+const defaults = {
+  zh: { title: '关于', subtitle: '每一篇记录，都是新的存档点。', heading: '这间像素小屋', body: '这里是 yukki-rui 的双语博客，用来存放文字与站点更新。你可以从文章或标签开始探索。', pending: '个人介绍暂未公开。经历、兴趣与联系信息，将由站点主人补充。', photoPending: '形象照片待补充：可在后台「个人资料」上传照片。', back: '返回首页', tags: '探索标签' },
+  en: { title: 'About', subtitle: 'Every entry is a new save point.', heading: 'This pixel corner', body: 'This is the bilingual yukki-rui blog, a home for writing and site updates. Start exploring through posts or tags.', pending: 'A personal introduction is not available yet. Background, interests, and contact details will be supplied by the site owner.', photoPending: 'Portrait pending: upload a photo in the site admin.', back: 'Back home', tags: 'Explore tags' },
+}[lang];
+const info = await getSiteInfo(lang);
+const copy = {
+  ...defaults,
+  subtitle: info?.about.subtitle || defaults.subtitle,
+  heading: info?.about.heading || defaults.heading,
+  body: info?.about.body || defaults.body,
+  pending: info?.about.pending || defaults.pending,
+};
+// 形象照：本语言优先，其次另一语言（传一次两边都显示），最后回落到 HERO_IMAGE。
+const heroImage = await getHeroImage(lang);
+---
+<BaseLayout title={`${copy.title} · ${SITE.title}`} description={copy.subtitle} lang={lang} alternate={withBase(lang === 'zh' ? 'en/about/' : 'zh/about/')}>
+  <article class="prose rise subpage">
+    <header class="subpage-heading"><PixelSprite name="chest" size={48} /><span class="eyebrow">PLAYER PROFILE</span><h1>{copy.title}</h1><p>{copy.subtitle}</p></header>
+    <section class="card profile-card">
+      {heroImage.src ? (
+        <img class="profile-photo" src={withBase(heroImage.src)} alt={zh ? HERO_IMAGE.altZh : HERO_IMAGE.altEn} width={heroImage.width} height={heroImage.height} loading="lazy" decoding="async" />
+      ) : (
+        <div class="profile-photo-slot" role="img" aria-label={zh ? '形象照片待补充' : 'Portrait placeholder'}>
+          <PixelSprite name="star-gold" size={32} />
+          <span class="pixel-caption">{copy.photoPending}</span>
+        </div>
+      )}
+      <h2>{copy.heading}</h2><p>{copy.body}</p><p class="profile-pending">{copy.pending}</p>
+    </section>
+    <nav class="subpage-actions" aria-label={lang === 'zh' ? '继续探索' : 'Keep exploring'}><a class="pixel-button" href={langHref(lang)}>{copy.back}</a><a class="pixel-button" href={withBase(`${lang}/tags/`)}>{copy.tags}</a></nav>
+  </article>
+</BaseLayout>

@@ -1,0 +1,24 @@
+---
+/** 页脚：真实站点信息与当前语言 RSS，无未提供的联系方式。 */
+import { RSS_PATH, SITE, type Lang } from '../consts';
+import { withBase } from '../lib/url';
+import PixelSprite from './PixelSprite.astro';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const year = new Date().getFullYear();
+const rssLabel = lang === 'zh' ? 'RSS 订阅' : 'RSS feed';
+const madeWith = lang === 'zh' ? 'Astro 静态生成 · 像素记录存档' : 'Built with Astro · Pixel journal archive';
+---
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-credit">
+      <PixelSprite name="note-orange" size={24} />
+      <div><span>© {year} {SITE.author}</span><small>{madeWith}</small></div>
+    </div>
+    <a class="icon-btn" href={withBase(RSS_PATH[lang])}><PixelSprite name="star-blue" size={20} />{rssLabel}</a>
+  </div>
+</footer>
+<style>
+  .footer-credit small { display: block; font-size: .7rem; letter-spacing: .03em; }
+  .site-footer .icon-btn { min-height: 44px; }
+</style>

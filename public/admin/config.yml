@@ -1,0 +1,184 @@
+# Decap CMS 配置。改这里的字段前先想清楚：字段名与 src/content.config.ts
+# 的 schema 一一对应，CMS 写出的数据过不了 schema 校验会让整站构建失败。
+
+backend:
+  name: github
+  repo: liyukki/yukki-rui
+  branch: master
+  # 线上登录用的 OAuth 入口，由 functions/api/auth.js 提供（Cloudflare Pages）。
+  # GitHub Pages 没有服务器，跑不了这个函数，所以后台请从 Cloudflare 地址打开。
+  # base_url 必须与 Cloudflare Pages 项目域名一致（默认 <项目名>.pages.dev）：
+  # 若 Cloudflare 项目不叫 yukki-rui，把下面这行改成你的真实域名。
+  base_url: https://yukki-rui.pages.dev
+  auth_endpoint: /api/auth
+
+# 本地编辑模式：另开终端跑 npx decap-server 后，http://localhost:4321/admin 直接可用，
+# 无需登录；改动直接写回本地文件，之后照常 git push 发布。
+local_backend: true
+
+# 界面语言与发布开关。publish_mode 保持默认 simple：保存即提交到仓库。
+locale: zh
+
+# 顶层图片配置：Decap 要求 media_folder 与 media_library 二选一（anyOf）。
+# 不要配 media_library——内置库只有 uploadcare/cloudinary 两个外部服务，
+# 配一个未注册的名字会让后台直接报错。media_folder 走 git 后端上传，正是我们想要的。
+# 文章集合在下面用集合级相对路径覆盖它，这里的值只作为兜底。
+media_folder: src/content/posts/images
+public_folder: ./images
+
+# 文章配图：文件落在 src/content/posts/images/，正文里插入 ./images/... 相对路径，
+# 与 docs/usage-guide.md 第 2.3 节的约定一致（Astro 自动优化 + 两种部署路径都安全）。
+collections:
+  - name: posts
+    label: 文章
+    folder: src/content/posts
+    create: true
+    delete: true
+    slug: '{{slug}}'
+    extension: md
+    format: frontmatter
+    media_folder: images
+    public_folder: ./images
+    summary: '{{title}}（{{lang}}）'
+    sortable_fields: [pubDate, title]
+    view_filters:
+      - { label: 中文, field: lang, pattern: zh }
+      - { label: 英文, field: lang, pattern: en }
+      - { label: 草稿, field: draft, pattern: true }
+    fields:
+      - { label: 标题, name: title, widget: string }
+      - { label: 摘要（最多 160 字）, name: description, widget: text }
+      - { label: 发布日期, name: pubDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD' }
+      - { label: 更新日期（可空）, name: updatedDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+      - { label: 语言, name: lang, widget: select, options: [{ label: 中文, value: zh }, { label: English, value: en }], default: zh }
+      - { label: 标签, name: tags, widget: list, required: false, default: [] }
+      - { label: 草稿, name: draft, widget: boolean, default: false }
+      - label: 中英配对 Key（两个文件填同一个值；不需要译文就留空）
+        name: translationKey
+        widget: string
+        required: false
+      - { label: 正文, name: body, widget: markdown }
+
+  - name: site
+    label: 个人资料
+    icon: settings
+    delete: false
+    # 个人资料的图片（形象照）与文章插图分开存放。
+    # 注意：file collection 的相对 media_folder 是相对「文件所在目录」解析的
+    # （写 public/uploads 会落到 src/content/site/public/uploads），
+    # 所以必须以 / 开头 = 相对仓库根目录，才会落到项目根部的 public/uploads/。
+    media_folder: /public/uploads
+    public_folder: /uploads
+    files:
+      - name: home.zh
+        label: 中文资料
+        file: src/content/site/home.zh.json
+        format: json
+        fields:
+          - { label: 语言, name: lang, widget: hidden, default: zh }
+          - label: 首页欢迎区
+            name: hero
+            widget: object
+            fields:
+              - { label: 一句话介绍, name: intro, widget: string, required: false }
+              - { label: 介绍副文案, name: sub, widget: text, required: false }
+              - { label: 页尾一句话, name: note, widget: string, required: false }
+          - label: 形象照片（首页与关于页共用）
+            name: heroImage
+            widget: object
+            required: false
+            fields:
+              - { label: 照片（上传一次中英通用；想分语言各用一张就在对应语言里再传一张）, name: src, widget: image, required: false }
+              - { label: 照片实际像素宽（防布局跳动，不确定就 320）, name: width, widget: number, required: false, default: 320, value_type: int }
+              - { label: 照片实际像素高（不确定就 320）, name: height, widget: number, required: false, default: 320, value_type: int }
+          - label: 联系方式
+            name: contact
+            widget: object
+            fields:
+              - { label: 说明文字, name: text, widget: text, required: false }
+              - label: 链接列表（填了就会显示成可点击链接）
+                name: links
+                widget: list
+                required: false
+                default: []
+                fields:
+                  - { label: 名称, name: label, widget: string }
+                  - { label: 地址（https:// 或 mailto:）, name: url, widget: string }
+          - label: 第二件作品
+            name: work
+            widget: object
+            fields:
+              - { label: 标题, name: title, widget: string, required: false }
+              - { label: 介绍, name: text, widget: text, required: false }
+              - { label: 链接文字（可空）, name: linkLabel, widget: string, required: false }
+              - { label: 链接地址（可空，填了才显示链接）, name: linkUrl, widget: string, required: false }
+              - label: 状态
+                name: status
+                widget: select
+                options: [{ label: 筹备中（WIP）, value: WIP }, { label: 已上线（LIVE）, value: LIVE }]
+                default: WIP
+                required: false
+          - label: 关于页
+            name: about
+            widget: object
+            fields:
+              - { label: 副标题, name: subtitle, widget: string, required: false }
+              - { label: 板块标题, name: heading, widget: string, required: false }
+              - { label: 站点介绍, name: body, widget: text, required: false }
+              - { label: 自我介绍（个人经历、兴趣、联系方式）, name: pending, widget: text, required: false }
+      - name: home.en
+        label: English Profile
+        file: src/content/site/home.en.json
+        format: json
+        fields:
+          - { label: Lang, name: lang, widget: hidden, default: en }
+          - label: Home hero
+            name: hero
+            widget: object
+            fields:
+              - { label: Tagline, name: intro, widget: string, required: false }
+              - { label: Sub text, name: sub, widget: text, required: false }
+              - { label: Footer note, name: note, widget: string, required: false }
+          - label: Portrait (home + about)
+            name: heroImage
+            widget: object
+            required: false
+            fields:
+              - { label: Photo (shared across languages; upload again here to override just this language), name: src, widget: image, required: false }
+              - { label: Pixel width (default 320), name: width, widget: number, required: false, default: 320, value_type: int }
+              - { label: Pixel height (default 320), name: height, widget: number, required: false, default: 320, value_type: int }
+          - label: Contact
+            name: contact
+            widget: object
+            fields:
+              - { label: Text, name: text, widget: text, required: false }
+              - label: Links (rendered as clickable links)
+                name: links
+                widget: list
+                required: false
+                default: []
+                fields:
+                  - { label: Label, name: label, widget: string }
+                  - { label: URL (https:// or mailto:), name: url, widget: string }
+          - label: Second work
+            name: work
+            widget: object
+            fields:
+              - { label: Title, name: title, widget: string, required: false }
+              - { label: Description, name: text, widget: text, required: false }
+              - { label: Link label (optional), name: linkLabel, widget: string, required: false }
+              - { label: Link URL (optional, shown only when filled), name: linkUrl, widget: string, required: false }
+              - label: Status
+                name: status
+                widget: select
+                options: [WIP, LIVE]
+                default: WIP
+                required: false
+          - label: About page
+            name: about
+            widget: object
+            fields:
+              - { label: Subtitle, name: subtitle, widget: string, required: false }
+              - { label: Section heading, name: heading, widget: string, required: false }
+              - { label: Site description, name: body, widget: text, required: false }
+              - { label: Bio (background, interests, contact), name: pending, widget: text, required: false }

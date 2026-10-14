@@ -3,7 +3,6 @@ import {
   collectTags,
   findTranslation,
   selectPosts,
-  type PostLike,
 } from './post-select';
 
 export type Post = CollectionEntry<'posts'>;
@@ -26,7 +25,7 @@ async function allPosts(): Promise<Post[]> {
 /** 该语言的全部已发布文章，按发布日期倒序。 */
 export async function getPosts(lang: 'zh' | 'en'): Promise<Post[]> {
   const entries = await allPosts();
-  return selectPosts(entries as PostLike[], lang, import.meta.env.PROD) as Post[];
+  return selectPosts(entries, lang, import.meta.env.PROD);
 }
 
 /** 该语言的标签及文章数，按数量倒序。 */
@@ -39,7 +38,7 @@ export async function getTags(
 /** 通过 translationKey 找另一语言版本；没有译文时返回 undefined（正常状态）。 */
 export async function getTranslations(post: Post): Promise<Post | undefined> {
   const entries = await allPosts();
-  return findTranslation(entries as PostLike[], post as PostLike) as Post | undefined;
+  return findTranslation(entries, post, import.meta.env.PROD);
 }
 
 /** 该语言出现过的全部标签名（去重，用于 getStaticPaths）。 */

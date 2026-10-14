@@ -1,0 +1,42 @@
+---
+/** 404 保留两个语言首页及 base 兼容路由，不产生不存在的目标。 */
+import { SITE } from '../consts';
+import { langHref } from '../lib/url';
+import PixelSprite from '../components/PixelSprite.astro';
+import ThemeToggle from '../components/ThemeToggle.astro';
+import '../styles/tokens.css';
+import '../styles/global.css';
+import '../styles/world.css';
+---
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>404 · {SITE.title}</title>
+    <meta name="robots" content="noindex" />
+    <script is:inline>
+      (() => {
+        let saved;
+        try { saved = localStorage.getItem('theme'); } catch {}
+        document.documentElement.dataset.theme = saved === 'light' || saved === 'dark'
+          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="wrap not-found">
+      <div class="error-controls"><ThemeToggle lang="zh" /></div>
+      <section class="card error-card">
+        <PixelSprite name="sign-left" size={64} />
+        <p class="eyebrow">MAP NOT FOUND</p>
+        <h1>404</h1>
+        <p>页面不存在 · Page not found</p>
+        <p class="error-hint">这条路暂时没有存档。<br />There is no save point here.</p>
+        <nav class="subpage-actions" aria-label="返回首页 · Back home">
+          <a class="pixel-button primary" href={langHref('zh')}>中文首页</a>
+          <a class="pixel-button" href={langHref('en')}>English home</a>
+        </nav>
+      </section>
+    </main>
+  </body>
+</html>

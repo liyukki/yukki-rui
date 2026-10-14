@@ -1,0 +1,29 @@
+---
+/**
+ * 评论：COMMENTS.enabled 为 false 时不输出任何 DOM 或第三方请求。
+ * 开启评论时：装好 giscus App 后在 consts.ts 填 repo / repoId / categoryId。
+ */
+import { COMMENTS, UI, type Lang } from '../consts';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+{COMMENTS.enabled && (
+  <section class="comments" aria-label={UI[lang].comments}>
+    <script
+      src="https://giscus.app/client.js"
+      data-repo={COMMENTS.repo}
+      data-repo-id={COMMENTS.repoId}
+      data-category={COMMENTS.category}
+      data-category-id={COMMENTS.categoryId}
+      data-mapping="pathname"
+      data-reactions-enabled="1"
+      data-theme="preferred_color_scheme"
+      data-lang={lang === 'zh' ? 'zh-CN' : 'en'}
+      crossorigin="anonymous"
+      async
+    ></script>
+  </section>
+)}

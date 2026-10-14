@@ -1,0 +1,24 @@
+---
+/** 标签列表：链接与可选计数，链接一律使用 tagHref。 */
+import { type Lang } from '../consts';
+import { tagHref } from '../lib/url';
+
+interface Props {
+  lang: Lang;
+  tags: string[] | { tag: string; count: number }[];
+}
+const { lang, tags } = Astro.props;
+---
+<ul class="tag-list" style="list-style:none;display:flex;flex-wrap:wrap;gap:0.5em;margin:0;padding:0">
+  {tags.map((item) => {
+    const tag = typeof item === 'string' ? item : item.tag;
+    const count = typeof item === 'string' ? undefined : item.count;
+    return (
+      <li>
+        <a class="tag" href={tagHref(lang, tag)}>
+          {tag}{count !== undefined && <span aria-label={`${count}`}> ×{count}</span>}
+        </a>
+      </li>
+    );
+  })}
+</ul>

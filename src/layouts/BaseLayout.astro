@@ -1,0 +1,45 @@
+---
+/** 页面骨架：引入全局 CSS，集中 BaseHead 与主题初始化脚本。 */
+import '../styles/tokens.css';
+import '../styles/global.css';
+import '../styles/world.css';
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import NoteRain from '../components/NoteRain.astro';
+import type { Lang } from '../consts';
+
+interface Props {
+  title: string;
+  description: string;
+  lang: Lang;
+  ogType?: 'website' | 'article';
+  ogImage?: string;
+  /** 另一语言对应页（已含 base）；同时传给 BaseHead 的 hreflang 与 Header 的语言按钮 */
+  alternate?: string;
+}
+const { title, description, lang, ogType, ogImage, alternate } = Astro.props;
+---
+<html lang={lang === 'zh' ? 'zh-CN' : 'en'}>
+  <head>
+    <BaseHead title={title} description={description} lang={lang} ogType={ogType} ogImage={ogImage} alternate={alternate} />
+    <script is:inline>
+      (() => {
+        let saved;
+        try { saved = localStorage.getItem('theme'); } catch {}
+        document.documentElement.dataset.theme = saved === 'light' || saved === 'dark'
+          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="bg-orbs" aria-hidden="true"></div>
+    <NoteRain />
+    <div class="scanlines" aria-hidden="true"></div>
+    <Header lang={lang} alternateUrl={alternate} />
+    <main class="wrap">
+      <slot />
+    </main>
+    <Footer lang={lang} />
+  </body>
+</html>

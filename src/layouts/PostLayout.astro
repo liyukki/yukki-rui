@@ -1,0 +1,50 @@
+---
+/**
+ * 文章页布局：标题、日期、可选更新日期、标签、正文 slot 与（可选）评论。
+ * 语言切换只在确有真实译文时指向译文页，否则 Header 回目标语言首页。
+ */
+import Comments from '../components/Comments.astro';
+import TagList from '../components/TagList.astro';
+import { UI } from '../consts';
+import type { Post } from '../lib/posts';
+import { postHref } from '../lib/url';
+import BaseLayout from './BaseLayout.astro';
+
+interface Props {
+  post: Post;
+  translations?: Post;
+}
+const { post, translations } = Astro.props;
+const lang = post.data.lang;
+const alternate = translations
+  ? postHref(translations.data.lang, translations.id)
+  : undefined;
+const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', { dateStyle: 'long' });
+---
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  lang={lang}
+  ogType="article"
+  alternate={alternate}
+>
+  <article class="prose rise">
+    <header>
+      <h1>{post.data.title}</h1>
+      <p class="post-meta">
+        <time datetime={post.data.pubDate.toISOString()}>{dateFmt.format(post.data.pubDate)}</time>
+        {post.data.updatedDate && (
+          <>
+            {' · '}{UI[lang].updatedAt}{' '}
+            <time datetime={post.data.updatedDate.toISOString()}>{dateFmt.format(post.data.updatedDate)}</time>
+          </>
+        )}
+      </p>
+      <TagList lang={lang} tags={post.data.tags} />
+    </header>
+    <div class="post-body">
+      <slot />
+    </div>
+    <Comments lang={lang} />
+  </article>
+</BaseLayout>

@@ -10,7 +10,7 @@ describe('joinBase', () => {
     expect(joinBase('/', 'zh/')).toBe('/zh/');
   });
 
-  it('子路径 base 下正确拼接（BASE_URL 实测没有结尾斜杠）', () => {
+  it('子路径 base 不带结尾斜杠时正确拼接', () => {
     expect(joinBase('/yukki-rui', 'zh/')).toBe('/yukki-rui/zh/');
   });
 

@@ -8,13 +8,17 @@
   },
   "scripts": {
     "dev": "astro dev",
+    "cms": "decap-server",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
     "test": "vitest run",
     "check:links": "node scripts/check-links.mjs",
     "check:base": "node scripts/check-base-parity.mjs",
-    "verify": "npm run check && npm test && node scripts/check-base-parity.mjs"
+    "check:content": "node scripts/check-content.mjs",
+    "check:frontend": "node scripts/check-frontend.mjs",
+    "verify": "npm run check && npm test && npm run check:base && npm run check:content",
+    "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:frontend"
   },
   "dependencies": {
     "@astrojs/mdx": "^8.0.3",
@@ -24,6 +28,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "decap-server": "^3.11.4",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"
   }

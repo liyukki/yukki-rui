@@ -3,11 +3,11 @@
  *
  * 为什么必须用它：`import.meta.env.BASE_URL` 的值在两种部署下分别是
  *   Cloudflare Pages → "/"
- *   GitHub Pages     → "/yukki-rui"      ← 注意：没有结尾斜杠
- * 实测直接拼接会得到 "/yukki-ruizh/"，线上必然 404。
+ *   GitHub Pages     → "/yukki-rui/"（助手也兼容不带尾斜杠的配置）
  *
  * 本文件把两种 base 的差异收敛在一处，其余代码只写相对路径。
  */
+import { SITE } from '../consts';
 
 /**
  * 纯字符串逻辑，base 通过参数注入 —— 因此可以被单元测试覆盖。
@@ -38,5 +38,10 @@ export function postHref(lang: 'zh' | 'en', id: string): string {
 
 /** 标签页链接：tagHref('zh', '随笔') -> '/zh/tags/随笔/' */
 export function tagHref(lang: 'zh' | 'en', tag: string): string {
-  return withBase(`${lang}/tags/${tag}/`);
+  return withBase(`${lang}/tags/${encodeURIComponent(tag)}/`);
+}
+
+/** path 已经包含 base，例如 Astro.url.pathname 或 postHref()；不要再次 withBase。 */
+export function absoluteHref(path: string, site: string = SITE.url): string {
+  return new URL(path, site).href;
 }

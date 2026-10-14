@@ -18,9 +18,10 @@ describe('extractRefs', () => {
     expect(extractRefs(html)).toEqual(['/og-default.png', '/a.js']);
   });
 
-  it('只认双引号属性（Astro 产物统一是双引号）', () => {
+  it('也检查单引号属性与相对链接', () => {
     const html = "<a href='/zh/'>单引号</a>";
-    expect(extractRefs(html)).toEqual([]);
+    expect(extractRefs(html)).toEqual(['/zh/']);
+    expect(extractRefs('<a href="../about/">关于</a>')).toEqual(['../about/']);
   });
 });
 
@@ -57,20 +58,39 @@ describe('resolveRef', () => {
   });
 });
 
-/**
- * 重要限制：本检查器**无法**发现「内链漏写 base 前缀」这类 bug。
- *
- * 原因：dist 里同时存在 index.html 和 zh/index.html，而检查器会把
- * 引用的 base 前缀剥掉（或不剥）后直接在磁盘上找文件 —— 两种写法都能找到。
- *
- * 因此抓这类 bug 只能靠「双 base 并行构建 + 产物 diff」：
- * 见 scripts/check-base-parity.mjs。
- */
-describe('已知限制的显式记录', () => {
+describe('部署路径与实际页面引用', () => {
   const existing = ['zh/index.html'];
   const fileExists = (p: string) => existing.includes(p);
 
-  it('漏写 base 的链接在子路径部署下也会被判为 ok（所以需要 base-parity 检查）', () => {
-    expect(resolveRef('/zh/', '/yukki-rui', fileExists)).toBe('ok');
+  it('目标文件存在也必须拒绝漏写部署前缀的链接', () => {
+    expect(resolveRef('/zh/', '/yukki-rui', fileExists)).toBe('missing');
+  });
+
+  it('前缀必须在完整路径段边界匹配', () => {
+    expect(resolveRef('/yukki-ruizh/', '/yukki-rui', fileExists)).toBe('missing');
+  });
+
+  it('根据引用所在页面解析相对路径', () => {
+    expect(resolveRef('../../', '/yukki-rui', fileExists, 'zh/posts/hello/index.html')).toBe('ok');
+    expect(resolveRef('../missing/', '/yukki-rui', fileExists, 'zh/index.html')).toBe('missing');
+  });
+
+  it('去掉查询参数和锚点后检查目标文件', () => {
+    expect(resolveRef('/yukki-rui/zh/?view=list#top', '/yukki-rui', fileExists)).toBe('ok');
+  });
+
+  it('中文路径先解码再对应磁盘文件', () => {
+    expect(resolveRef('/yukki-rui/zh/tags/%E9%9A%8F%E7%AC%94/', '/yukki-rui', p => p === 'zh/tags/随笔/index.html')).toBe('ok');
+  });
+
+  it('同站绝对链接也检查部署前缀和目标文件', () => {
+    const site = 'https://owner.github.io/yukki-rui/';
+    expect(resolveRef('https://owner.github.io/zh/', '/yukki-rui', fileExists, 'index.html', site)).toBe('missing');
+    expect(resolveRef('https://owner.github.io/yukki-rui/zh/', '/yukki-rui', fileExists, 'index.html', site)).toBe('ok');
+    expect(resolveRef('https://other.test/zh/', '/yukki-rui', fileExists, 'index.html', site)).toBe('external');
+  });
+
+  it('非法百分号编码作为坏链接报告而不崩溃', () => {
+    expect(resolveRef('/yukki-rui/%broken/', '/yukki-rui', fileExists)).toBe('missing');
   });
 });

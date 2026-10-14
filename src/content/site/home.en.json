@@ -1,0 +1,35 @@
+{
+  "lang": "en",
+  "hero": {
+    "intro": "A little code. A little story.",
+    "sub": "Saving everyday inspiration in a pixel world, one small universe at a time.",
+    "note": "Kagamine Twins, pixels, and a place to write things down."
+  },
+  "heroImage": {
+    "src": "",
+    "width": 320,
+    "height": 320
+  },
+  "contact": {
+    "text": "QQ 3378722110\nWeChat ljj18277151160\nMore once we get to know each other.",
+    "links": [
+      {
+        "label": "x",
+        "url": "https://x.com/7yukkito"
+      }
+    ]
+  },
+  "work": {
+    "title": "About me",
+    "text": "I really love anime and music.",
+    "linkLabel": "",
+    "linkUrl": "",
+    "status": "LIVE"
+  },
+  "about": {
+    "subtitle": "Every entry is a new save point.",
+    "heading": "This pixel corner",
+    "body": "This is the bilingual yukki-rui blog, a home for writing and site updates. Start exploring through posts or tags.",
+    "pending": "A stressed-out second-year student. You like me = I like you."
+  }
+}

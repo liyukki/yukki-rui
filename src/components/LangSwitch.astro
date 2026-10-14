@@ -1,0 +1,24 @@
+---
+/** 语言切换：有对应页时跳对应页，否则回目标语言首页；点击时记住语言偏好。 */
+import { UI, type Lang } from '../consts';
+import { langHref } from '../lib/url';
+
+interface Props {
+  lang: Lang;
+  /** 另一语言对应页路径（已含 base）；无则回目标语言首页 */
+  alternateUrl?: string;
+}
+const { lang, alternateUrl } = Astro.props;
+const target = alternateUrl ?? langHref(lang === 'zh' ? 'en' : 'zh');
+---
+<a class="icon-btn" href={target} hreflang={lang === 'zh' ? 'en' : 'zh-CN'} aria-label={UI[lang].languageSwitch} data-lang-target={lang === 'zh' ? 'en' : 'zh'}>
+  {UI[lang].languageSwitch}
+</a>
+<script is:inline>
+  (() => {
+    const link = document.querySelector('a[data-lang-target]');
+    link?.addEventListener('click', () => {
+      try { localStorage.setItem('lang', link.dataset.langTarget); } catch {}
+    });
+  })();
+</script>

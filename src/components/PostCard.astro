@@ -1,0 +1,21 @@
+---
+/** 文章卡片：标题、日期、摘要、标签。 */
+import { UI } from '../consts';
+import type { Post } from '../lib/posts';
+import { postHref } from '../lib/url';
+import TagList from './TagList.astro';
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const lang = post.data.lang;
+const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', { dateStyle: 'medium' });
+---
+<article class="card post-card">
+  <time datetime={post.data.pubDate.toISOString()}>{dateFmt.format(post.data.pubDate)}</time>
+  <h3><a href={postHref(lang, post.id)}>{post.data.title}</a></h3>
+  <p>{post.data.description}</p>
+  <TagList lang={lang} tags={post.data.tags} />
+  <a href={postHref(lang, post.id)} aria-label={`${UI[lang].readMore}: ${post.data.title}`}>{UI[lang].readMore} →</a>
+</article>

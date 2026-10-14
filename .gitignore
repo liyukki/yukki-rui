@@ -5,3 +5,10 @@ dist/
 *.log
 .env
 .env.production
+.tmp-base-check-*/
+.tmp-content-check-*/
+
+# 一次性素材包（已提取出 public/pixel/，不入库）
+pixel-platformer.zip
+# 无头工具产物，与项目无关
+.video_agent/
