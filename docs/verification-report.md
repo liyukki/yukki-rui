@@ -115,10 +115,30 @@ GPT 中断前实际已完成全部展示层工作（组件、布局、页面、�
 
 因此 `scripts/check-cms-oauth.mjs` 的等价链路是：测试服务照常调用真实函数并断言它产出的授权 URL，再由测试服务等价模拟「GitHub 接受授权后带 code 回跳」那一跳；令牌端点用 Node 层替身。函数自己负责的两段（生成授权地址、处理回调）都是真跑的。
 
+### 真实 Workers 运行时预演（workerd，2026-10-14）
+
+`npm run dev` 跑的是 Astro，不是 Cloudflare 的运行时，所以再用 `npx wrangler pages dev dist`（wrangler 4.151.0）把 `functions/` 真正编译进 workerd 跑一遍：
+
+| 检查 | 实际结果 |
+|---|---|
+| 函数编译与绑定 | `✨ Compiled Worker successfully`，`env.GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` 注入可见 |
+| `GET /zh/` | 200 |
+| `GET /admin/` | 200（`/admin/index.html` 被 Cloudflare 308 到干净地址） |
+| `GET /api/auth?provider=github&...` | 302 → `https://github.com/login/oauth/authorize`，`client_id` / `redirect_uri` / `scope=repo` 正确 |
+| `GET /api/callback` | 400 + 中文提示 |
+| `GET /api/callback?error=access_denied&...` | 200，回传 error 消息 |
+| `GET /api/callback?code=bogus` | 502，且确实向 GitHub 发出了真实请求（测试用 client_id 不存在，GitHub 回 `Not Found`，符合预期） |
+| `GET /rss.xml` | 链接含 `yukki-rui.pages.dev` |
+| `GET /robots.txt` | `Disallow: /admin/` |
+
+另外 `npm ci --dry-run` 退出码 0，确认 `package-lock.json` 与 `package.json` 一致——Cloudflare 构建的第一步就是 `npm ci`。
+
 ### 仍未完成
 
-Cloudflare Pages 项目与 GitHub OAuth App 需要站长本人账号，线上后台登录与线上实测待站长完成注册后继续；`https://yukki-rui.pages.dev` 目前仍无 DNS 记录。
+Cloudflare Pages 项目与 GitHub OAuth App 需要站长本人账号：站长已在 Edge 里完成 Cloudflare 注册，项目尚未创建（`yukki-rui.pages.dev` 仍为 NXDOMAIN），线上后台登录与线上实测待继续。
+
+> 本机开着代理时 DNS 是 fake-IP（`*.pages.dev` 会解析成 `198.18.x.x`），外部验证要走公共 DoH 取真实 IP 再直连，别被本机解析结果误导。
 
 ### 顺带堵掉的一个坑
 
-`public/admin/index.html` 现在会读 `config.yml` 的 `base_url` 自查：如果当前域名不是登录域名（例如从 GitHub Pages 那份部署打开 `/admin/`），页面底部直接弹出提示条说明「登录只在 <正确地址>/admin/ 有效」。本机预览（`localhost`/`127.0.0.1`）跳过该检查，因为本地走的是 `local_backend`，不需要登录。两条断言都进了 `check:cms-oauth`。
+`public/admin/index.html` 现在会读 `config.yml` 的 `base_url` 自查：如果当前域名不是登录域名（例如从 GitHub Pages 那份部署打开 `/admin/`），页面底部直接弹出提示条说明「登录只在 <正确地址>/admin/ 有效」。本机预览（`localhost`/`127.0.0.1`）跳过该检查，因为本地走的是 `local_backend`，不需要登录。两条断言都进了 `check:cms-oauth`，并已在线上 GitHub Pages 实测生效。
