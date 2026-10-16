@@ -339,10 +339,11 @@ GitHub 每次推送都会自动跑检查，缺关键页面时会**拒绝发布**
 | `npm run build` | 构建到 `dist/`（发布前的最终产物）|
 | `npm run preview` | 预览已构建的 `dist/` |
 | **`npm run verify:frontend`** | **发布前完整检查，全绿再推** |
-| `npm run cms` | 后台的本地文件桥（配合 `npm run dev` 用，见第 10 节）|
+| `npm run cms` | 旧后台（Decap）的本地文件桥，只在回滚时用；现在的后台本地编辑改成「使用本地仓库」，不需要它（第 10.1 节）|
 | `npm run check:links` | 只查死链（需先 build）|
 | `npm run check:base` | 只查两种部署路径 |
-| `npm run check:cms-oauth` | 可选：用真实 Decap 客户端在本地跑一遍后台登录握手（需先 `npm i -D playwright`，不参与发布检查）|
+| `npm run check:cms-config` | 可选：用真实浏览器加载 `public/admin/config.yml`，确认后台配置没有错误（需先 `npm i -D playwright`，不参与发布检查）|
+| `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需先 `npm i -D playwright`，不参与发布检查）|
 
 ---
 
@@ -380,33 +381,31 @@ Remove-Item Env:\SITE_URL
 
 ---
 
-## 10. 网页后台：不碰代码改内容（Decap CMS）
+## 10. 网页后台：不碰代码改内容（Sveltia CMS）
 
-站点现在自带一个浏览器后台，能编辑**所有文章**和**个人资料**（首页文案、联系方式、第二件作品、关于页自我介绍），不用开编辑器、不用记 frontmatter 格式。
+站点自带一个浏览器后台，能编辑**所有文章**和**个人资料**（首页文案、联系方式、第二件作品、关于页自我介绍），不用开编辑器、不用记 frontmatter 格式。
 
-### 10.1 本地用（现在就能用，不用登录）
+> 后台程序是 **Sveltia CMS**（`public/admin/index.html` 里加载的脚本）。它和之前的 Decap CMS 读同一份 `config.yml`，也继续用同一个 GitHub OAuth App；回滚只要把那个脚本地址换回 Decap 即可（配置不用动）。
 
-开**两个终端**：
+### 10.1 本地用（不登录，直接改本地文件）
 
 ```bash
-# 终端 1：站点
 npm run dev
-
-# 终端 2：后台的本地文件桥（把浏览器里的保存写回你电脑上的文件）
-npm run cms
 ```
 
-然后浏览器打开 **`http://localhost:4321/admin/index.html`**。
+然后用 **Chromium 系浏览器**（Edge / Chrome；Firefox、Safari 不行，需要 File System Access API）打开
+**`http://localhost:4321/admin/index.html`**，点 **「使用本地仓库」**，在弹出的对话框里选中项目根目录
+`E:\deepseek\yukki-rui`。之后保存会**直接写进你电脑上的 `src/content/` 文件**，dev 服务器自动刷新，
+你立刻能在 `http://localhost:4321/zh/` 看到效果（不需要 `npm run cms`，Sveltia 不支持 decap-server）。
 
 > 注意两点：
 > - 本地 dev 模式下 `/admin/`（短地址）会 404，这是 Astro 开发服务器对 public 目录的已知怪癖；用带 `index.html` 的完整地址。线上部署没这个问题。
-> - 点进去后不用登录，直接能看到「文章」和「个人资料」两个集合。
-
-**改完会发生什么**：`npm run cms`（decap-server）把改动直接写回 `src/content/` 下的文件，dev 服务器自动刷新，你立刻能在 `http://localhost:4321/zh/` 看到效果。确认满意后照常 `git add` + `commit` + `push` 发布。
+> - 后台必须放在 `public/admin/index.html` 这种静态文件里，不要做成 `src/pages/admin.astro`——由框架渲染的页面会让 CMS 加载失败。
+> - 想让本地保存也直接提交到 git，可在浏览器里授权后进 Settings → Developer 打开「Commit Changes to Git」（需要先 `git config --local user.name/user.email`）。不打开也行，改完照常自己 `git add` + `commit` + `push`。
 
 ### 10.2 线上用（任何设备打开网页就能改）
 
-**地址：<https://yukki-rui.pages.dev/admin/>** —— 用你的 GitHub 账号（`liyukki`）登录，保存时 CMS 直接往仓库提交 commit，两个平台自动重新部署，几分钟后生效。手机浏览器同样可用。
+**地址：<https://yukki-rui.pages.dev/admin/>** —— 用你的 GitHub 账号（`liyukki`）登录（按钮写的是**「使用 GitHub 登录」**），保存时 CMS 直接往仓库提交 commit，两个平台自动重新部署，几分钟后生效。手机浏览器同样可用。
 
 一次性配置**已经做完了**（记录在此，换域名或换平台时照做）：
 
@@ -420,11 +419,11 @@ npm run cms
    - `GITHUB_CLIENT_ID`（类型 Text）
    - `GITHUB_CLIENT_SECRET`（类型 **Secret**）
    - 改完必须重新部署一次（Deployments → 最新部署 → Manage deployment → **Retry deployment**）才会生效。
-5. 打开 `https://yukki-rui.pages.dev/admin/` → **Login with GitHub** → 授权 → 开始编辑。
+5. 打开 `https://yukki-rui.pages.dev/admin/` → **使用 GitHub 登录** → 授权 → 开始编辑。
 
 **为什么只有 Cloudflare 地址能登录**：换登录令牌需要服务端代码（`functions/api/` 里的两个 Cloudflare Function），GitHub Pages 是纯静态托管跑不了函数。所以**后台固定从 Cloudflare 地址进**；GitHub Pages 那份部署只展示内容。保存的内容两边都会更新（改的是同一个仓库）。
 
-> 从别的地址（例如 `liyukki.github.io/yukki-rui/admin/`）打开后台时，页面底部会自动出现一条提示，告诉你正确地址——因为那种情况下登录按钮点了不会有反应。本机预览不会出现这条提示（本地走 `local_backend`，不需要登录）。
+> 从别的地址（例如 `liyukki.github.io/yukki-rui/admin/`）打开后台时，页面底部会自动出现一条提示，告诉你正确地址——因为那种情况下登录按钮点了不会有反应。本机预览不会出现这条提示（本地用「使用本地仓库」，不需要登录）。
 
 > 登录令牌的有效期：创建 OAuth App 时**没有**勾选「Expire user access tokens」，所以登录一次可以长期使用，不用反复登录。想更保守可以去 GitHub 那个 App 的设置里勾上（代价是每 8 小时要重新登录一次）。
 
@@ -436,36 +435,42 @@ npm run cms
 | 个人资料 → 中文资料 | 首页一句话介绍/副文案/页尾签名、**形象照片**、联系方式文字+链接列表、第二件作品（标题/介绍/链接/状态）、关于页自我介绍 | `/zh/` 各页 |
 | 个人资料 → English Profile | 同上，英文版 | `/en/` 各页 |
 
-#### 怎么上传照片（两种，都是实测过的流程）
+#### 怎么写正文（工具栏）
 
-> **拖拽不可用时**：有些内置浏览器不支持把系统文件拖进网页，这时用媒体库弹窗右下角的
-> **「📁 选择本地图片」浮动按钮**——它出现在任何图片上传弹窗打开时，点击直接打开系统
-> 文件选择框，之后流程和点 **Upload** 完全一样。（点弹窗里的 **Upload** 按钮本身也能
-> 打开文件选择框，两者等效。）
+正文编辑器是所见即所得，右栏是实时预览（想放大预览点中间分隔条上的**交换面板**图标，左右对调）。工具栏从左到右：
+段落样式（显示「段落」的那个下拉）、**加粗**、*斜体*、~~删除线~~、`代码`、链接、图片、**以 Markdown 编辑**。
+
+- **代码块**：打开样式下拉 → 选 **代码块** → 右上角选语言（默认「纯文本」）。写完把光标移到块外，样式下拉会变回「段落」，继续写正文即可。旧后台（Decap）那种「代码块在文末时后面打不了字」的坑在 Sveltia 里不存在。
+- **表格**：工具栏没有表格按钮。用 **以 Markdown 编辑** 切到源码模式，手写或粘贴 Markdown 表格，再点一次切回富文本看效果。
+- **标题 / 列表 / 引用块**：同一个样式下拉里选。
+- **字段提示**：每个字段下面那行小字就是填写说明（草稿开关、中英配对 Key、更新日期等）。
+
+#### 怎么上传照片（实测流程）
 
 **形象照**（首页 + 关于页）：
-1. 个人资料 → 中文资料 → 「形象照片」区块 → 点 **Choose an image**
-2. 弹窗里点右下角 **📁 选择本地图片**（或弹窗里的 **Upload**）选图
-3. 上传完点中缩略图 → 点 **Choose selected**
-4. 右上角 **Publish → Publish now**
+1. 个人资料 → 中文资料 → 「形象照片」区块 → 点照片字段的 **选择图片**
+2. 对话框里把图片**拖进去**，或点 **浏览** 选文件，也可以直接**粘贴**剪贴板里的截图
+3. 需要的话填「替代文本」，确认上传
+4. 右上角 **保存**（= 提交到仓库）
 
 图片存到 `public/uploads/`；「照片实际像素宽/高」填图片真实尺寸（不确定就 320）。
 
 **文章插图**：
 1. 打开一篇文章，光标点到正文里想插图的位置
-2. 正文工具栏点 **Add Component** → 选 **Image** → 点 **Choose an image**
-3. 弹窗里点 **📁 选择本地图片**（或 **Upload**）上传，点中缩略图 → **Choose selected**
-4. **Publish → Publish now**
+2. 正文工具栏点**图片**按钮 → 拖入 / 浏览 / 粘贴 → 确认
+3. 右上角 **保存**
 
-图片存到 `src/content/posts/images/`，正文自动插入相对路径（`images/文件名`）。实测两种部署路径都正确：构建时 Astro 会自动优化图片并配好前缀。
+图片存到 `src/content/posts/images/`，正文自动插入相对路径（`./images/文件名`）。实测两种部署路径都正确：构建时 Astro 会自动优化图片并配好前缀。
 
 几个要点：
 
-- **草稿**：编辑文章时勾选「草稿」，保存后本地能看到、正式构建自动排除——和第 2.4 节是同一个开关。
-- **中英配对**：两篇文章的「中英配对 Key」填同一个值才会互指，规则同第 3.1 节。
+- **保存与发布**：这个站用的是「保存即发布」——`保存` 就是把改动提交到仓库，平台随后自动重建（几分钟）。想先存着不发布，把「草稿」开关打开再保存。
+- **草稿**：编辑文章时打开「草稿」开关，保存后本地能看到、正式构建自动排除——和第 2.4 节是同一个开关。
+- **中英配对**：两篇文章的「中英配对 Key」填同一个值才会互指，规则同第 3.1 节。中英是两个文件，改完一边记得改另一边。
 - **字段留空 = 用默认文案**：个人资料里任何字段清空，页面会回落到代码里写的默认文案，不会开天窗。
 - **联系方式链接**：链接列表填了就显示成可点击链接（`https://` 或 `mailto:` 开头），空列表则保持"待补充"占位。
 - **形象照自动同步**：传一次，中英两边页面都显示（本语言优先，没有就借用另一语言的）。想分语言各用一张，在对应语言的资料里各传一张即可。
+- **手机上也能改**：后台在手机宽度下正常显示并保存（字段单列、提示文字保留），但没有键盘快捷键，长文建议还是电脑上写。
 - **后台管不到的地方**：站点名称（`src/consts.ts` 的 `SITE`）和评论开关（`COMMENTS`）仍是代码配置；形象照的代码兜底入口是 `HERO_IMAGE`（见 4.1）。
 
 ### 10.4 安全边界（CMS 改不坏站）
@@ -478,8 +483,14 @@ CMS 保存的数据要经过三道关：
 
 ### 10.5 常见问题
 
-**问：本地后台点了没反应 / 提示 Failed to load entries？**
-`npm run cms` 没起。它必须和 `npm run dev` 同时跑着。
+**问：本地后台点了「使用本地仓库」没反应 / 报错？**
+Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打开；地址要用完整的 `http://localhost:4321/admin/index.html`（短地址 `/admin/` 在 dev 下会 404）。回滚到旧后台（Decap）时才需要 `npm run cms` 那条命令。
+
+**问：代码块写完，光标怎么继续往下写？**
+把光标移出代码块（点代码块下方、或按方向键离开），样式下拉会变回「段落」。若仍卡在块里，点工具栏的**以 Markdown 编辑**切到源码模式，在围栏（```）后面另起一段即可。
+
+**问：想插表格？**
+工具栏没有表格按钮，用**以 Markdown 编辑**手写/粘贴 Markdown 表格，再切回富文本。
 
 **问：线上登录弹窗报 `GITHUB_CLIENT_ID 未配置`？**
 第 10.2 节第 4 步的环境变量没配或没重新部署。
@@ -487,11 +498,14 @@ CMS 保存的数据要经过三道关：
 **问：线上登录后提示仓库不存在？**
 `config.yml` 里的 `repo` 没改成你的真实仓库，或 OAuth App 授权的账号没有这个仓库的写权限。
 
-**问：线上点了「Login with GitHub」没反应（弹窗闪一下就没了）？**
+**问：线上点了「使用 GitHub 登录」没反应（弹窗闪一下就没了）？**
 先看地址栏：登录只在 Cloudflare 地址有效，从 GitHub Pages 那份 `/admin/` 进会没反应——页面底部会有提示条写出正确地址。地址对的话，再确认 Cloudflare 环境变量 `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` 配好并重新部署过（见 10.2 第 4 步）。
 
+**问：改完配置后后台打不开，只显示「CMS 配置中存在错误」？**
+新后台对配置更严格：`media_folder` / `public_folder` 必须是以 `/` 开头的绝对路径，file collection 的 `name` 不能带点号。改完可以跑 `npm run check:cms-config`（需先装 playwright）确认没有配置错误。
+
 **问：在后台改了内容，前台没变？**
-本地模式：确认 `npm run cms` 终端没报错，文件确实被改了（`git status` 能看到）。线上模式：保存 = 提交 commit，等平台重新部署完（GitHub Actions / Cloudflare 部署记录可查），通常几分钟。
+本地模式：确认文件确实被改了（`git status` 能看到），dev 服务器会自动刷新。线上模式：保存 = 提交 commit，等平台重新部署完（GitHub Actions / Cloudflare 部署记录可查），通常几分钟。
 
 ---
 

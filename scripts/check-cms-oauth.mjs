@@ -2,10 +2,10 @@
  * 可选的登录链路自检（不属于 CI，也不在 verify:frontend 里）。
  *
  * 为什么需要它：/api/auth 与 /api/callback 只有在真实浏览器里、由真实的
- * Decap 客户端（/admin 页面 window.open + postMessage 握手）调用才算验证过。
+ * Sveltia CMS 客户端（/admin 页面 window.open + postMessage 握手）调用才算验证过。
  * 这个脚本把两个函数跑在本地 HTTP 服务上，用 Playwright 打开真实的后台页面，
  * 把 github.com 的授权页与令牌端点用拦截模拟掉，最后断言令牌真的进了后台的
- * localStorage（decap-cms-user）。
+ * localStorage（sveltia-cms.user）且后台带着它去调了 GitHub API。
  *
  * 依赖：playwright（不在 package.json 里；需要时 npm i -D playwright 并准备浏览器内核）。
  * 用法：node scripts/check-cms-oauth.mjs
@@ -140,10 +140,15 @@ if (DEBUG) {
     return route.fallback();
   });
 }
-// 登录后 Decap 会去读用户、仓库与文件树；给最小可用响应，让后台能走到「已登录」界面。
+// 登录后 Sveltia 会去读用户、仓库与文件树；给最小可用响应，让后台能走到「已登录」界面。
 // 这里不是要复刻 GitHub API，只是把登录后的加载路径垫平，避免与登录无关的报错混进来。
+// 顺带记录每次请求带的 Authorization 头 —— 「后台拿着令牌调用了 API」是「令牌被接受」
+// 最硬的证据，比截图或界面文案都可靠。
+const usedTokens = [];
 await context.route('https://api.github.com/**', (route) => {
   const { pathname } = new URL(route.request().url());
+  const authorization = route.request().headers().authorization ?? '';
+  if (authorization) usedTokens.push({ pathname, authorization });
   const repo = {
     id: 1,
     name: 'yukki-rui',
@@ -186,10 +191,10 @@ if (DEBUG) {
 
 try {
   await page.goto(`${ORIGIN}/admin/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  // 后台是 CDN 加载的 Decap，等登录按钮出现（中文界面下按钮文案里含 GitHub）。
-  const loginButton = page.locator('button', { hasText: /GitHub/i }).first();
+  // 后台是 CDN 加载的 Sveltia，等登录按钮出现（中文界面下按钮文案是「使用 GitHub 登录」）。
+  const loginButton = page.getByRole('button', { name: /GitHub/ }).first();
   await loginButton.waitFor({ state: 'visible', timeout: 60000 });
-  check('后台加载出「用 GitHub 登录」按钮', true);
+  check('后台加载出「使用 GitHub 登录」按钮', true);
 
   const [popup] = await Promise.all([
     page.waitForEvent('popup', { timeout: 30000 }),
@@ -217,7 +222,7 @@ try {
     String(authRedirect).slice(0, 120),
   );
   check(
-    '授权页参数与 Decap 约定一致（client_id / redirect_uri / scope）',
+    '授权页参数与后台约定一致（client_id / redirect_uri / scope）',
     authorize?.searchParams.get('client_id') === ENV.GITHUB_CLIENT_ID &&
       authorize?.searchParams.get('redirect_uri') === `${ORIGIN}/api/callback` &&
       authorize?.searchParams.get('scope') === 'repo',
@@ -229,26 +234,34 @@ try {
 
   let stored = null;
   for (let i = 0; i < 30; i += 1) {
-    stored = await page.evaluate(() => window.localStorage.getItem('decap-cms-user'));
+    stored = await page.evaluate(() => window.localStorage.getItem('sveltia-cms.user'));
     if (stored && stored.includes(TOKEN)) break;
     await page.waitForTimeout(1000);
   }
   handshakeDone = true;
 
   check('令牌经 /api/auth → GitHub → /api/callback 回到后台', Boolean(stored && stored.includes(TOKEN)),
-    stored ? stored.slice(0, 120) : 'localStorage 里没有 decap-cms-user');
+    stored ? stored.slice(0, 140) : 'localStorage 里没有 sveltia-cms.user');
 
   const parsed = stored ? JSON.parse(stored) : {};
   check('后台保存的正是 access_token 字段', parsed.token === TOKEN, String(parsed.token));
   check('后台收到令牌后关掉了授权弹窗（说明握手被接受）', popup.isClosed(), popup.isClosed() ? '' : '弹窗仍开着');
 
-  // 登录态真的被后台接受：左侧应出现「文章」集合入口。
-  const collection = page.locator('a[href="#/collections/posts"]').first();
-  const collectionVisible = await collection
-    .waitFor({ state: 'visible', timeout: 15000 })
-    .then(() => true)
-    .catch(() => false);
-  check('后台进入已登录界面并列出「文章」集合', collectionVisible);
+  // 令牌被真正的客户端接受：它会带着令牌去调 GitHub API 取自己的账号信息。
+  // 注意 Sveltia 用的是 GitHub 的 `token <...>` 方案（不是 Bearer），这里只认「头里含令牌」。
+  let used = null;
+  for (let i = 0; i < 20 && !used; i += 1) {
+    used = usedTokens.find((r) => r.authorization.includes(TOKEN)) ?? null;
+    if (!used) await page.waitForTimeout(500);
+  }
+  check(
+    '后台带着令牌调用 GitHub API（令牌确实生效）',
+    Boolean(used),
+    used
+      ? `${used.pathname} — ${used.authorization.replace(TOKEN, '<令牌>')}`
+      : `未观察到带令牌的请求：${usedTokens.map((r) => r.pathname).join(', ').slice(0, 120)}`,
+  );
+  check('后台读到了账号资料（用令牌换回了用户名）', parsed.login === 'e2e-user' && Boolean(parsed.name), JSON.stringify(parsed).slice(0, 140));
 
   // 登录域名下不该出现「地址不对」的提示条。
   check('登录域名下不显示地址提示条', (await page.locator('#admin-origin-notice').count()) === 0);

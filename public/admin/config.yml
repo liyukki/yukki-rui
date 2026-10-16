@@ -1,5 +1,10 @@
-# Decap CMS 配置。改这里的字段前先想清楚：字段名与 src/content.config.ts
-# 的 schema 一一对应，CMS 写出的数据过不了 schema 校验会让整站构建失败。
+# 后台配置（Sveltia CMS 读取；它同时兼容 Decap CMS，回滚只需改 index.html 的脚本地址）。
+# 改这里的字段前先想清楚：字段名与 src/content.config.ts 的 schema 一一对应，
+# CMS 写出的数据过不了 schema 校验会让整站构建失败。
+#
+# 与 Decap 的差异（Sveltia 更严格，以下两处是必须的）：
+#   1. media_folder / public_folder 用「绝对路径」写法（以 / 开始，相对仓库根）；
+#   2. file collection 的 name 不能含点号。
 
 backend:
   name: github
@@ -12,19 +17,23 @@ backend:
   base_url: https://yukki-rui.pages.dev
   auth_endpoint: /api/auth
 
-# 本地编辑模式：另开终端跑 npx decap-server 后，http://localhost:4321/admin 直接可用，
-# 无需登录；改动直接写回本地文件，之后照常 git push 发布。
+# 本地编辑模式：
+#   Sveltia 不用 decap-server，local_backend 这行会被忽略；本地流程是
+#   `npm run dev` 后在 Chromium 系浏览器打开 http://localhost:4321/admin/，
+#   点「使用本地仓库」选择项目根目录，直接改本地文件（见 docs/usage-guide.md）。
+#   回滚到 Decap 时这行仍然有效（另开终端跑 npx decap-server）。
 local_backend: true
 
 # 界面语言与发布开关。publish_mode 保持默认 simple：保存即提交到仓库。
 locale: zh
 
-# 顶层图片配置：Decap 要求 media_folder 与 media_library 二选一（anyOf）。
+# 顶层图片配置：后台要求 media_folder 与 media_library 二选一（anyOf）。
 # 不要配 media_library——内置库只有 uploadcare/cloudinary 两个外部服务，
 # 配一个未注册的名字会让后台直接报错。media_folder 走 git 后端上传，正是我们想要的。
-# 文章集合在下面用集合级相对路径覆盖它，这里的值只作为兜底。
-media_folder: src/content/posts/images
-public_folder: ./images
+# 文章集合在下面用集合级相对路径覆盖它，这里的值只作为兜底；
+# 但 Sveltia 会校验全局这两行必须是绝对路径，所以写法与集合级不同。
+media_folder: /src/content/posts/images
+public_folder: /images
 
 # 文章配图：文件落在 src/content/posts/images/，正文里插入 ./images/... 相对路径，
 # 与 docs/usage-guide.md 第 2.3 节的约定一致（Astro 自动优化 + 两种部署路径都安全）。
@@ -47,17 +56,17 @@ collections:
       - { label: 草稿, field: draft, pattern: true }
     fields:
       - { label: 标题, name: title, widget: string }
-      - { label: 摘要（最多 160 字）, name: description, widget: text }
+      - { label: 语言, name: lang, widget: select, options: [{ label: 中文, value: zh }, { label: English, value: en }], default: zh, hint: 同一篇文章的中英版本各存一个文件，用下面的「中英配对 Key」关联 }
+      - { label: 草稿, name: draft, widget: boolean, default: false, hint: 打开＝草稿（线上看不到）；关闭＝保存后正式发布 }
+      - { label: 摘要（最多 160 字）, name: description, widget: text, hint: 列表页与搜索结果里显示的就是这句，写具体一点 }
       - { label: 发布日期, name: pubDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', default: '{{now}}' }
-      - { label: 更新日期（可空）, name: updatedDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
-      - { label: 语言, name: lang, widget: select, options: [{ label: 中文, value: zh }, { label: English, value: en }], default: zh }
+      - { label: 更新日期（可空）, name: updatedDate, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false, hint: 改过正文可以点「今天」记一笔，留空就不显示 }
       - { label: 标签, name: tags, widget: list, required: false, default: [] }
-      - { label: 草稿, name: draft, widget: boolean, default: false }
       - label: 中英配对 Key（两个文件填同一个值；不需要译文就留空）
         name: translationKey
         widget: string
         required: false
-      - { label: 正文, name: body, widget: markdown }
+      - { label: 正文, name: body, widget: markdown, hint: 工具栏「以 Markdown 编辑」可切到源码模式；代码块用样式下拉里的「代码块」 }
 
   - name: site
     label: 个人资料
@@ -70,7 +79,7 @@ collections:
     media_folder: /public/uploads
     public_folder: /uploads
     files:
-      - name: home.zh
+      - name: home-zh
         label: 中文资料
         file: src/content/site/home.zh.json
         format: json
@@ -126,7 +135,7 @@ collections:
               - { label: 板块标题, name: heading, widget: string, required: false }
               - { label: 站点介绍, name: body, widget: text, required: false }
               - { label: 自我介绍（个人经历、兴趣、联系方式）, name: pending, widget: text, required: false }
-      - name: home.en
+      - name: home-en
         label: English Profile
         file: src/content/site/home.en.json
         format: json

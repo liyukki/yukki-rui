@@ -2,7 +2,7 @@
 
 免费托管的中英双语个人网站，文章用 Markdown 管理，Astro 7 在构建时输出静态 HTML，不需要购买服务器或域名。
 
-**当前阶段：已上线。** 两个地址都在跑，网页后台可用（浏览器登录后直接改文章和个人资料，不碰代码）。
+**当前阶段：已上线。** 两个地址都在跑，网页后台可用（浏览器登录后直接改文章和个人资料，不碰代码）。后台是 [Sveltia CMS](https://sveltiacms.app/) + 项目里的 Cloudflare Functions（`functions/api/`）换登录令牌。
 
 | 平台 | 地址 | 说明 |
 |---|---|---|
@@ -33,12 +33,21 @@ npm run dev
 | `npm run check:base` | 两种部署路径下分别构建，并检查全部真实页面与引用 |
 | `npm run check:content` | 真实构建验证 Markdown、草稿页面、草稿译文和 RSS |
 | `npm run check:frontend` | 前端必需路由、404、分享图等发布门槛 |
-| `npm run check:cms-oauth` | 可选：用真实 Decap 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
+| `npm run check:cms-config` | 可选：用真实 Sveltia 客户端加载 `public/admin/` 的真实配置，检查配置错误与登录入口（需 playwright；不参与发布检查）|
+| `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
 | `npm run verify:frontend` | 上述检查加当前构建、链接检查及前端必需路由/分享图检查 |
 | `npm run preview` | 预览已有 `dist/` |
 
 `check:base` 在系统临时目录构建，保留现有 `dist/`；`--keep` 会打印临时产物地址。`check:content` 在临时源码副本中新增测试文章，原始 src 与 dist 均不改动。本轮不把“后端检查通过”等同于“前端已完成”。
+
+两个 `check:cms-*` 脚本都要用 Playwright 启动真实浏览器；若本机 Playwright 缺少匹配的 headless shell（会报找不到 `chromium_headless_shell-*`），用环境变量指向已装好的 Chromium 或 Edge 可执行文件即可：
+
+```powershell
+$env:CMS_OAUTH_CHROME = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+npm run check:cms-config
+npm run check:cms-oauth
+```
 
 ## 写文章
 

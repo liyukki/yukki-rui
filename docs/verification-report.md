@@ -193,3 +193,55 @@ README 里「登录一次、任何设备打开网页就能改内容」的承诺�
 - 正常页面（首页、文章、标签、RSS）实测响应头是 `Cache-Control: public, max-age=0, must-revalidate`，**改完内容重新部署后立刻生效**。
 - 从来不存在的地址返回 `404` + 自制 404 页 + `Cache-Control: no-store`，行为正确。
 - 唯一例外：**删除**一篇文章后，它原来的地址可能在 Cloudflare 边缘还留着一份旧缓存（实测 `CF-Cache-Status: HIT`、`s-maxage=604800`），最长约 7 天。此时该文章已从首页、标签页、RSS 和后台列表消失，只是那个旧网址被直接打开还能看到缓存副本。删除文章后若要立刻让旧地址失效，可在后台改一下任一内容触发新部署，或等缓存过期。
+
+## 后台编辑器修复与换装 Sveltia CMS（DSH，2026-10-16）
+
+### 起因
+
+站长反馈两件事：**在后台用代码块之后，正文没法继续编辑**；后台界面交互不顺手。
+
+### 根因（已复现，属上游编辑器结构问题）
+
+Decap 的正文编辑器是 Slate，代码块是 **void 节点**（`data-slate-void="true"`、`contenteditable="false"`，内部套一个 textarea）。当代码块位于文档末尾时，它后面没有任何可放光标的文本节点：
+
+| 操作 | 实际结果 |
+|---|---|
+| 点代码块下方空白处再打字 | 焦点落在 `body`，**字符完全不落地**（文档不变） |
+| Esc 离开代码块 → 方向键 → 打字 | 字符**跑进代码块**（textarea 变成 `code();MARK-E`） |
+| 点已有段落再打字（对照组） | 正常 |
+
+附带现象：菜单打开时乱打字会触发 Slate 报错 `Error: Cannot resolve a DOM point from Slate point: {"path":[0,0],"offset":6}`。
+
+**升级 Decap 无用**：3.8.3 与 3.17.1 行为完全一致（本地试验台各跑一遍）。
+
+### 处置：换成 Sveltia CMS
+
+Sveltia 是 Decap 的 drop-in 替代（富文本编辑器换成 Lexical），官方迁移文档明确「已为 Decap 建好的 OAuth App 可继续使用，无需新建」。
+
+| 事项 | 实测结果 |
+|---|---|
+| 登录链路 | **完全兼容**：同一个 OAuth App、同一个 `functions/api/callback.js`；握手消息 `authorization:github:success:<json>` 被接受，令牌落在 `localStorage['sveltia-cms.user']`，之后带 `Authorization: token <TOKEN>` 调 GitHub API（会走 GraphQL） |
+| 配置硬差异（Sveltia 严格校验） | ① `media_folder` / `public_folder` 必须是以 `/` 开头的绝对路径；② file collection 的 `name` 不能含点号（`home.zh` → `home-zh`，`file:` 路径不变，Astro 读取不受影响） |
+| 回滚能力 | `config.yml` 仍同时兼容 Decap；回滚只需把 `index.html` 里的脚本地址换回 Decap |
+| 正文编辑器 | 字段顺序与提示按配置渲染；工具栏有段落样式下拉（段落、1–6 级标题、无序/有序列表、引用块、**代码块**）、加粗/斜体/删除线/代码/链接/图片/「以 Markdown 编辑」 |
+| 代码块后续输入 | **正常**（Decap 那个坑不复现）；换块类型或在块外点击即可继续写 |
+| 表格 | 没有表格按钮，用「以 Markdown 编辑」手写 Markdown 表格 |
+| 窄屏 | 390px 宽度下字段单列、提示保留、无横向溢出 |
+
+配置改动：全局 `media_folder: /src/content/posts/images`、`public_folder: /images`；posts 字段顺序调整为 标题→语言→草稿→摘要→发布日期→更新日期→标签→中英配对 Key→正文，并给常用字段补了中文提示。
+
+### 本轮验证记录
+
+| 命令 | 实际结果 |
+|---|---|
+| `npx astro check` | 55 文件 0 errors / 0 warnings / 0 hints |
+| `npx vitest run` | 9 个测试文件、69 项通过 |
+| `npm run check:cms-config`（新增） | 6/6：用真实 Sveltia 客户端加载 `public/admin/` 的真实配置 → 无「配置中存在错误」屏、登录入口可见、`backend`/`base_url`/`auth_endpoint` 正确、脚本地址带固定版本、无脚本异常 |
+| `npm run check:cms-oauth`（迁移后） | 13/13：真实 Sveltia 客户端 + 真实 `functions/api/*.js`；断言「令牌写进 `sveltia-cms.user`」「后台带着该令牌调用 GitHub API」「后台读到账号资料」「登录域名下无地址提示条、非登录域名下必须有」 |
+| `npm run verify:frontend` | 通过（类型、单测、双路径、内容集成、构建、链接、前端必需产物） |
+
+为避免依赖本机 Playwright 的 headless shell，两个 `check:cms-*` 脚本支持 `CMS_OAUTH_CHROME` 环境变量指定浏览器可执行文件（README 已写）。
+
+### 文档同步
+
+README（后台选型、命令表、`CMS_OAUTH_CHROME`）与使用说明第 8/10 节全部改写为 Sveltia 流程：本地编辑走「使用本地仓库」（不再需要 `npm run cms`），线上登录按钮是「使用 GitHub 登录」，保存即发布，并新增「怎么写正文（工具栏）」「怎么上传照片」与配置报错等排错条目。

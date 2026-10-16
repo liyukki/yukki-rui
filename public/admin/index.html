@@ -6,18 +6,21 @@
     <meta name="robots" content="noindex" />
     <title>站点后台 · yukki rui</title>
     <!--
-      Decap CMS 是纯浏览器端应用：这个页面只是加载它，
+      Sveltia CMS 是纯浏览器端应用：这个页面只是加载它，
       真正的编辑规则在同目录 config.yml 里。
-      本地编辑模式：另开一个终端跑 npm run cms，再访问 /admin/index.html。
+      本地编辑模式：先跑 npm run dev，再用 Chromium 系浏览器打开
+      http://localhost:4321/admin/index.html，点「使用本地仓库」选择项目根目录。
       线上编辑模式：见 docs/usage-guide.md 第 10 节（需要 GitHub OAuth）。
+      回滚到 Decap：把下面的脚本地址换成
+      https://unpkg.com/decap-cms@3.8.3/dist/decap-cms.js 即可（config.yml 两边都兼容）。
     -->
   </head>
   <body>
-    <!-- 脚本必须在 body 内：Decap 挂载时需要 document.body 已存在，
+    <!-- 脚本必须在 body 内：CMS 挂载时需要 document.body 已存在，
          放在 head 里会在 body 解析前同步执行导致挂载失败。 -->
-    <script src="https://unpkg.com/decap-cms@3.8.3/dist/decap-cms.js"></script>
-    <!-- 上传助手：媒体库弹窗打开时提供显眼的「选择本地图片」按钮，
-         解决部分内置浏览器不支持拖拽上传的问题（详见脚本内注释）。 -->
+    <script src="https://unpkg.com/@sveltia/cms@0.245.0/dist/sveltia-cms.js"></script>
+    <!-- 上传助手是给旧后台（Decap）用的：Sveltia 自带图片选择对话框，
+         这段脚本在 Sveltia 下不会命中任何元素，属于空转，保留只为回滚。 -->
     <script src="./upload-helper.js"></script>
     <!--
       登录地址提醒：换 GitHub 令牌需要服务端代码，只有 Cloudflare 那份部署有
@@ -28,8 +31,7 @@
     <script>
       (async function () {
         try {
-          // 本机预览（npm run dev + npm run cms）用的是 local_backend，不需要登录，
-          // 别在这里误报。
+          // 本机预览用的是「使用本地仓库」，不需要登录，别在这里误报。
           var host = window.location.hostname;
           if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') return;
 
