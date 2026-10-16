@@ -292,26 +292,28 @@ git push
 
 **更新文章 = 改 md 文件 → push**。不用管 `dist/` 目录，那是构建产物，已忽略。
 
-### 6.1 部署现状与首次部署（GitHub Pages 已完成）
+### 6.1 部署现状（两个平台均已上线）
 
-**当前状态（2026-10-14）**：仓库已在 https://github.com/liyukki/yukki-rui，
-GitHub Pages 已上线：**https://liyukki.github.io/yukki-rui/**（中英页面、照片、
-RSS、sitemap 全部实测正常）。
+**当前状态**：仓库在 <https://github.com/liyukki/yukki-rui>，两个平台都连着它，**推送即自动构建**：
 
-已完成的首次部署步骤：
+| 平台 | 地址 | 作用 |
+|---|---|---|
+| GitHub Pages | <https://liyukki.github.io/yukki-rui/> | 展示（纯静态，无法登录后台）|
+| Cloudflare Pages | <https://yukki-rui.pages.dev/> | 展示 + **网页后台** `/admin/` |
 
-1. ~~在 GitHub 创建公开空仓库并推送~~ ✓
+已完成的一次性配置：
+
+1. ~~在 GitHub 创建公开仓库并推送~~ ✓
 2. ~~仓库 Pages → Source 选 GitHub Actions~~ ✓
-3. Cloudflare Pages 连同一个仓库（**未做**，见 10.2 节）：构建命令填 `npm run verify:frontend`，输出目录 `dist`，环境变量按下面表格填，Node 选 24
+3. ~~Cloudflare Pages 连接仓库~~ ✓（构建命令 `npm run verify:frontend`、输出目录 `dist`、环境变量 `SITE_BASE=/`、`SITE_URL=https://yukki-rui.pages.dev/`、`NODE_VERSION=24`）
+4. ~~GitHub OAuth App + Cloudflare 环境变量 `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`~~ ✓（后台登录用，步骤见 10.2）
 
 | 平台 | `SITE_BASE` | `SITE_URL` |
 |---|---|---|
 | GitHub Pages | `/yukki-rui/` | `https://liyukki.github.io/yukki-rui/` |
-| Cloudflare Pages | `/` | `https://项目名.pages.dev/` |
+| Cloudflare Pages | `/` | `https://yukki-rui.pages.dev/` |
 
-`SITE_BASE` 和 `SITE_URL` 只在这两个平台的设置里配，**不要写进代码**——
-GitHub Pages 用仓库 Settings → Variables 里的对应值（仓库变量），或按本仓库
-`.github/workflows/deploy.yml` 里的默认推导（`/仓库名/` 与 `用户名.github.io/仓库名/`）。
+两个值**不要写进代码**：GitHub Pages 的在 `.github/workflows/deploy.yml` 里按仓库名推导，Cloudflare 的在它自己的项目设置里。
 
 ### 6.2 平台自检
 
@@ -402,27 +404,29 @@ npm run cms
 
 **改完会发生什么**：`npm run cms`（decap-server）把改动直接写回 `src/content/` 下的文件，dev 服务器自动刷新，你立刻能在 `http://localhost:4321/zh/` 看到效果。确认满意后照常 `git add` + `commit` + `push` 发布。
 
-### 10.2 线上用（任何设备打开网页就能改，需要一次性配置）
+### 10.2 线上用（任何设备打开网页就能改）
 
-线上后台 = 浏览器打开 `https://你的项目.pages.dev/admin/`，用 GitHub 账号登录，保存时 CMS 直接往仓库提交 commit，两个平台自动重新部署，几分钟后生效。
+**地址：<https://yukki-rui.pages.dev/admin/>** —— 用你的 GitHub 账号（`liyukki`）登录，保存时 CMS 直接往仓库提交 commit，两个平台自动重新部署，几分钟后生效。手机浏览器同样可用。
 
-**一次性配置（约 10 分钟，只做一次）**：
+一次性配置**已经做完了**（记录在此，换域名或换平台时照做）：
 
-1. **仓库先上 GitHub**：把代码推到 GitHub 公开仓库（后台的保存动作 = 往这个仓库 commit）。
-2. **改 `public/admin/config.yml` 两行**：把 `repo: yukki-rui/yukki-rui` 改成真实仓库 `用户名/仓库名`；把 `base_url: https://yukki-rui.pages.dev` 改成你的 Cloudflare 地址 `https://你的项目.pages.dev`。
-3. **创建 GitHub OAuth App**：GitHub → Settings → Developer settings → OAuth Apps → New：
-   - Homepage URL：`https://你的项目.pages.dev`
-   - Authorization callback URL：`https://你的项目.pages.dev/api/callback`
-   - 创建后拿到 **Client ID**，点 Generate a new client secret 拿到 **Secret**。
-4. **Cloudflare Pages 配环境变量**：项目 Settings → Environment variables，加两个（Production 和 Preview 都勾上）：
-   - `GITHUB_CLIENT_ID` = 上面的 Client ID
-   - `GITHUB_CLIENT_SECRET` = 上面的 Secret
-   - 配完后重新部署一次（Deployments → Retry）让变量生效。
-5. 打开 `https://你的项目.pages.dev/admin/`，点 **Login with GitHub**，授权后即可编辑。
+1. **仓库在 GitHub**：<https://github.com/liyukki/yukki-rui>（后台的保存动作 = 往这个仓库 commit）。
+2. **`public/admin/config.yml`**：`repo: liyukki/yukki-rui`、`base_url: https://yukki-rui.pages.dev`、`auth_endpoint: /api/auth`。
+3. **GitHub OAuth App**（Settings → Developer settings → OAuth Apps）：
+   - Homepage URL：`https://yukki-rui.pages.dev`
+   - Authorization callback URL：`https://yukki-rui.pages.dev/api/callback`
+   - 用它的 **Client ID** 和 **Client Secret** 填下一步。
+4. **Cloudflare Pages 环境变量**：项目 Settings → Variables and secrets → Production：
+   - `GITHUB_CLIENT_ID`（类型 Text）
+   - `GITHUB_CLIENT_SECRET`（类型 **Secret**）
+   - 改完必须重新部署一次（Deployments → 最新部署 → Manage deployment → **Retry deployment**）才会生效。
+5. 打开 `https://yukki-rui.pages.dev/admin/` → **Login with GitHub** → 授权 → 开始编辑。
 
 **为什么只有 Cloudflare 地址能登录**：换登录令牌需要服务端代码（`functions/api/` 里的两个 Cloudflare Function），GitHub Pages 是纯静态托管跑不了函数。所以**后台固定从 Cloudflare 地址进**；GitHub Pages 那份部署只展示内容。保存的内容两边都会更新（改的是同一个仓库）。
 
 > 从别的地址（例如 `liyukki.github.io/yukki-rui/admin/`）打开后台时，页面底部会自动出现一条提示，告诉你正确地址——因为那种情况下登录按钮点了不会有反应。本机预览不会出现这条提示（本地走 `local_backend`，不需要登录）。
+
+> 登录令牌的有效期：创建 OAuth App 时**没有**勾选「Expire user access tokens」，所以登录一次可以长期使用，不用反复登录。想更保守可以去 GitHub 那个 App 的设置里勾上（代价是每 8 小时要重新登录一次）。
 
 ### 10.3 后台里能改什么
 
@@ -493,12 +497,12 @@ CMS 保存的数据要经过三道关：
 
 ## 11. 还缺什么
 
-- **线上网页后台**（唯一剩下的事）：
-  1. Cloudflare Pages 连接仓库（构建命令 `npm run verify:frontend`、输出目录 `dist`、Node 24、环境变量 `SITE_BASE=/` 和 `SITE_URL=https://项目名.pages.dev/`）
-  2. 创建 GitHub OAuth App 并把 Client ID / Secret 配到 Cloudflare 环境变量
-  3. 从 `https://项目名.pages.dev/admin/` 登录后即可在网页里改内容（手机也可以）
-  详见 10.2 节。
-- 想换域名：见第 7 节。
-- 可选：开通评论（第 9 节最后一问）、给英文页单独换一张形象照（10.3）。
+**上线工作已全部完成**：两个平台在跑，网页后台可以登录并改内容（新建/删除文章都已实测，提交真的进了仓库）。
 
-除此之外，站点已完整上线可用。
+剩下都是可选项：
+
+- **个人素材**：想换真实的自我介绍、邮箱、社交账号、第二件作品，直接在后台「个人资料」里改，不用碰代码（第 4 节）。
+- **想换域名**：见第 7 节，注意还要同步改 GitHub OAuth App 的两个地址和 `config.yml` 的 `base_url`。
+- **可选功能**：开通评论（第 9 节最后一问）、给英文页单独换一张形象照（10.3）。
+
+日常只用记两件事：写内容用后台，或者本地写好 `git push`。

@@ -135,10 +135,61 @@ GPT 中断前实际已完成全部展示层工作（组件、布局、页面、�
 
 ### 仍未完成
 
-Cloudflare Pages 项目与 GitHub OAuth App 需要站长本人账号：站长已在 Edge 里完成 Cloudflare 注册，项目尚未创建（`yukki-rui.pages.dev` 仍为 NXDOMAIN），线上后台登录与线上实测待继续。
+（已在下方「线上验收」中完成。）
 
 > 本机开着代理时 DNS 是 fake-IP（`*.pages.dev` 会解析成 `198.18.x.x`），外部验证要走公共 DoH 取真实 IP 再直连，别被本机解析结果误导。
 
 ### 顺带堵掉的一个坑
 
 `public/admin/index.html` 现在会读 `config.yml` 的 `base_url` 自查：如果当前域名不是登录域名（例如从 GitHub Pages 那份部署打开 `/admin/`），页面底部直接弹出提示条说明「登录只在 <正确地址>/admin/ 有效」。本机预览（`localhost`/`127.0.0.1`）跳过该检查，因为本地走的是 `local_backend`，不需要登录。两条断言都进了 `check:cms-oauth`，并已在线上 GitHub Pages 实测生效。
+
+## 线上验收：Cloudflare Pages 与网页后台（DSH，2026-10-16）
+
+站点两个平台均已上线，网页后台可用。
+
+### 部署与配置
+
+| 项 | 实际值 |
+|---|---|
+| Cloudflare Pages 项目 | `yukki-rui`，连的仓库 `liyukki/yukki-rui`，生产分支 `master` |
+| 构建命令 / 输出目录 | `npm run verify:frontend` / `dist` |
+| 环境变量（Production） | `NODE_VERSION=24`、`SITE_BASE=/`、`SITE_URL=https://yukki-rui.pages.dev/`、`GITHUB_CLIENT_ID`(Text)、`GITHUB_CLIENT_SECRET`(Secret) |
+| GitHub OAuth App | Homepage `https://yukki-rui.pages.dev`、callback `https://yukki-rui.pages.dev/api/callback`；未勾选 token 过期，登录一次长期有效 |
+| 首次构建 | 成功。日志实测：`nodejs@24.13.1`（NODE_VERSION 生效）、类型检查 55 文件 0 错误、双路径 851 条引用通过、上传 112 个文件 |
+
+### 外部验证（7/7）
+
+本机开着代理时 DNS 是 fake-IP，所以验证走公共 DoH 取真实 IP 再直连：
+
+```text
+✓ yukki-rui.pages.dev 解析到 172.66.44.236
+✓ 首页可访问 — HTTP 200
+✓ 中文首页渲染 — HTTP 200
+✓ RSS 使用 Cloudflare 地址 — HTTP 200
+✓ 后台页面可访问 — HTTP 200
+✓ OAuth 入口可用（302 到 GitHub） — client_id=Ov23liwLmCjyRZAjjkuu，redirect_uri 正确
+✓ 取消授权时回传 error 而不是空白页 — HTTP 200
+✓ 缺少 code 时给出可读的 400 — HTTP 400
+```
+
+### 浏览器端实测（真实登录 + 真实写入）
+
+在 Edge（CDP 驱动，用站长自己的登录态）里操作线上站点：
+
+| 步骤 | 结果 |
+|---|---|
+| 打开 `https://yukki-rui.pages.dev/admin/` 点 Login with GitHub | 弹窗走完 GitHub 授权，回到后台已登录（`decap-cms-user` 里是真实 token）|
+| 后台列表 | 两个集合（文章 / 个人资料）与 6 篇文章全部从仓库读出 |
+| 新建《上线验收测试》并 Publish | 仓库出现提交 `45bd343`，`pubDate` 自动填当天（config.yml 的 `{{now}}` 生效）|
+| 删除该条目 | 原生确认框 → 仓库出现提交 `f11431e`，文件从仓库消失 |
+| 两个平台的自动重建 | GitHub Pages 侧该文章的地址由 200 变 404；推送即自动部署这条链路成立 |
+
+### 结论
+
+README 里「登录一次、任何设备打开网页就能改内容」的承诺已实测成立；剩下只有可选项（个人素材、自定义域名、评论）。
+
+### 一个已知的边缘缓存行为（不影响正常改内容）
+
+- 正常页面（首页、文章、标签、RSS）实测响应头是 `Cache-Control: public, max-age=0, must-revalidate`，**改完内容重新部署后立刻生效**。
+- 从来不存在的地址返回 `404` + 自制 404 页 + `Cache-Control: no-store`，行为正确。
+- 唯一例外：**删除**一篇文章后，它原来的地址可能在 Cloudflare 边缘还留着一份旧缓存（实测 `CF-Cache-Status: HIT`、`s-maxage=604800`），最长约 7 天。此时该文章已从首页、标签页、RSS 和后台列表消失，只是那个旧网址被直接打开还能看到缓存副本。删除文章后若要立刻让旧地址失效，可在后台改一下任一内容触发新部署，或等缓存过期。

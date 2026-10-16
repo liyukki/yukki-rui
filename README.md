@@ -2,9 +2,16 @@
 
 免费托管的中英双语个人网站，文章用 Markdown 管理，Astro 7 在构建时输出静态 HTML，不需要购买服务器或域名。
 
-**当前阶段：前端已完成，组件、布局、页面、样式与默认 OG 图齐全；仅真实个人素材（头像、联系方式、第二件作品）待用户提供。**
+**当前阶段：已上线。** 两个地址都在跑，网页后台可用（浏览器登录后直接改文章和个人资料，不碰代码）。
 
-Kimi 从 [前端交接说明](docs/frontend-handoff.md) 开始，配套 [设计文档](docs/superpowers/specs/2026-10-10-yukki-rui-blog-design.md) 与 [实施计划](docs/superpowers/plans/2026-10-10-yukki-rui-blog.md)。实际审核记录见 [验证报告](docs/verification-report.md)。
+| 平台 | 地址 | 说明 |
+|---|---|---|
+| GitHub Pages | <https://liyukki.github.io/yukki-rui/> | 展示用；纯静态，没有登录函数 |
+| Cloudflare Pages | <https://yukki-rui.pages.dev/> | 展示 + **后台登录**（`/admin/`）|
+
+两个平台都连着同一个 GitHub 仓库：**推送即自动构建部署**。后台保存内容 = 往仓库提交 commit，两个平台随后各自重新部署。
+
+日常操作看 [网站使用说明](docs/usage-guide.md)；历次审核与实测记录见 [验证报告](docs/verification-report.md)。
 
 ## 本地使用
 
@@ -63,10 +70,12 @@ tags: [随笔]
 
 | 平台 | `SITE_BASE` | `SITE_URL` |
 |---|---|---|
-| GitHub Pages | `/yukki-rui/` | `https://你的用户名.github.io/yukki-rui/` |
-| Cloudflare Pages | `/` | Cloudflare 实际分配的 `https://项目名.pages.dev/` |
+| GitHub Pages | `/yukki-rui/` | `https://liyukki.github.io/yukki-rui/` |
+| Cloudflare Pages | `/` | `https://yukki-rui.pages.dev/` |
 
 配置只从环境变量进入 `astro.config.mjs`，随后注入 `Astro.site` / `import.meta.env.SITE`。页面元信息、RSS、robots 和 sitemap 共用此地址。不要手改 `SITE.url`，不要再创建 `public/robots.txt`。
+
+当前实际配置：GitHub Pages 的值写在 `.github/workflows/deploy.yml` 里（按仓库名自动推导），Cloudflare Pages 的值写在 Cloudflare 项目 Settings → Variables and secrets 里（`SITE_BASE` / `SITE_URL` / `NODE_VERSION`）。
 
 Windows 本地预演 GitHub 部署：
 
@@ -81,14 +90,15 @@ Remove-Item Env:\SITE_URL
 
 两个平台使用同一份源码分别构建；由于 base 不同，不能直接复用完全相同的构建产物。平台访问情况应在目标网络实际测试。
 
-## 上线步骤
+## 上线步骤（均已完成，留作换平台时的参考）
 
-1. Kimi 完成前端，并运行 `npm run verify:frontend`，在浏览器完成手机、主题、语言和标签交互验收。
-2. 在 GitHub 创建公开空仓库，将代码推送到 `main` 或 `master`；工作流支持这两个分支。实际分支名用 `git branch --show-current` 查看。
-3. GitHub 仓库 Settings → Pages → Source 选择 GitHub Actions。工作流根据仓库名自动配置 base 与地址。
-4. Cloudflare Pages 连接同一仓库：构建命令 `npm run verify:frontend`，输出 `dist`，环境变量填上表中的两项，并选择兼容的 Node 24。
-5. 实际打开两个地址，检查首页、文章、RSS 与分享链接。免费域名使用平台分配的实际名字，不能保证指定名字可用。
+1. ✅ 前端完成并跑 `npm run verify:frontend`。
+2. ✅ GitHub 公开仓库 <https://github.com/liyukki/yukki-rui>，主分支 `master`。
+3. ✅ GitHub 仓库 Settings → Pages → Source 选 GitHub Actions；工作流按仓库名自动配置 base 与地址。
+4. ✅ Cloudflare Pages 连接同一仓库：构建命令 `npm run verify:frontend`、输出 `dist`、环境变量 `SITE_BASE=/`、`SITE_URL=https://yukki-rui.pages.dev/`、`NODE_VERSION=24`。
+5. ✅ Cloudflare 项目另加两个密钥（`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`，来自 GitHub OAuth App），后台登录靠它们换令牌，见 [使用说明第 10 节](docs/usage-guide.md)。
+6. ✅ 两个地址实测：首页、文章、RSS、后台登录与写入。
 
-GitHub 发布前会检查前端必需产物，当前关于页、标签页、404 与分享图均已具备，结构门槛通过；若将来缺失，该检查仍会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。
+GitHub 发布前会检查前端必需产物（关于页、标签页、404 与分享图），缺失会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。
 
-将来更换自有域名，需要在所选托管平台配置 DNS，并同步更新 `SITE_URL` 与必要的 `SITE_BASE`、重新构建。
+将来更换自有域名，需要在所选托管平台配置 DNS，并同步更新 `SITE_URL` 与必要的 `SITE_BASE`、重新构建；同时要改 GitHub OAuth App 的 Homepage / callback 地址，以及 `public/admin/config.yml` 里的 `base_url`。
