@@ -349,6 +349,9 @@ GitHub 每次推送都会自动跑检查，缺关键页面时会**拒绝发布**
 | `npm run check:base` | 只查两种部署路径 |
 | `npm run check:cms-config` | 可选：用真实浏览器加载 `public/admin/config.yml`，确认后台配置没有错误（需先 `npm i -D playwright`，不参与发布检查）|
 | `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需先 `npm i -D playwright`，不参与发布检查）|
+| `npm run check:comments` | 可选：评论区端到端（wrangler 本地 D1；需先 `npm i -D playwright` 与 `npm run build`，不参与发布检查）|
+| `npm run check:comments-live` | 可选：线上评论区只读检查（`-- --write` 时连发→查→删一起验）|
+| `npm run check:reading` | 可选：阅读体验端到端（需先 `npm i -D playwright` 与 `npm run build`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可跑线上）|
 
 ---
 

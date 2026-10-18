@@ -368,7 +368,8 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 | `npx astro check` | 69 files，0 errors / 0 warnings |
 | `npx vitest run` | 12 files，**128 tests** 全通过 |
 | `npm run build` | 21 页；产物含 `data-reading-progress`、`post-toc--inline/--aside`、`post-reading`、`post-nav__card`、`rel="prev"`、ClientRouter 脚本 |
-| 本地端到端 `.cms-setup/check-reading.mjs` | **23/23**：阅读时长、目录可见/条目数/宽屏隐藏折叠版、上下篇内链、进度条、返回顶部、目录高亮、代码复制（剪贴板内容一致）、灯箱开/关、转场换文、转场后主题保持（浅色与深色各一次）、评论重新初始化、转场后进度条与返回顶部仍工作、主题切换、390px 窄屏折叠目录且无横向溢出、上下篇单列 |
+| 本地端到端 `npm run check:reading` | **23/23**（默认跑本地 `dist/`，设 `LIVE_ORIGIN`/`LIVE_BASE` 可直接跑线上）：阅读时长、目录可见/条目数/宽屏隐藏折叠版、上下篇内链、进度条、返回顶部、目录高亮、代码复制（剪贴板内容一致）、灯箱开/关、转场换文、转场后主题保持（浅色与深色各一次）、评论重新初始化、转场后进度条与返回顶部仍工作、主题切换、390px 窄屏折叠目录且无横向溢出、上下篇单列 |
+| 线上验收（2026-10-18） | Cloudflare Pages 与 GitHub Pages 各跑一遍 `check:reading` 均 **23/23**（`LIVE_ORIGIN=https://yukki-rui.pages.dev`、`LIVE_ORIGIN=https://liyukki.github.io LIVE_BASE=/yukki-rui/`）；`npm run check:comments-live` **15/15**；两站首页已无 QQ/微信明文 |
 
 ### 本轮发现并修掉的缺陷
 
@@ -377,5 +378,6 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 3. **目录双份渲染导致高亮错位**：页面同时渲染 inline 与 aside 两版目录，原来每个锚点只记第一个链接（inline 在前、桌面端被 CSS 隐藏），结果可见的 aside 永远不高亮。改为 `Map<hash, HTMLAnchorElement[]>`，同一锚点的所有链接一起加 `is-active`。
 4. **复制按钮文案被带进剪贴板**：复制用 `code.innerText` 而不是 `pre.innerText`；自检里发现剪贴板换行是 CRLF，断言改为按行归一化后比较。
 5. **`prose.rise` 入场动画的 transform 会给 `position: fixed` 造 containing block**：进度条与返回顶部按钮如果在文章容器内，只会固定在文章而非视口。实现改为初始化时把这两个节点迁到 `document.body`。
+6. **CI 上 `check:content` 因 ClientRouter 编译元数据缺失而失败**：该脚本把源码复制到系统临时目录、再用软链接指向 `node_modules`；Astro 内部组件（`astro/components/ClientRouter.astro`）经 realpath 解析后的路径与主模块不一致，Linux 上报 `No cached compile metadata found for ".../ClientRouter.astro?astro&type=style..."`（Windows 的 junction 恰好不触发）。修复：临时工程改放到项目目录内部（`.tmp-content-check-*`，已被 `.gitignore` 的 `.tmp-*` 覆盖），Node 按层级正常解析到同一份 `node_modules`，不再依赖软链接。
 
 > 并行开发约定：P1 的两个组件由只读子代理（Task 2/3）在独立文件里实现、主代理负责接线与门禁；同一文件（PostExtras.astro 的 TOC 高亮段）出现过一次并发改写，最终以主代理修订版为准。

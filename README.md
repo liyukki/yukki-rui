@@ -41,6 +41,7 @@ npm run dev
 | `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run check:comments` | 可选：用 wrangler 本地 Pages 运行时 + 真实 D1 模拟跑评论区端到端（发评论/XSS/限流/管理删除/CORS；需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run check:comments-live` | 可选：对线上两个站点做评论区只读检查（渲染、接口、CORS、管理页；加 `-- --write` 且设 `COMMENTS_ADMIN_TOKEN` 时再跑一次发→查→删闭环）|
+| `npm run check:reading` | 可选：阅读体验端到端检查（本地跑 `dist/`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可对线上部署跑），覆盖目录、阅读时长、上下篇、进度条、返回顶部、代码复制、灯箱与 View Transitions（需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
 | `npm run verify:frontend` | 上述检查加当前构建、链接检查及前端必需路由/分享图检查 |
 | `npm run preview` | 预览已有 `dist/` |
