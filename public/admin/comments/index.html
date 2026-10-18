@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="light dark" />
+    <title>评论管理 · yukki rui</title>
+    <style>
+      :root {
+        --bg: #fbfaf7;
+        --card: #ffffff;
+        --line: #e4e0d8;
+        --text: #1e1c19;
+        --dim: #6b665c;
+        --accent: #e8743b;
+        --accent-2: #f2a03d;
+        --radius: 10px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16141a;
+          --card: #1e1b23;
+          --line: #322e3a;
+          --text: #f0ece6;
+          --dim: #a49d92;
+          --accent: #f08a52;
+          --accent-2: #f2b95d;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px 20px 64px;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.65 -apple-system, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+      }
+
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        letter-spacing: 0.02em;
+      }
+
+      .hint {
+        margin: 0 0 24px;
+        color: var(--dim);
+        font-size: 13px;
+      }
+
+      .hint code {
+        padding: 1px 5px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--card);
+        font-size: 12px;
+      }
+
+      .hint a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      .hint a:hover {
+        text-decoration: underline;
+      }
+
+      .panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: flex-end;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--card);
+      }
+
+      .panel + .panel {
+        margin-top: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+
+      label.grow {
+        flex: 1 1 260px;
+      }
+
+      input {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+      }
+
+      input:focus {
+        outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+        outline-offset: 1px;
+        border-color: var(--accent);
+      }
+
+      button {
+        padding: 8px 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--card);
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button.primary {
+        border-color: transparent;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #fff;
+        font-weight: 600;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .status {
+        flex: 1 1 100%;
+        min-height: 1.4em;
+        margin: 0;
+        color: var(--dim);
+        font-size: 13px;
+      }
+
+      .list {
+        margin: 18px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .comment {
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--card);
+      }
+
+      .comment + .comment {
+        margin-top: 10px;
+      }
+
+      .comment-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: baseline;
+      }
+
+      .comment-author {
+        font-weight: 600;
+      }
+
+      .comment-meta {
+        color: var(--dim);
+        font-size: 12px;
+      }
+
+      .comment-thread {
+        color: var(--accent);
+        font-size: 12px;
+        text-decoration: none;
+      }
+
+      .comment-thread:hover {
+        text-decoration: underline;
+      }
+
+      .comment-body {
+        margin: 8px 0 10px;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+      }
+
+      .comment-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .comment-actions button {
+        padding: 4px 10px;
+        font-size: 12px;
+      }
+
+      .empty {
+        margin: 24px 0 0;
+        color: var(--dim);
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>评论管理</h1>
+      <p class="hint">
+        令牌存在这台设备的浏览器里，不会上传。填写 Cloudflare 项目里的 <code>COMMENTS_ADMIN_TOKEN</code>。 ·
+        <a href="../">← 返回内容管理</a>
+      </p>
+
+      <form class="panel" id="auth-form" autocomplete="off">
+        <label class="grow">
+          <span>管理令牌</span>
+          <input id="token" type="password" name="token" placeholder="COMMENTS_ADMIN_TOKEN" />
+        </label>
+        <button type="submit" class="primary">保存并加载</button>
+        <button type="button" id="clear-token">清除</button>
+      </form>
+
+      <section class="panel">
+        <label class="grow">
+          <span>筛选（路径、昵称或正文）</span>
+          <input id="filter" type="search" placeholder="/zh/posts/hello-world/ 或 大肥鱼" />
+        </label>
+        <button type="button" id="refresh">刷新</button>
+        <button type="button" id="more" disabled>加载更多</button>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <ul class="list" id="list"></ul>
+      <p class="empty" id="empty" hidden>还没有评论。</p>
+    </main>
+
+    <script>
+      (() => {
+        const TOKEN_KEY = 'comments-admin-token';
+        const API = '/api/comments-admin';
+        const PAGE = 50;
+        const MAX = 200;
+
+        const authForm = document.getElementById('auth-form');
+        const tokenInput = document.getElementById('token');
+        const clearButton = document.getElementById('clear-token');
+        const filterInput = document.getElementById('filter');
+        const refreshButton = document.getElementById('refresh');
+        const moreButton = document.getElementById('more');
+        const statusEl = document.getElementById('status');
+        const listEl = document.getElementById('list');
+        const emptyEl = document.getElementById('empty');
+
+        let limit = PAGE;
+        let comments = [];
+        let filter = '';
+
+        const setStatus = (text) => {
+          statusEl.textContent = text || '';
+        };
+
+        const getToken = () => {
+          try {
+            return localStorage.getItem(TOKEN_KEY) || '';
+          } catch {
+            return '';
+          }
+        };
+
+        const setToken = (value) => {
+          try {
+            if (value) localStorage.setItem(TOKEN_KEY, value);
+            else localStorage.removeItem(TOKEN_KEY);
+          } catch {
+            /* 隐私模式下忽略 */
+          }
+        };
+
+        const formatTime = (iso) => {
+          const date = new Date(iso);
+          return Number.isNaN(date.getTime()) ? iso : date.toLocaleString('zh-CN');
+        };
+
+        const visibleComments = () => {
+          if (!filter) return comments;
+          const needle = filter.toLowerCase();
+          return comments.filter((item) =>
+            `${item.thread} ${item.author} ${item.body}`.toLowerCase().includes(needle),
+          );
+        };
+
+        const render = () => {
+          const items = visibleComments();
+          listEl.replaceChildren();
+          emptyEl.hidden = items.length !== 0;
+          emptyEl.textContent = comments.length === 0 ? '还没有评论。' : '没有符合筛选条件的评论。';
+
+          for (const item of items) {
+            const li = document.createElement('li');
+            li.className = 'comment';
+
+            const head = document.createElement('div');
+            head.className = 'comment-head';
+
+            const author = document.createElement('span');
+            author.className = 'comment-author';
+            author.textContent = item.author;
+            head.append(author);
+
+            if (item.website) {
+              const site = document.createElement('a');
+              site.className = 'comment-meta';
+              site.href = item.website;
+              site.target = '_blank';
+              site.rel = 'nofollow ugc noopener';
+              site.textContent = item.website;
+              head.append(site);
+            }
+
+            const time = document.createElement('span');
+            time.className = 'comment-meta';
+            time.textContent = formatTime(item.createdAt);
+            head.append(time);
+
+            const thread = document.createElement('a');
+            thread.className = 'comment-thread';
+            thread.href = item.thread;
+            thread.textContent = item.thread;
+            head.append(thread);
+
+            const body = document.createElement('p');
+            body.className = 'comment-body';
+            body.textContent = item.body;
+
+            const actions = document.createElement('div');
+            actions.className = 'comment-actions';
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.textContent = `删除 #${item.id}`;
+            remove.addEventListener('click', () => void removeComment(item));
+            actions.append(remove);
+
+            li.append(head, body, actions);
+            listEl.append(li);
+          }
+        };
+
+        async function load() {
+          const token = getToken();
+          if (!token) {
+            setStatus('先填写并保存管理令牌。');
+            comments = [];
+            render();
+            return;
+          }
+
+          setStatus('加载中…');
+          refreshButton.disabled = true;
+          try {
+            const response = await fetch(`${API}?limit=${limit}`, {
+              headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 401) {
+              setStatus('管理令牌不正确。');
+              return;
+            }
+            if (response.status === 503) {
+              setStatus('服务器还没配置 COMMENTS_ADMIN_TOKEN（Cloudflare 环境变量）。');
+              return;
+            }
+            if (!response.ok) {
+              setStatus(`加载失败（HTTP ${response.status}）。`);
+              return;
+            }
+            comments = Array.isArray(data.items) ? data.items : [];
+            render();
+            moreButton.disabled = comments.length < limit || limit >= MAX;
+            setStatus(`共显示 ${comments.length} 条${limit < MAX ? '（可继续加载更早的评论）' : ''}。`);
+          } catch {
+            setStatus('网络错误，加载失败。');
+          } finally {
+            refreshButton.disabled = false;
+          }
+        }
+
+        async function removeComment(item) {
+          const token = getToken();
+          if (!token) return;
+          if (!confirm(`删除 ${item.author} 在 ${item.thread} 的评论？\n\n${item.body.slice(0, 120)}`)) return;
+
+          setStatus(`删除 #${item.id}…`);
+          try {
+            const response = await fetch(`${API}?id=${item.id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.status === 401) {
+              setStatus('管理令牌不正确。');
+              return;
+            }
+            if (!response.ok) {
+              setStatus(`删除失败（HTTP ${response.status}）。`);
+              return;
+            }
+            comments = comments.filter((entry) => entry.id !== item.id);
+            render();
+            setStatus(`已删除 #${item.id}（${Number(data.deleted) || 0} 行）。`);
+          } catch {
+            setStatus('网络错误，删除失败。');
+          }
+        }
+
+        authForm.addEventListener('submit', (event) => {
+          event.preventDefault();
+          const value = tokenInput.value.trim();
+          if (!value) {
+            setStatus('令牌不能为空。');
+            return;
+          }
+          setToken(value);
+          tokenInput.value = value;
+          limit = PAGE;
+          void load();
+        });
+
+        clearButton.addEventListener('click', () => {
+          setToken('');
+          tokenInput.value = '';
+          comments = [];
+          render();
+          setStatus('已清除本机保存的令牌。');
+        });
+
+        filterInput.addEventListener('input', () => {
+          filter = filterInput.value.trim();
+          render();
+        });
+
+        refreshButton.addEventListener('click', () => {
+          limit = PAGE;
+          void load();
+        });
+
+        moreButton.addEventListener('click', () => {
+          limit = Math.min(limit + PAGE, MAX);
+          void load();
+        });
+
+        const saved = getToken();
+        if (saved) {
+          tokenInput.value = saved;
+          void load();
+        } else {
+          setStatus('先填写并保存管理令牌。');
+          render();
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -18,14 +18,17 @@
 | 单个标签 | `/zh/tags/标签名/` |
 | 关于 | `/zh/about/` |
 | 网页后台 | `/admin/`（编辑内容用，不对外展示）|
+| 评论管理 | `/admin/comments/`（站长删评论用，不对外展示）|
 | 404 | 自动 |
 | RSS 订阅 | `/rss.xml`（中）`/rss-en.xml`（英）|
 
-**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、59 项单元测试通过、两种部署路径各 22 个页面 851 条站内链接无死链、后台产物与个人资料集合集成检查通过。
+**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、118 项单元测试通过、两种部署路径各 21 个页面无死链、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过。
 
-**站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages，中英双语、照片、RSS、sitemap 均实测正常）。
+**站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages）与 https://yukki-rui.pages.dev/ （Cloudflare Pages，中英双语、照片、RSS、sitemap 均实测正常）。
 
 **新增：网页后台**。现在可以不碰代码、直接在浏览器里改文章和个人资料了，见第 10 节。
+
+**新增：评论区**。文章页底部可以留言，读者不用注册、不用登录 GitHub；站长在 `/admin/comments/` 删评论，见第 11 节。
 
 ---
 
@@ -356,7 +359,7 @@ GitHub 每次推送都会自动跑检查，缺关键页面时会**拒绝发布**
 标签名直接进网址（如 `/zh/tags/指南/`），这是正常设计。浏览器会自动编码，不影响使用。
 
 **问：想加评论？**
-`src/consts.ts` 里 `COMMENTS.enabled` 现在是 `false`，不产生任何第三方请求。要开启需装 giscus 应用并填 repo / repoId / categoryId 三项。
+评论区已经做好了：读者填昵称就能发，不用登录。站长在 `/admin/comments/` 删除，详见第 11 节。
 
 **问：文章写了一半想先上线其他内容？**
 给未完成的文章加 `draft: true`，它就不会出现在正式网站里，但本地 `npm run dev` 仍能预览。
@@ -509,7 +512,58 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 ---
 
-## 11. 还缺什么
+## 11. 评论区与评论管理
+
+文章页底部有评论区：**不用注册、不用登录 GitHub、不用第三方账号**，填个昵称和正文就能发。评论不放在 Git 仓库里，而是存在 Cloudflare D1 数据库，所以 Sveltia 后台（第 10 节）里看不到评论——评论有独立的管理页。
+
+### 11.1 评论存在哪、怎么运转
+
+| 部分 | 位置 |
+|---|---|
+| 数据 | Cloudflare D1（SQLite），表 `comments`：昵称、正文、可选网址、时间、文章路径、IP 哈希（不存原始 IP）|
+| 接口 | `functions/api/comments.js`（公开读/写）、`functions/api/comments-admin.js`（管理，需要令牌）|
+| 前端 | `src/components/Comments.astro` + `src/lib/comments.ts`（文章页自动出现）|
+| 管理页 | `public/admin/comments/index.html`，线上地址 `/admin/comments/` |
+
+防护（都在服务端，改成绕过前端也没用）：
+
+- 蜜罐字段：机器人只要填了隐藏字段就拒收；
+- 提交过快：从页面加载到点「发表」不足 1.5 秒拒收；
+- 限流：同一 IP 60 秒只能发 1 条，24 小时最多 20 条；
+- 长度：昵称 1–40 字、正文 1–2000 字、网址必须 `http(s)://` 开头（可留空）；
+- 渲染：所有内容按纯文本插入页面，`<img onerror>` 之类只会显示成文字，执行不了。
+
+两个平台都能看到、都能发：Cloudflare 上是同源请求；GitHub Pages 镜像没有 Functions，会跨域调主站（服务端 CORS 白名单只放行站点域名与本机预览），数据都落在主站。
+
+### 11.2 站长第一次配置（Cloudflare，一次性三步）
+
+1. **建 D1 数据库**：Cloudflare 控制台 → Workers & Pages → **D1** → Create database，名字填 `yukki-rui-comments`。
+2. **给 Pages 项目绑定**：Workers & Pages → `yukki-rui` → Settings → **Functions** → D1 database bindings → Add binding，**Variable name 必须是 `DB`**，再选刚建的库。
+3. **加管理令牌**：同页 Settings → Variables and secrets → Add，name `COMMENTS_ADMIN_TOKEN`，值随便一串长随机字符（Type 选 Secret）。加完点 **Retry deployment** 重新部署一次（绑定和变量都要新部署才生效）。
+
+可选：再加 `COMMENTS_SALT`（Secret）给 IP 哈希加盐，不配就用默认值。
+
+改完自检：打开任意文章页，评论区不报「评论服务还没配置好」、发一条能显示出来，就说明三步都对了。
+
+### 11.3 怎么删评论（管理页）
+
+打开 <https://yukki-rui.pages.dev/admin/comments/>（网页后台右下角也有「💬 评论管理」入口）：
+
+1. 第一次填 `COMMENTS_ADMIN_TOKEN` 的值，点「保存并加载」——令牌只存在这台设备的浏览器里，不会上传。
+2. 列表显示最近 50 条评论（可「加载更多」到 200 条）：文章路径、昵称、时间、正文都能看到，可按路径/昵称/正文筛选。
+3. 点「删除 #编号」确认即可，前台刷新后消失。
+
+### 11.4 常见问题
+
+- **「评论加载失败，稍后再试」**：多半是 D1 还没绑定（11.2 第 2 步）或那次部署没成功；点重试。
+- **「发得太快了，歇一分钟再来」**：60 秒限流，正常现象。
+- **「评论服务还没配置好」**：Cloudflare 的绑定/变量缺失（服务端返回 503），按 11.2 再检查一遍。
+- **想整体关掉评论区**：把 `src/consts.ts` 里 `COMMENTS.enabled` 改成 `false` 再推送，页面就不再渲染评论区、也不发请求。
+- **想换成别的评论系统**：改 `src/components/Comments.astro` 和 `src/lib/comments.ts` 两个文件就行，别处不依赖具体实现。
+
+---
+
+## 12. 还缺什么
 
 **上线工作已全部完成**：两个平台在跑，网页后台可以登录并改内容（新建/删除文章都已实测，提交真的进了仓库）。
 
@@ -517,6 +571,6 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 - **个人素材**：想换真实的自我介绍、邮箱、社交账号、第二件作品，直接在后台「个人资料」里改，不用碰代码（第 4 节）。
 - **想换域名**：见第 7 节，注意还要同步改 GitHub OAuth App 的两个地址和 `config.yml` 的 `base_url`。
-- **可选功能**：开通评论（第 9 节最后一问）、给英文页单独换一张形象照（10.3）。
+- **可选功能**：给英文页单独换一张形象照（10.3）。
 
 日常只用记两件事：写内容用后台，或者本地写好 `git push`。

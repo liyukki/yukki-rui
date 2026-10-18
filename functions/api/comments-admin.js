@@ -74,15 +74,19 @@ function errorResponse(status, error, message) {
   return jsonResponse({ error, message }, status);
 }
 
+/**
+ * 鉴权：失败时返回要直接发送的响应，通过则返回 null。
+ *
+ * @param {any} context
+ * @returns {Response | null}
+ */
 function authenticate(context) {
   const { request, env } = context;
   const expected = env?.COMMENTS_ADMIN_TOKEN;
-  if (!expected) return { ok: false, response: errorResponse(503, 'admin-token-missing', '管理令牌还没配置') };
+  if (!expected) return errorResponse(503, 'admin-token-missing', '管理令牌还没配置');
   const got = readBearer(request.headers);
-  if (!tokenMatches(expected, got)) {
-    return { ok: false, response: errorResponse(401, 'unauthorized', '管理令牌不正确') };
-  }
-  return { ok: true, env };
+  if (!tokenMatches(expected, got)) return errorResponse(401, 'unauthorized', '管理令牌不正确');
+  return null;
 }
 
 export function onRequestOptions() {
@@ -90,8 +94,8 @@ export function onRequestOptions() {
 }
 
 export async function onRequestGet(context) {
-  const auth = authenticate(context);
-  if (!auth.ok) return auth.response;
+  const denied = authenticate(context);
+  if (denied) return denied;
 
   const { request, env } = context;
   const url = new URL(request.url);
@@ -116,8 +120,8 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestDelete(context) {
-  const auth = authenticate(context);
-  if (!auth.ok) return auth.response;
+  const denied = authenticate(context);
+  if (denied) return denied;
 
   const { request, env } = context;
   const url = new URL(request.url);

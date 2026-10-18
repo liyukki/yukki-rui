@@ -289,3 +289,44 @@ Sveltia 的富文本编辑器是 Lexical，行为与 Decap 的 Slate 不同，�
 ### 文档纠正
 
 使用说明 §10.3 与 §10.5 原先写「光标移到块外就能继续写」「样式下拉会变回段落」，线上实测证明对文末代码块不成立，已按上表改写为「先写完整正文、再回头把某段转成代码块 / 用 以 Markdown 编辑」。
+
+## 免登录评论区（DSH，2026-10-18）
+
+站长要求「开启评论开关并增加评论区板块」，并明确希望「免费、读者不用登录 GitHub」。giscus / utterances 依赖 GitHub 账号，Waline 要额外开 Vercel + Neon 账号，Twikoo 要腾讯云实名，最终选**Cloudflare 自建**：D1（SQLite）+ Pages Functions，全部落在已开通的 Cloudflare 账号里，免费额度（5 GB 存储、每天百万级读）对个人博客够用，且不需要任何第三方账号。
+
+### 架构
+
+| 部分 | 位置 |
+|---|---|
+| 数据 | D1 表 `comments`：`id, thread, author, body, website, created_at, ip_hash, user_agent`，索引 `(thread, id)`、`(ip_hash, created_at)` |
+| 公开接口 | `functions/api/comments.js`：`GET /api/comments?thread=...&limit=&before=` 新→旧分页，`POST` 写入 |
+| 管理接口 | `functions/api/comments-admin.js`：Bearer `COMMENTS_ADMIN_TOKEN`，列表与按 id 删除；令牌用常数时间比较 |
+| 前端 | `src/components/Comments.astro` + `src/lib/comments.ts`；`thread` = 去掉部署 base 的站内路径 |
+| 管理页 | `public/admin/comments/index.html`；网页后台右下角「💬 评论管理」入口（Sveltia 没有自定义侧栏链接的配置项，只能用浮动链接）|
+| 配置 | `src/consts.ts` 的 `COMMENTS`；双平台：Cloudflare 同源调用，GitHub Pages 镜像跨域调主站（CORS 白名单只放行站点域名与本机预览）|
+
+防护都在服务端：蜜罐字段、1.5 秒最小耗时、同 IP 60 秒 1 条与 24 小时 20 条限流、昵称 1–40 / 正文 1–2000 / 网址必须 http(s)、只存 `sha256(ip + salt)`、输出按纯文本渲染（`<img onerror>` 之类执行不了）。
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| `npx astro check` | 62 files，0 errors / 0 warnings |
+| `npx vitest run` | 11 files，118 tests 全通过（`comments.test.ts` 16 项、`comments-functions.test.ts` 33 项，D1 用 `node:sqlite` 做真实替身）|
+| `npm run build` | 21 页；产物里 `#comments` 的 `data-thread="/zh/posts/hello-world/"`、`data-api`、`data-page-size="20"` 正确（双 base 下 thread 正确去掉 base）|
+| `npm run check:cms-config` | 6/6 |
+| `npm run check:cms-oauth` | 13/13 |
+| `npm run check:comments` | **28/28**：真实 `wrangler pages dev` + 本地 D1 全链路——发评论、刷新仍在、XSS 不执行（`window.__xss === undefined`）、60 秒限流、管理页未存令牌/错令牌/正令牌、删除后前台变空状态、CORS 放行与拒绝、`cache-control: no-store`、无脚本异常 |
+
+### 本轮发现并修掉的缺陷
+
+1. **JS 类型判别失败导致 astro check 10 个错误**：`comments-admin.js` 的 `authenticate()` 返回 `{ok:false,response} | {ok:true,env}`，JS 里 `ok` 被推断成 `boolean`（不是字面量判别式），`if (!auth.ok) return auth.response` 收窄失败，两个导出函数的返回类型变成 `Response | undefined`。改为 `authenticate()` 直接返回 `Response | null`。
+2. **端到端脚本首跑 26/28**：① 本地构建的 `data-api` 是 `https://yukki-rui.pages.dev/api/comments`（SITE_URL 指向生产），断言写死空串错误 → 改为「空或 endsWith('/api/comments')」；② 管理页未存令牌时没有初始状态文案 → 初始化分支补「先填写并保存管理令牌。」。
+
+### 待站长完成（Cloudflare 侧，一次性）
+
+1. Workers & Pages → D1 → Create database，名 `yukki-rui-comments`；
+2. 项目 `yukki-rui` → Settings → Functions → D1 database bindings，**变量名 `DB`**；
+3. Settings → Variables and secrets 加 `COMMENTS_ADMIN_TOKEN`（Secret，随机长串，可选 `COMMENTS_SALT`），然后 **Retry deployment**。
+
+三步完成后线上验收：任一文章页发一条评论、刷新仍在；GitHub Pages 镜像同篇能看到；在 `/admin/comments/` 里删除后前台恢复空状态。

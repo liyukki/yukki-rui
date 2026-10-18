@@ -17,3 +17,5 @@ dist/
 pixel-platformer.zip
 # 无头工具产物，与项目无关
 .video_agent/
+.wrangler/
+.tmp-comments-check*/

@@ -19,6 +19,41 @@
     <!-- 脚本必须在 body 内：CMS 挂载时需要 document.body 已存在，
          放在 head 里会在 body 解析前同步执行导致挂载失败。 -->
     <script src="https://unpkg.com/@sveltia/cms@0.245.0/dist/sveltia-cms.js"></script>
+    <!-- 评论管理入口：评论存在 Cloudflare D1 里（不在 Git 仓库），
+         所以评论管理是独立页面 /admin/comments/，这里给后台一个统一入口。 -->
+    <a id="admin-comments-link" href="./comments/" title="评论管理（D1）">💬 评论管理</a>
+    <style>
+      #admin-comments-link {
+        position: fixed;
+        z-index: 2147482000;
+        right: 14px;
+        bottom: 14px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #1e1b23;
+        color: #f0ece6;
+        font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        text-decoration: none;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+        opacity: 0.72;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+      }
+
+      #admin-comments-link:hover,
+      #admin-comments-link:focus-visible {
+        opacity: 1;
+        transform: translateY(-2px);
+      }
+
+      @media (max-width: 520px) {
+        #admin-comments-link {
+          right: 8px;
+          bottom: 8px;
+          padding: 6px 10px;
+          font-size: 12px;
+        }
+      }
+    </style>
     <!-- 上传助手是给旧后台（Decap）用的：Sveltia 自带图片选择对话框，
          这段脚本在 Sveltia 下不会命中任何元素，属于空转，保留只为回滚。 -->
     <script src="./upload-helper.js"></script>

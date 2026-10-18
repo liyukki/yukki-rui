@@ -1,29 +1,561 @@
 ---
 /**
- * 评论：COMMENTS.enabled 为 false 时不输出任何 DOM 或第三方请求。
- * 开启评论时：装好 giscus App 后在 consts.ts 填 repo / repoId / categoryId。
+ * 评论区：免登录，浏览器直接调 Cloudflare Pages Functions（/api/comments）。
+ *
+ * - Cloudflare 部署：同源，走相对路径 /api/comments；
+ * - GitHub Pages 镜像：没有 Functions，跨域调主站（服务端 CORS 白名单）；
+ * - COMMENTS.enabled === false 时不输出任何 DOM，也不加载脚本逻辑。
+ *
+ * 数据全在客户端渲染，正文一律用 textContent，不拼 HTML。
  */
-import { COMMENTS, UI, type Lang } from '../consts';
+import { COMMENTS, SITE, UI, type Lang } from '../consts';
+import { commentThread, commentsEndpoint } from '../lib/comments';
 
 interface Props {
   lang: Lang;
 }
+
 const { lang } = Astro.props;
+const t = UI[lang];
+const thread = commentThread(Astro.url.pathname, import.meta.env.BASE_URL);
+const endpoint = commentsEndpoint(SITE.url, COMMENTS.origin);
+const i18n = {
+  empty: t.commentsEmpty,
+  loading: t.commentsLoading,
+  loadError: t.commentsLoadError,
+  retry: t.commentsRetry,
+  loadMore: t.commentsLoadMore,
+  submit: t.commentsSubmit,
+  submitting: t.commentsSubmitting,
+  posted: t.commentsPosted,
+  errorInvalid: t.commentsErrorInvalid,
+  errorQuick: t.commentsErrorQuick,
+  errorRate: t.commentsErrorRate,
+  errorUnavailable: t.commentsErrorUnavailable,
+  errorFailed: t.commentsErrorFailed,
+};
 ---
+
 {COMMENTS.enabled && (
-  <section class="comments" aria-label={UI[lang].comments}>
-    <script
-      src="https://giscus.app/client.js"
-      data-repo={COMMENTS.repo}
-      data-repo-id={COMMENTS.repoId}
-      data-category={COMMENTS.category}
-      data-category-id={COMMENTS.categoryId}
-      data-mapping="pathname"
-      data-reactions-enabled="1"
-      data-theme="preferred_color_scheme"
-      data-lang={lang === 'zh' ? 'zh-CN' : 'en'}
-      crossorigin="anonymous"
-      async
-    ></script>
+  <section
+    class="comments"
+    id="comments"
+    aria-label={t.comments}
+    data-thread={thread}
+    data-api={endpoint}
+    data-lang={lang}
+    data-page-size={String(COMMENTS.pageSize)}
+    data-i18n={JSON.stringify(i18n)}
+  >
+    <header class="comments-head">
+      <h2>{t.comments}<span class="comments-count" data-comments-count></span></h2>
+    </header>
+    <p class="comments-hint">{t.commentsHint}</p>
+    <p class="comments-status" data-comments-status role="status" aria-live="polite"></p>
+    <ul class="comments-list" data-comments-list></ul>
+    <button type="button" class="comments-more" data-load-more hidden>{t.commentsLoadMore}</button>
+
+    <form class="comment-form" data-comment-form novalidate>
+      <div class="comment-fields">
+        <label>
+          <span>{t.commentsName}</span>
+          <input
+            type="text"
+            name="author"
+            maxlength="40"
+            required
+            autocomplete="nickname"
+            placeholder={t.commentsNamePlaceholder}
+          />
+        </label>
+        <label>
+          <span>{t.commentsWebsite}</span>
+          <input
+            type="url"
+            name="website"
+            maxlength="200"
+            autocomplete="url"
+            placeholder={t.commentsWebsitePlaceholder}
+          />
+        </label>
+      </div>
+      <label class="comment-body-field">
+        <span>{t.commentsBody}</span>
+        <textarea name="body" rows="4" maxlength="2000" required placeholder={t.commentsBodyPlaceholder}></textarea>
+      </label>
+      <div class="comment-trap" aria-hidden="true">
+        <label>Website<input type="text" name="trap" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <div class="comment-actions">
+        <button type="submit" class="btn-primary" data-submit>{t.commentsSubmit}</button>
+        <p class="comments-status" data-form-status role="status" aria-live="polite"></p>
+      </div>
+    </form>
   </section>
 )}
+
+<script>
+  import { commentsApiUrl, formatCommentTime } from '../lib/comments';
+
+  type Lang = 'zh' | 'en';
+
+  interface CommentItem {
+    id: number;
+    author: string;
+    body: string;
+    website: string;
+    createdAt: string;
+  }
+
+  interface ListResponse {
+    items: CommentItem[];
+    total: number;
+    nextBefore: number | null;
+  }
+
+  interface PostResponse {
+    item?: CommentItem;
+    error?: string;
+  }
+
+  const NICKNAME_KEY = 'comments-author';
+
+  const root = document.getElementById('comments');
+
+  if (root && root.dataset.ready !== '1') {
+    root.dataset.ready = '1';
+
+    const lang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
+    const i18n = JSON.parse(root.dataset.i18n ?? '{}') as Record<string, string>;
+    const api = commentsApiUrl(window.location.origin, root.dataset.api ?? '');
+    const thread = root.dataset.thread ?? '/';
+    const pageSize = Number(root.dataset.pageSize) || 20;
+    const startedAt = Date.now();
+
+    const list = root.querySelector<HTMLUListElement>('[data-comments-list]');
+    const count = root.querySelector<HTMLElement>('[data-comments-count]');
+    const status = root.querySelector<HTMLElement>('[data-comments-status]');
+    const more = root.querySelector<HTMLButtonElement>('[data-load-more]');
+    const form = root.querySelector<HTMLFormElement>('[data-comment-form]');
+    const formStatus = root.querySelector<HTMLElement>('[data-form-status]');
+    const submit = root.querySelector<HTMLButtonElement>('[data-submit]');
+    const nameInput = form?.querySelector<HTMLInputElement>('input[name="author"]');
+    const bodyInput = form?.querySelector<HTMLTextAreaElement>('textarea[name="body"]');
+
+    let nextBefore: number | null = null;
+    let total = 0;
+    let childCount = 0;
+    let loading = false;
+    let posting = false;
+
+    const setStatus = (text: string) => {
+      if (status) status.textContent = text;
+    };
+    const setFormStatus = (text: string) => {
+      if (formStatus) formStatus.textContent = text;
+    };
+    const updateCount = () => {
+      if (count) count.textContent = total > 0 ? `(${total})` : '';
+    };
+    const removeRetry = () => {
+      root.querySelectorAll('.comment-retry').forEach((node) => node.remove());
+    };
+    const firstChar = (author: string) => [...author.trim()][0] ?? '?';
+
+    function renderItem(item: CommentItem): HTMLLIElement {
+      const itemEl = document.createElement('li');
+      itemEl.className = 'comment';
+
+      const avatar = document.createElement('span');
+      avatar.className = 'comment-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = firstChar(item.author);
+
+      const main = document.createElement('div');
+      main.className = 'comment-main';
+
+      const meta = document.createElement('div');
+      meta.className = 'comment-meta';
+
+      if (item.website) {
+        const link = document.createElement('a');
+        link.href = item.website;
+        link.textContent = item.author;
+        link.rel = 'nofollow ugc noopener';
+        link.target = '_blank';
+        meta.append(link);
+      } else {
+        const name = document.createElement('span');
+        name.className = 'comment-author';
+        name.textContent = item.author;
+        meta.append(name);
+      }
+
+      const time = document.createElement('time');
+      time.className = 'comment-time';
+      time.dateTime = item.createdAt;
+      time.textContent = formatCommentTime(item.createdAt, lang);
+      meta.append(time);
+
+      const body = document.createElement('p');
+      body.className = 'comment-body';
+      body.textContent = item.body;
+
+      main.append(meta, body);
+      itemEl.append(avatar, main);
+      return itemEl;
+    }
+
+    function appendItems(items: CommentItem[], atTop: boolean) {
+      if (!list) return;
+      const nodes = items.map(renderItem);
+      if (atTop) list.prepend(...nodes);
+      else list.append(...nodes);
+      childCount += nodes.length;
+    }
+
+    async function load(before?: number) {
+      if (loading) return;
+      loading = true;
+      removeRetry();
+      if (before === undefined) setStatus(i18n.loading ?? '');
+      try {
+        const url = new URL(api, window.location.origin);
+        url.searchParams.set('thread', thread);
+        url.searchParams.set('limit', String(pageSize));
+        if (before !== undefined) url.searchParams.set('before', String(before));
+
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = (await response.json()) as ListResponse;
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        appendItems(items, false);
+        total = Number(data.total) || childCount;
+        updateCount();
+        nextBefore = typeof data.nextBefore === 'number' ? data.nextBefore : null;
+        if (more) more.hidden = nextBefore === null;
+        setStatus(items.length === 0 && before === undefined ? (i18n.empty ?? '') : '');
+      } catch {
+        setStatus(i18n.loadError ?? '');
+        if (before === undefined && list) {
+          list.replaceChildren();
+          childCount = 0;
+          total = 0;
+          updateCount();
+          if (more) more.hidden = true;
+          const retry = document.createElement('button');
+          retry.type = 'button';
+          retry.className = 'comment-retry';
+          retry.textContent = i18n.retry ?? 'Retry';
+          retry.addEventListener('click', () => {
+            retry.remove();
+            void load();
+          });
+          list.after(retry);
+        }
+      } finally {
+        loading = false;
+      }
+    }
+
+    function messageFor(statusCode: number, error?: string): string {
+      if (statusCode === 429 || error === 'rate-limited') return i18n.errorRate ?? '';
+      if (statusCode === 503 || error === 'db-missing') return i18n.errorUnavailable ?? '';
+      if (error === 'too-fast') return i18n.errorQuick ?? '';
+      if (statusCode === 400) return i18n.errorInvalid ?? '';
+      return i18n.errorFailed ?? '';
+    }
+
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (posting || !form || !submit) return;
+
+      const data = new FormData(form);
+      const payload = {
+        thread,
+        author: String(data.get('author') ?? ''),
+        body: String(data.get('body') ?? ''),
+        website: String(data.get('website') ?? ''),
+        trap: String(data.get('trap') ?? ''),
+        elapsed: Date.now() - startedAt,
+      };
+
+      posting = true;
+      submit.disabled = true;
+      const label = submit.textContent ?? '';
+      submit.textContent = i18n.submitting ?? '';
+      setFormStatus('');
+
+      try {
+        const response = await fetch(new URL(api, window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const result = (await response.json().catch(() => ({}))) as PostResponse;
+        if (response.status === 201 && result.item) {
+          appendItems([result.item], true);
+          total += 1;
+          updateCount();
+          setStatus('');
+          setFormStatus(i18n.posted ?? '');
+          if (bodyInput) bodyInput.value = '';
+          try {
+            if (nameInput) localStorage.setItem(NICKNAME_KEY, nameInput.value);
+          } catch {
+            /* 隐私模式下 localStorage 可能不可用，忽略 */
+          }
+        } else {
+          setFormStatus(messageFor(response.status, result.error));
+        }
+      } catch {
+        setFormStatus(i18n.errorFailed ?? '');
+      } finally {
+        posting = false;
+        submit.disabled = false;
+        submit.textContent = label;
+      }
+    });
+
+    try {
+      const saved = localStorage.getItem(NICKNAME_KEY);
+      if (saved && nameInput && !nameInput.value) nameInput.value = saved;
+    } catch {
+      /* 忽略 */
+    }
+
+    more?.addEventListener('click', () => {
+      if (nextBefore !== null) void load(nextBefore);
+    });
+
+    void load();
+  }
+</script>
+
+<style is:global>
+  /* 客户端会动态插入评论节点，所以用 #comments 作用域而不是 Astro 的组件作用域。 */
+  #comments {
+    max-width: var(--maxw);
+    margin: var(--space-6) auto 0;
+    padding-top: var(--space-4);
+    border-top: 2px solid var(--line);
+  }
+
+  #comments .comments-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  #comments h2 {
+    margin: 0;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-h2);
+  }
+
+  #comments .comments-count {
+    margin-left: 0.35em;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+    font-weight: 400;
+  }
+
+  #comments .comments-hint {
+    margin: var(--space-2) 0 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  #comments .comments-status {
+    min-height: 1.4em;
+    margin: var(--space-2) 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  #comments .comments-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  #comments .comment {
+    display: grid;
+    grid-template-columns: 2.4rem 1fr;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px dashed var(--line);
+  }
+
+  #comments .comment-avatar {
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: var(--radius);
+    background: var(--accent-gradient);
+    box-shadow: 0 var(--px) 0 0 var(--card-edge);
+    color: #fff;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    line-height: 1;
+  }
+
+  #comments .comment-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  #comments .comment-author,
+  #comments .comment-meta a {
+    color: var(--text);
+    font-size: var(--fs-small);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  #comments .comment-meta a {
+    color: var(--link);
+  }
+
+  #comments .comment-meta a:hover {
+    text-decoration: underline;
+  }
+
+  #comments .comment-time {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--fs-tiny);
+  }
+
+  #comments .comment-body {
+    margin: var(--space-1) 0 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    font-size: var(--fs-small);
+    line-height: 1.7;
+  }
+
+  #comments .comments-more,
+  #comments .comment-retry {
+    margin-top: var(--space-3);
+    padding: 0.5em 1em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-small);
+    cursor: pointer;
+    transition: border-color var(--dur), transform var(--dur);
+  }
+
+  #comments .comments-more:hover,
+  #comments .comment-retry:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  #comments .comment-form {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+
+  #comments .comment-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+
+  #comments .comment-form label {
+    display: grid;
+    gap: var(--space-1);
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  #comments .comment-form input,
+  #comments .comment-form textarea {
+    padding: 0.55em 0.7em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-small);
+  }
+
+  #comments .comment-form input:focus,
+  #comments .comment-form textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+
+  #comments .comment-form textarea {
+    min-height: 6rem;
+    resize: vertical;
+  }
+
+  #comments .comment-trap {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
+
+  #comments .comment-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  #comments .comment-actions .comments-status {
+    margin: 0;
+  }
+
+  #comments .btn-primary {
+    padding: 0.6em 1.3em;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--accent-gradient);
+    box-shadow: 0 var(--px) 0 0 var(--card-edge);
+    color: var(--bg);
+    font: inherit;
+    font-size: var(--fs-small);
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform var(--dur), opacity var(--dur);
+  }
+
+  #comments .btn-primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
+
+  #comments .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
+  @media (max-width: 560px) {
+    #comments .comment-fields {
+      grid-template-columns: 1fr;
+    }
+
+    #comments .comment {
+      grid-template-columns: 1.9rem 1fr;
+    }
+
+    #comments .comment-avatar {
+      width: 1.9rem;
+      height: 1.9rem;
+      font-size: var(--fs-tiny);
+    }
+  }
+</style>

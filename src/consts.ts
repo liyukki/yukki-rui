@@ -41,6 +41,26 @@ export const UI: Record<Lang, Record<string, string>> = {
     languageSwitch: 'English',
     themeToggle: '切换深浅色主题',
     comments: '评论',
+    commentsHint: '不用登录，填个昵称就能说两句；站长可以删除不合适的评论。',
+    commentsEmpty: '还没有评论，来说两句吧。',
+    commentsLoading: '评论加载中…',
+    commentsLoadError: '评论加载失败，稍后再试。',
+    commentsRetry: '重试',
+    commentsLoadMore: '加载更早的评论',
+    commentsName: '昵称',
+    commentsNamePlaceholder: '怎么称呼你',
+    commentsWebsite: '网址（选填）',
+    commentsWebsitePlaceholder: 'https://example.com',
+    commentsBody: '评论内容',
+    commentsBodyPlaceholder: '想说什么就写什么',
+    commentsSubmit: '发表评论',
+    commentsSubmitting: '发送中…',
+    commentsPosted: '发表成功。',
+    commentsErrorInvalid: '内容不合法：昵称和正文都要填，网址要么留空要么以 http(s) 开头。',
+    commentsErrorQuick: '提交太快了，刷新页面后再试。',
+    commentsErrorRate: '发得太快了，歇一分钟再来。',
+    commentsErrorUnavailable: '评论服务还没配置好。',
+    commentsErrorFailed: '提交失败，请稍后再试。',
     notFoundTitle: '页面不存在',
     notFoundBody: '这个页面不存在。',
     readMore: '阅读全文',
@@ -55,6 +75,26 @@ export const UI: Record<Lang, Record<string, string>> = {
     languageSwitch: '中文',
     themeToggle: 'Toggle color theme',
     comments: 'Comments',
+    commentsHint: 'No sign-in needed — just pick a display name. The owner can remove unsuitable comments.',
+    commentsEmpty: 'No comments yet. Say something!',
+    commentsLoading: 'Loading comments…',
+    commentsLoadError: 'Could not load comments. Please try again later.',
+    commentsRetry: 'Retry',
+    commentsLoadMore: 'Load earlier comments',
+    commentsName: 'Name',
+    commentsNamePlaceholder: 'What should we call you',
+    commentsWebsite: 'Website (optional)',
+    commentsWebsitePlaceholder: 'https://example.com',
+    commentsBody: 'Comment',
+    commentsBodyPlaceholder: 'Say what you think',
+    commentsSubmit: 'Post comment',
+    commentsSubmitting: 'Sending…',
+    commentsPosted: 'Posted.',
+    commentsErrorInvalid: 'Invalid content: name and comment are required, and the website must start with http(s).',
+    commentsErrorQuick: 'That was too quick — reload the page and try again.',
+    commentsErrorRate: 'Too fast — take a minute and try again.',
+    commentsErrorUnavailable: 'Comments are not configured yet.',
+    commentsErrorFailed: 'Could not post. Please try again later.',
     notFoundTitle: 'Page not found',
     notFoundBody: 'This page does not exist.',
     readMore: 'Read more',
@@ -64,17 +104,17 @@ export const UI: Record<Lang, Record<string, string>> = {
 /**
  * 评论区开关。
  *
- * enabled === false 时 Comments.astro 渲染 null：DOM 里不留痕迹，
- * 不产生任何第三方请求。想开评论时：把 enabled 改成 true，
- * 装 giscus App，然后把 repo / repoId / categoryId 三项填上。
+ * 评论由 Cloudflare Pages Functions + D1 提供（免登录、无第三方）。
+ * enabled === false 时 Comments.astro 渲染 null：DOM 里不留痕迹、不发请求，
+ * 但 API 与已有评论数据都还在，改回 true 重新部署即可再开。
+ *
+ * origin 是主站源：Cloudflare 部署同源，走相对路径；GitHub Pages 镜像
+ * 没有 Functions，前端会跨域调用这个地址（服务端有 CORS 白名单）。
  */
 export const COMMENTS = {
-  enabled: false,
-  provider: 'giscus' as const,
-  repo: '',
-  repoId: '',
-  category: 'Announcements',
-  categoryId: '',
+  enabled: true,
+  origin: 'https://yukki-rui.pages.dev',
+  pageSize: 20,
 } as const;
 
 /** 默认 OG 图，相对 public/ 的路径。1200×630。 */
