@@ -1,4 +1,4 @@
-# 评论区设计（免登录、免费、无第三方）
+﻿# 评论区设计（免登录、免费、无第三方）
 
 - 日期：2026-10-18
 - 状态：已与站长确认方向（Cloudflare 自建），待实现
@@ -83,7 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_ip ON comments (ip_hash, created_at);
 - `trap`（蜜罐）必须为空；`elapsed` 若提供须 ≥1500（毫秒，前端从聚焦表单开始计时）。
 - 防刷：同一 `ip_hash` 60 秒内最多 1 条、24 小时内最多 20 条，超出 429。
 
-**OPTIONS** → 204，CORS 白名单：`https://yukki-rui.pages.dev`、`https://liukki.github.io`（按实际用户名）、`http://localhost:4321`、`http://127.0.0.1:4321`；无 Origin（同源）不限制。
+**OPTIONS** → 204，CORS 白名单：`https://yukki-rui.pages.dev`、`https://liyukki.github.io`（按实际用户名）、`http://localhost:4321`、`http://127.0.0.1:4321`；无 Origin（同源）不限制。
 
 **GET `/api/comments-admin?limit=50`**（Header `Authorization: Bearer <COMMENTS_ADMIN_TOKEN>`）
 → 200 `{ "items": [{ ...评论字段..., "thread": "..." }] }`，按时间新→旧，含全部文章。

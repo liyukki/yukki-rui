@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   commentThread,
   commentsApiUrl,
@@ -48,13 +48,13 @@ describe('commentsEndpoint：构建期决定相对还是绝对地址', () => {
   });
 
   it('镜像部署（GitHub Pages）用主站绝对地址', () => {
-    expect(commentsEndpoint('https://liukki.github.io', 'https://yukki-rui.pages.dev')).toBe(
+    expect(commentsEndpoint('https://liyukki.github.io', 'https://yukki-rui.pages.dev')).toBe(
       'https://yukki-rui.pages.dev/api/comments',
     );
   });
 
   it('主站地址带尾斜杠也不会拼出双斜杠', () => {
-    expect(commentsEndpoint('https://liukki.github.io', 'https://yukki-rui.pages.dev/')).toBe(
+    expect(commentsEndpoint('https://liyukki.github.io', 'https://yukki-rui.pages.dev/')).toBe(
       'https://yukki-rui.pages.dev/api/comments',
     );
   });
@@ -73,7 +73,7 @@ describe('commentsApiUrl：运行期决定请求落到哪里', () => {
   });
 
   it('镜像站用绝对地址', () => {
-    expect(commentsApiUrl('https://liukki.github.io', 'https://yukki-rui.pages.dev/api/comments')).toBe(
+    expect(commentsApiUrl('https://liyukki.github.io', 'https://yukki-rui.pages.dev/api/comments')).toBe(
       'https://yukki-rui.pages.dev/api/comments',
     );
   });

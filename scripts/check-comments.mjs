@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 评论功能端到端自检（可选，不在 CI，也不在 verify:frontend 里）。
  *
  * 为什么需要它：评论链路横跨「构建出来的页面 → 浏览器脚本 → Pages Functions → D1」，
@@ -242,9 +242,9 @@ try {
 
   // 接口级断言：CORS 白名单、拒绝未知来源、管理接口鉴权。
   const getAllowed = await fetch(`${ORIGIN}/api/comments?thread=${encodeURIComponent(POST_PATH)}&limit=20`, {
-    headers: { Origin: 'https://liukki.github.io' },
+    headers: { Origin: 'https://liyukki.github.io' },
   });
-  check('公开接口允许 GitHub Pages 镜像跨域', getAllowed.headers.get('access-control-allow-origin') === 'https://liukki.github.io',
+  check('公开接口允许 GitHub Pages 镜像跨域', getAllowed.headers.get('access-control-allow-origin') === 'https://liyukki.github.io',
     String(getAllowed.headers.get('access-control-allow-origin')));
   const getDenied = await fetch(`${ORIGIN}/api/comments?thread=${encodeURIComponent(POST_PATH)}&limit=20`, {
     headers: { Origin: 'https://evil.example' },

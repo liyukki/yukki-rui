@@ -1,4 +1,4 @@
-# 评论区实现计划（Cloudflare D1 + Pages Functions）
+﻿# 评论区实现计划（Cloudflare D1 + Pages Functions）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -32,7 +32,7 @@
   - `commentsEndpoint(siteOrigin: string, productionOrigin: string): string` — 构建期返回空串（同源）或绝对 URL（跨源部署）。
   - `formatCommentTime(iso: string, lang: 'zh' | 'en'): string` — 客户端可复用的时间文案（`Intl.DateTimeFormat`，无效输入返回 ''）。
 
-- [ ] **Step 1: 写失败测试**（`tests/comments.test.ts`：`commentThread('/zh/posts/a/', '/')` → `/zh/posts/a/`；`commentThread('/yukki-rui/zh/posts/a/', '/yukki-rui/')` → `/zh/posts/a/`；`commentThread('/zh//posts/a', '/')` → `/zh/posts/a/`；`commentThread('nope', '/')` → `/`；`commentsEndpoint('https://yukki-rui.pages.dev','https://yukki-rui.pages.dev')` → `''`；`commentsEndpoint('https://liukki.github.io','https://yukki-rui.pages.dev')` → `'https://yukki-rui.pages.dev/api/comments'`；`formatCommentTime('bad','zh')` → `''`）
+- [ ] **Step 1: 写失败测试**（`tests/comments.test.ts`：`commentThread('/zh/posts/a/', '/')` → `/zh/posts/a/`；`commentThread('/yukki-rui/zh/posts/a/', '/yukki-rui/')` → `/zh/posts/a/`；`commentThread('/zh//posts/a', '/')` → `/zh/posts/a/`；`commentThread('nope', '/')` → `/`；`commentsEndpoint('https://yukki-rui.pages.dev','https://yukki-rui.pages.dev')` → `''`；`commentsEndpoint('https://liyukki.github.io','https://yukki-rui.pages.dev')` → `'https://yukki-rui.pages.dev/api/comments'`；`formatCommentTime('bad','zh')` → `''`）
 - [ ] **Step 2: 运行 `npx vitest run tests/comments.test.ts` 确认失败**
 - [ ] **Step 3: 实现 `src/lib/comments.ts`**
 - [ ] **Step 4: 重跑确认通过**

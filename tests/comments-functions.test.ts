@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALLOWED_ORIGINS,
   clampLimit,
   corsHeaders,
   normalizeThread,
@@ -165,10 +166,20 @@ describe('小助手', () => {
   });
 
   it('CORS 只回显白名单来源', () => {
-    const allowed = corsHeaders(request(`${BASE}/api/comments`, { headers: { Origin: 'https://liukki.github.io' } }));
-    expect(allowed['Access-Control-Allow-Origin']).toBe('https://liukki.github.io');
+    const allowed = corsHeaders(request(`${BASE}/api/comments`, { headers: { Origin: 'https://liyukki.github.io' } }));
+    expect(allowed['Access-Control-Allow-Origin']).toBe('https://liyukki.github.io');
     const evil = corsHeaders(request(`${BASE}/api/comments`, { headers: { Origin: 'https://evil.example' } }));
     expect(evil).toEqual({});
+  });
+
+  it('真实 GitHub Pages 站点在白名单里，拼错用户名的来源不放行', () => {
+    // 线上真实地址是 https://liyukki.github.io/yukki-rui/（两个 y）
+    const real = corsHeaders(request(`${BASE}/api/comments`, { headers: { Origin: 'https://liyukki.github.io' } }));
+    expect(real['Access-Control-Allow-Origin']).toBe('https://liyukki.github.io');
+    // 曾经把用户名写成 liukki（少一个 y），导致镜像站评论区 403；这条断言防止再退化
+    expect(ALLOWED_ORIGINS.has('https://liukki.github.io')).toBe(false);
+    const typo = corsHeaders(request(`${BASE}/api/comments`, { headers: { Origin: 'https://liukki.github.io' } }));
+    expect(typo).toEqual({});
   });
 });
 
@@ -304,11 +315,11 @@ describe('POST /api/comments', () => {
 
   it('白名单来源 → 201 并带回 CORS 头', async () => {
     const response = await createComment({
-      request: postRequest(newComment(), { Origin: 'https://liukki.github.io' }),
+      request: postRequest(newComment(), { Origin: 'https://liyukki.github.io' }),
       env: withDb(),
     });
     expect(response.status).toBe(201);
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://liukki.github.io');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://liyukki.github.io');
   });
 
   it('坏 JSON → 400', async () => {
@@ -328,12 +339,12 @@ describe('POST /api/comments', () => {
     const response = commentsOptions({
       request: request(`${BASE}/api/comments`, {
         method: 'OPTIONS',
-        headers: { Origin: 'https://liukki.github.io' },
+        headers: { Origin: 'https://liyukki.github.io' },
       }),
       env: {},
     });
     expect(response.status).toBe(204);
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://liukki.github.io');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://liyukki.github.io');
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('POST');
   });
 });

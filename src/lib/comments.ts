@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 评论区的纯逻辑助手（构建期 + 运行期共用）。
  *
  * 为什么需要 thread：站点有两条部署链路 —— Cloudflare Pages（base 为 "/"）
@@ -11,7 +11,7 @@ import type { Lang } from '../consts';
 /** 允许直接调用评论 API 的来源（跨域部署时用）。 */
 export const COMMENTS_ALLOWED_ORIGINS = [
   'https://yukki-rui.pages.dev',
-  'https://liukki.github.io',
+  'https://liyukki.github.io',
   'http://localhost:4321',
   'http://127.0.0.1:4321',
 ] as const;

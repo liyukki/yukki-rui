@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 公开评论 API（Cloudflare Pages Functions）。
  *
  *   GET  /api/comments?thread=/zh/posts/x/&before=12&limit=20
@@ -11,7 +11,7 @@
 
 export const ALLOWED_ORIGINS = new Set([
   'https://yukki-rui.pages.dev',
-  'https://liukki.github.io',
+  'https://liyukki.github.io',
   'http://localhost:4321',
   'http://127.0.0.1:4321',
 ]);
