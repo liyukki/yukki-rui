@@ -1,4 +1,4 @@
-﻿# 数据层修复与交接审核报告
+# 数据层修复与交接审核报告
 
 日期：2026-10-10（Asia/Hong_Kong）。分支：`codex/fix-handoff`。基线：`7363b29`。本轮未提交、推送或发布网站。
 
@@ -343,3 +343,39 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 修复：`functions/api/comments.js` 与 `src/lib/comments.ts` 的白名单改为 `https://liyukki.github.io`（测试、脚本、设计文档同步修正），并加了回归测试——真实来源放行、拼错的来源必须拒绝。提交 `c88550f`，两个平台部署后复验：CORS 预检 204 且回显正确来源，浏览器验收 **12/12** 通过。
 
 这个缺陷说明：单元测试用自己编的域名也能全绿，**只有真实浏览器站在真实域名上才能暴露**。新增的 `npm run check:comments-live` 把这类检查固化下来（默认只读，`-- --write` 时跑发→查→删闭环）。
+
+## 阅读体验：目录、阅读时长与阅读增强（DSH，2026-10-18）
+
+站长要求「看看这个网站还能做些什么」，随后确认四组改进全做（A 阅读体验 / B 搜索与归档 / C 运营工具 / D 分享与页面；另有 E 隐私与安全建议），按 P1→P4 分批实施。本节记录 P1（阅读体验）。
+
+设计文档 `docs/superpowers/specs/2026-10-18-reading-experience-design.md`，实现计划 `docs/superpowers/plans/2026-10-18-reading-experience-plan.md`，其余三组的调研归档在 `docs/superpowers/research/2026-10-18-roadmap-research.md`。
+
+### 交付内容
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 阅读时长 / 目录纯函数 | `src/lib/reading.ts` + `tests/reading.test.ts` | `countReadingMinutes`（中文 300 字/分、英文 200 词/分，向上取整至少 1）、`selectTocHeadings`（只留 h2/h3）、`formatReadingTime`（替换 `{minutes}`），9 项单测 |
+| 目录 | `src/components/PostToc.astro` | 宽屏右侧 sticky 常驻、窄屏正文上方 `details` 折叠；标题少于 2 个不渲染 |
+| 上一篇 / 下一篇 | `src/components/PostNav.astro` | 按发布日期排序：更早=「上一篇」、更新=「下一篇」（WordPress/Hexo 惯例）；单侧为空显示虚线占位 |
+| 阅读增强 | `src/components/PostExtras.astro` | 顶部进度条、TOC 高亮（IntersectionObserver）、代码块「复制」、图片灯箱、返回顶部；均支持 View Transitions 后重入 |
+| 接线 | `src/layouts/PostLayout.astro`、`src/pages/[lang]/posts/[...id].astro`、`src/layouts/BaseLayout.astro` | `<ClientRouter />` 开启页内转场；`render()` 的 `headings` 喂目录、`getPosts()` 算上下篇 |
+| 隐私 | `src/content/site/home.zh.json` / `home.en.json` | 首页原先明文公开 QQ 与微信，改为指向评论区与 X |
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| `npx astro check` | 69 files，0 errors / 0 warnings |
+| `npx vitest run` | 12 files，**128 tests** 全通过 |
+| `npm run build` | 21 页；产物含 `data-reading-progress`、`post-toc--inline/--aside`、`post-reading`、`post-nav__card`、`rel="prev"`、ClientRouter 脚本 |
+| 本地端到端 `.cms-setup/check-reading.mjs` | **23/23**：阅读时长、目录可见/条目数/宽屏隐藏折叠版、上下篇内链、进度条、返回顶部、目录高亮、代码复制（剪贴板内容一致）、灯箱开/关、转场换文、转场后主题保持（浅色与深色各一次）、评论重新初始化、转场后进度条与返回顶部仍工作、主题切换、390px 窄屏折叠目录且无横向溢出、上下篇单列 |
+
+### 本轮发现并修掉的缺陷
+
+1. **开启 View Transitions 后深色主题丢失**：`<ClientRouter />` 转场时替换 `<html>` 属性，`document.documentElement.dataset.theme` 变 undefined，深色模式用户导航一次就闪回浅色。修复：BaseLayout 的 inline 脚本抽成 `applyTheme()`，并监听 `astro:after-swap` 重新贴主题；端到端补了「浅色→浅色」「深色→深色」两条断言。
+2. **转场后交互脚本全部失效**：`ThemeToggle`、`LangSwitch`、评论区的初始化都只在首屏跑一次。改为可重入 `init()`（`dataset` 防重复绑定）+ 监听 `astro:page-load`。
+3. **目录双份渲染导致高亮错位**：页面同时渲染 inline 与 aside 两版目录，原来每个锚点只记第一个链接（inline 在前、桌面端被 CSS 隐藏），结果可见的 aside 永远不高亮。改为 `Map<hash, HTMLAnchorElement[]>`，同一锚点的所有链接一起加 `is-active`。
+4. **复制按钮文案被带进剪贴板**：复制用 `code.innerText` 而不是 `pre.innerText`；自检里发现剪贴板换行是 CRLF，断言改为按行归一化后比较。
+5. **`prose.rise` 入场动画的 transform 会给 `position: fixed` 造 containing block**：进度条与返回顶部按钮如果在文章容器内，只会固定在文章而非视口。实现改为初始化时把这两个节点迁到 `document.body`。
+
+> 并行开发约定：P1 的两个组件由只读子代理（Task 2/3）在独立文件里实现、主代理负责接线与门禁；同一文件（PostExtras.astro 的 TOC 高亮段）出现过一次并发改写，最终以主代理修订版为准。

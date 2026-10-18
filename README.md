@@ -6,6 +6,8 @@
 
 文章页有**免登录评论区**：读者填昵称即可留言，数据存在 Cloudflare D1，站长在 <https://yukki-rui.pages.dev/admin/comments/> 删除；配置与使用见 [使用说明第 11 节](docs/usage-guide.md)。
 
+文章页还有**阅读小工具**：自动目录、阅读时长、顶部阅读进度、代码块一键复制、图片放大、上一篇/下一篇（见[使用说明第 12 节](docs/usage-guide.md)）。
+
 | 平台 | 地址 | 说明 |
 |---|---|---|
 | GitHub Pages | <https://liyukki.github.io/yukki-rui/> | 展示用；纯静态，没有登录函数 |
