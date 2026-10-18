@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "astro dev",
     "cms": "decap-server",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
     "check": "astro check",
     "test": "vitest run",
@@ -23,7 +23,8 @@
     "check:comments-live": "node scripts/check-comments-live.mjs",
     "verify": "npm run check && npm test && npm run check:base && npm run check:content",
     "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:frontend",
-    "check:reading": "node scripts/check-reading.mjs"
+    "check:reading": "node scripts/check-reading.mjs",
+    "check:search": "node scripts/check-search.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^8.0.3",
@@ -34,6 +35,7 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "decap-server": "^3.11.4",
+    "pagefind": "^1.5.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"
   }

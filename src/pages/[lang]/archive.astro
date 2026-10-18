@@ -1,0 +1,124 @@
+---
+/** 归档：按年份倒序列出全部已发布文章。纯静态，构建期完成分组。 */
+import PixelSprite from '../../components/PixelSprite.astro';
+import { SITE, UI, type Lang } from '../../consts';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { groupPostsByYear } from '../../lib/archive';
+import { getPosts } from '../../lib/posts';
+import { postHref } from '../../lib/url';
+
+export function getStaticPaths() {
+  return SITE.langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const posts = await getPosts(lang);
+const years = groupPostsByYear(posts);
+const total = posts.length;
+const countTemplate = UI[lang].archiveCount;
+const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', {
+  month: '2-digit',
+  day: '2-digit',
+});
+---
+<BaseLayout title={`${UI[lang].archive} · ${SITE.title}`} description={UI[lang].archiveHint} lang={lang}>
+  <article class="prose rise subpage">
+    <header class="subpage-heading">
+      <PixelSprite name="chest" size={48} />
+      <span class="eyebrow">ARCHIVE LEDGER</span>
+      <h1>{UI[lang].archive}</h1>
+      <p>{UI[lang].archiveHint}</p>
+    </header>
+    {
+      total === 0 ? (
+        <p>{UI[lang].noPosts}</p>
+      ) : (
+        years.map((year) => (
+          <section class="card archive-year" aria-labelledby={`archive-${year.year}`}>
+            <h2 class="archive-year__title" id={`archive-${year.year}`}>
+              {year.year}
+              <span class="archive-year__count">
+                {countTemplate.replace('{count}', String(year.posts.length))}
+              </span>
+            </h2>
+            <ul class="archive-list">
+              {year.posts.map((post) => (
+                <li class="archive-item">
+                  <time class="archive-item__date" datetime={post.data.pubDate.toISOString()}>
+                    {dateFmt.format(post.data.pubDate)}
+                  </time>
+                  <a class="archive-item__link" href={postHref(lang, post.id)}>
+                    {post.data.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
+      )
+    }
+  </article>
+</BaseLayout>
+<style>
+  .archive-year {
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-3);
+  }
+  .archive-year__title {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-2);
+    padding-bottom: var(--space-1);
+    border-bottom: 2px dashed color-mix(in srgb, var(--line) 80%, transparent);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-h2);
+    letter-spacing: 0.06em;
+  }
+  .archive-year__count {
+    color: var(--text-dim);
+    font-size: var(--fs-tiny);
+    font-family: var(--font-pixel);
+    letter-spacing: 0.08em;
+  }
+  .archive-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-1);
+  }
+  .archive-item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: 0.35em 0;
+    border-bottom: 1px dashed color-mix(in srgb, var(--line) 55%, transparent);
+  }
+  .archive-item:last-child {
+    border-bottom: 0;
+  }
+  .archive-item__date {
+    flex: none;
+    min-width: 4.5em;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+    font-family: var(--font-pixel);
+    letter-spacing: 0.04em;
+  }
+  .archive-item__link {
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    text-underline-offset: 0.2em;
+  }
+  .archive-item__link:hover {
+    color: var(--accent);
+  }
+  @media (max-width: 520px) {
+    .archive-item {
+      flex-wrap: wrap;
+      gap: 0.2em var(--space-2);
+    }
+  }
+</style>

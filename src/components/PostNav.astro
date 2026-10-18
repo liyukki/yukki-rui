@@ -21,7 +21,7 @@ const showNav = prev !== null || next !== null;
 ---
 
 {showNav && (
-  <nav class="post-nav" aria-label={`${prevLabel} / ${nextLabel}`}>
+  <nav class="post-nav" data-pagefind-ignore aria-label={`${prevLabel} / ${nextLabel}`}>
     {prev ? (
       <a class="post-nav__card post-nav__card--prev" href={prev.href} rel="prev">
         <span class="post-nav__label">{prevLabel}</span>

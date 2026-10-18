@@ -20,7 +20,7 @@ const showToc = headings.length >= 2;
 ---
 
 {showToc && variant === 'aside' && (
-  <aside class="post-toc post-toc--aside" data-post-toc data-lang={lang}>
+  <aside class="post-toc post-toc--aside" data-post-toc data-pagefind-ignore data-lang={lang}>
     <p class="post-toc__label">{label}</p>
     <nav aria-label={label}>
       <ol class="post-toc__list">
@@ -35,7 +35,7 @@ const showToc = headings.length >= 2;
 )}
 
 {showToc && variant === 'inline' && (
-  <details class="post-toc post-toc--inline" data-post-toc data-lang={lang}>
+  <details class="post-toc post-toc--inline" data-post-toc data-pagefind-ignore data-lang={lang}>
     <summary>{label}</summary>
     <nav aria-label={label}>
       <ol class="post-toc__list">

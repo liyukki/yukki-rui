@@ -381,3 +381,41 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 6. **CI 上 `check:content` 因 ClientRouter 编译元数据缺失而失败**：该脚本把源码复制到系统临时目录、再用软链接指向 `node_modules`；Astro 内部组件（`astro/components/ClientRouter.astro`）经 realpath 解析后的路径与主模块不一致，Linux 上报 `No cached compile metadata found for ".../ClientRouter.astro?astro&type=style..."`（Windows 的 junction 恰好不触发）。修复：临时工程改放到项目目录内部（`.tmp-content-check-*`，已被 `.gitignore` 的 `.tmp-*` 覆盖），Node 按层级正常解析到同一份 `node_modules`，不再依赖软链接。
 
 > 并行开发约定：P1 的两个组件由只读子代理（Task 2/3）在独立文件里实现、主代理负责接线与门禁；同一文件（PostExtras.astro 的 TOC 高亮段）出现过一次并发改写，最终以主代理修订版为准。
+
+## 搜索与归档：Pagefind 静态索引（DSH，2026-10-18，P2）
+
+站长确认 A/B/C/D 四组改进全做，按 P1→P4 分批；P1（阅读体验）上线后实施 P2（B 组：搜索与归档）。设计文档 `docs/superpowers/specs/2026-10-18-search-archive-design.md`，实现计划 `docs/superpowers/plans/2026-10-18-search-archive-plan.md`。
+
+选型：**Pagefind**（Rust/WASM 静态索引，`pagefind@1.5.2` 作为 devDependency）。理由是索引产物是纯静态文件，Cloudflare Pages 与 GitHub Pages 用同一套机制、都不需要服务器或数据库；否决了第三方搜索服务（要外部账号/额度）与客户端全量 JSON 搜索（文章变多后首屏体积不可控）。
+
+### 交付内容
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 归档分组纯函数 | `src/lib/archive.ts` + `tests/archive.test.ts` | `groupPostsByYear`：按 `pubDate.getFullYear()` 分组、年份倒序、组内按时间倒序、同日保持传入顺序；4 项单测 |
+| 归档页 | `src/pages/[lang]/archive.astro` | 构建期静态渲染，每年一个 `.card`，条目带日期、标题、内链；中英各自独立 |
+| 搜索页 | `src/pages/[lang]/search.astro` | 页面里只放挂载点与 i18n data 属性，`pagefind-ui.js` / `pagefind-ui.css` 在运行时注入（原因见下） |
+| 导航 | `src/consts.ts` | `NAV` 增加「归档 / 搜索」（中英各 5 项）；`UI` 增加 `search*` / `archive*` 8 个文案键 |
+| 索引范围 | `src/layouts/PostLayout.astro`、`PostExtras`/`PostToc`/`PostNav`/`Comments` | 只有文章 `<article>` 带 `data-pagefind-body`；目录、上下篇、评论、增强脚本容器带 `data-pagefind-ignore` |
+| 构建 | `package.json` | `"build": "astro build && pagefind --site dist"`；本地实测索引 2 种语言、6 篇文章、550 词（草稿被排除）|
+| 发布门槛 | `scripts/check-frontend.mjs` + `tests/frontend-readiness.test.ts` | required 增加归档页、搜索页、`pagefind/pagefind-entry.json`、`pagefind/pagefind-ui.js`；单测同步 |
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| `npx astro check` | 75 files，0 errors / 0 warnings |
+| `npx vitest run` | 13 files，**134 tests** 全通过（新增归档 4 项 + 前端门禁 2 项）|
+| `npm run verify:frontend` | 退出码 0：两种 base 各 **27 个真实页面、1099 条站内引用**通过，构建、死链、前端必需产物全过 |
+| 本地端到端 `npm run check:search` | **19/19**：中英导航各 5 项且链接带 base、归档年份分组/条目/篇数/倒序、英文归档、搜索框与本地化占位、中文检索命中且链接指向站内文章、无结果文案、搜索页与归档页自身不进索引、英文检索、点结果进文章页、经页头导航转场进搜索页后仍可检索、390px 窄屏归档与搜索页均无横向溢出、Pagefind 资源无 4xx、无脚本异常 |
+
+### 本轮踩到的坑
+
+1. **搜索页资源不能写死 `<link>`**：`scripts/check-base-parity.mjs` 与 `scripts/check-content.mjs` 只跑 `astro build`、不跑 Pagefind，因此这两种构建里没有 `dist/pagefind/`；静态写死引用会被 `check:links.mjs` 判成死链，把发布门槛弄挂。改为页面加载后在浏览器里注入 `<link>` 与 `<script>`，`data-bundle` 用 `withBase('pagefind/')`，两种 base 都正确。
+2. **搜索页必须排除自身与界面元素**：Pagefind 只索引带 `data-pagefind-body` 的页面；不标记的话搜索页、归档页的标题文案会被搜到（自检里用「ARCHIVE LEDGER」验证 0 结果）。评论、目录、上一篇/下一篇也加了 `data-pagefind-ignore`，否则正文会被目录/邻居标题污染。
+3. **中文无 stemming 是正常的**：`pagefind` 输出 `Note: Pagefind doesn't support stemming for the language zh-cn`，检索仍可用（按字匹配），不要用 `--force-language` 强制成英文（会让中英混排索引错乱）。
+4. **`npm i -D pagefind` 会把 extraneous 的 playwright 清掉**：本地端到端的几个 `check:*` 脚本依赖 playwright，仓库约定不把它写进 `package.json`（避免云端构建装浏览器内核），所以本机要用时临时 `npm i --no-save playwright`。
+
+### 尚未做
+
+A/B/C/D 里的 P3（Cloudflare Web Analytics、GitHub Actions 评论通知与草稿提醒）与 P4（每篇独立 OG 图、JSON-LD）仍待做，调研与最小实现路径已归档在 `docs/superpowers/research/2026-10-18-roadmap-research.md`。

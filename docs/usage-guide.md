@@ -14,6 +14,8 @@
 |---|---|
 | 首页 | `/zh/` |
 | 文章 | `/zh/posts/文章名/` |
+| 归档 | `/zh/archive/`（按年份翻旧文）|
+| 搜索 | `/zh/search/`（关键词搜标题和正文）|
 | 标签总览 | `/zh/tags/` |
 | 单个标签 | `/zh/tags/标签名/` |
 | 关于 | `/zh/about/` |
@@ -22,7 +24,7 @@
 | 404 | 自动 |
 | RSS 订阅 | `/rss.xml`（中）`/rss-en.xml`（英）|
 
-**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、128 项单元测试通过、两种部署路径各 21 个页面无死链、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过、阅读体验端到端自检 23 项通过。
+**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、134 项单元测试通过、两种部署路径各 27 个页面无死链、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过、阅读体验端到端自检 23 项通过、搜索与归档端到端自检 19 项通过。
 
 **站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages）与 https://yukki-rui.pages.dev/ （Cloudflare Pages，中英双语、照片、RSS、sitemap 均实测正常）。
 
@@ -31,6 +33,8 @@
 **新增：评论区**。文章页底部可以留言，读者不用注册、不用登录 GitHub；站长在 `/admin/comments/` 删评论，见第 11 节。
 
 **新增：阅读小工具**。文章页有目录、阅读时长、阅读进度条、代码一键复制、图片放大、上一篇/下一篇，见第 12 节。
+
+**新增：搜索与归档**。页头多了「归档」和「搜索」：归档按年份翻旧文，搜索在浏览器里直接查全文（Pagefind 静态索引，不依赖任何服务器），见第 13 节。
 
 ---
 
@@ -352,6 +356,7 @@ GitHub 每次推送都会自动跑检查，缺关键页面时会**拒绝发布**
 | `npm run check:comments` | 可选：评论区端到端（wrangler 本地 D1；需先 `npm i -D playwright` 与 `npm run build`，不参与发布检查）|
 | `npm run check:comments-live` | 可选：线上评论区只读检查（`-- --write` 时连发→查→删一起验）|
 | `npm run check:reading` | 可选：阅读体验端到端（需先 `npm i -D playwright` 与 `npm run build`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可跑线上）|
+| `npm run check:search` | 可选：搜索与归档端到端（归档分组、Pagefind 检索、无结果文案、索引隔离、移动端；需先 `npm i -D playwright` 与 `npm run build`）|
 
 ---
 
@@ -597,7 +602,28 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 ---
 
-## 13. 还缺什么
+## 13. 搜索与归档
+
+页头导航现在是「首页 / 归档 / 标签 / 搜索 / 关于」，中英两套各自独立。
+
+| 页面 | 做什么 | 地址 |
+|---|---|---|
+| 归档 | 按年份列出全部已发布文章，新的年份在上、组内按日期倒序 | `/zh/archive/`、`/en/archive/` |
+| 搜索 | 输入关键词即搜标题与正文，结果可点进文章；结果为空会提示「没有找到相关内容」 | `/zh/search/`、`/en/search/` |
+
+**搜索是怎么实现的**：用 [Pagefind](https://pagefind.app/) 在 `npm run build` 末尾对 `dist/` 做一次静态索引，生成 `dist/pagefind/`。范围是「构建时已经存在」的文章，所以：
+
+- 不需要服务器、不需要数据库，**Cloudflare 和 GitHub Pages 两个站点都能用**（索引随构建产物一起部署）。
+- 新增/修改文章后，**先构建再部署**，搜索才会更新；`npm run dev` 本地开发时不产索引，搜索页会提示「搜索暂时不可用」，这是正常的，跑一次 `npm run build` 即可。
+- 草稿（`draft: true`）不进索引；评论、目录、上一篇/下一篇这些界面元素也不进索引，只索引文章正文。
+
+**改文案**：`src/consts.ts` 的 `UI.zh` / `UI.en` 里 `search`、`archive`、`searchHint`、`searchPlaceholder`、`searchEmpty`、`searchError`、`archiveHint`、`archiveCount` 这几项。
+
+**发布前自查**：`npm run build && npm run check:search`，或对线上跑 `LIVE_ORIGIN=https://yukki-rui.pages.dev LIVE_BASE=/ npm run check:search`。
+
+---
+
+## 14. 还缺什么
 
 **上线工作已全部完成**：两个平台在跑，网页后台可以登录并改内容（新建/删除文章都已实测，提交真的进了仓库）。
 

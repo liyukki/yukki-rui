@@ -8,6 +8,8 @@
 
 文章页还有**阅读小工具**：自动目录、阅读时长、顶部阅读进度、代码块一键复制、图片放大、上一篇/下一篇（见[使用说明第 12 节](docs/usage-guide.md)）。
 
+页头还有**归档与站内搜索**：归档按年份翻旧文；搜索用 Pagefind 在构建时生成静态索引，纯浏览器检索、不需要服务器（见[使用说明第 13 节](docs/usage-guide.md)）。
+
 | 平台 | 地址 | 说明 |
 |---|---|---|
 | GitHub Pages | <https://liyukki.github.io/yukki-rui/> | 展示用；纯静态，没有登录函数 |
@@ -42,20 +44,22 @@ npm run dev
 | `npm run check:comments` | 可选：用 wrangler 本地 Pages 运行时 + 真实 D1 模拟跑评论区端到端（发评论/XSS/限流/管理删除/CORS；需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run check:comments-live` | 可选：对线上两个站点做评论区只读检查（渲染、接口、CORS、管理页；加 `-- --write` 且设 `COMMENTS_ADMIN_TOKEN` 时再跑一次发→查→删闭环）|
 | `npm run check:reading` | 可选：阅读体验端到端检查（本地跑 `dist/`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可对线上部署跑），覆盖目录、阅读时长、上下篇、进度条、返回顶部、代码复制、灯箱与 View Transitions（需 playwright 与先 `npm run build`；不参与发布检查）|
+| `npm run check:search` | 可选：搜索与归档端到端检查（归档分组、Pagefind 检索与索引隔离、无结果文案、移动端；需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
 | `npm run verify:frontend` | 上述检查加当前构建、链接检查及前端必需路由/分享图检查 |
 | `npm run preview` | 预览已有 `dist/` |
 
 `check:base` 在系统临时目录构建，保留现有 `dist/`；`--keep` 会打印临时产物地址。`check:content` 在临时源码副本中新增测试文章，原始 src 与 dist 均不改动。本轮不把“后端检查通过”等同于“前端已完成”。
 
-`check:cms-*` 与 `check:comments` 都要用 Playwright 启动真实浏览器；若本机 Playwright 缺少匹配的 headless shell（会报找不到 `chromium_headless_shell-*`），用环境变量指向已装好的 Chromium 或 Edge 可执行文件即可：
+`check:cms-*`、`check:comments`、`check:comments-live`、`check:reading`、`check:search` 都要用 Playwright 启动真实浏览器。Playwright 不在 `package.json` 里（避免云端构建装浏览器内核），本机需要时临时安装：
 
 ```powershell
+npm i --no-save playwright
 $env:CMS_OAUTH_CHROME = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
-npm run check:cms-config
-npm run check:cms-oauth
-npm run check:comments
+npm run check:search
 ```
+
+若本机 Playwright 缺少匹配的 headless shell（会报找不到 `chromium_headless_shell-*`），用 `CMS_OAUTH_CHROME` 指向已装好的 Chromium 或 Edge 可执行文件即可。
 
 ## 写文章
 
@@ -99,6 +103,22 @@ Cloudflare 侧一次性配置（**已于 2026-10-18 配好**）：建 D1 库 `yu
 
 本地端到端自检：`npm run build && npm run check:comments`（脚本自己起 `wrangler pages dev`，在 `.tmp-comments-check/` 里建本地 D1，跑完自动关掉）。上线后可用 `npm run check:comments-live` 做线上只读检查（带 `-- --write` 时会真的发一条再删掉，需要 `COMMENTS_ADMIN_TOKEN`）。
 
+## 搜索与归档
+
+| 部分 | 位置 |
+|---|---|
+| 搜索页 | `src/pages/[lang]/search.astro`（运行时注入 Pagefind UI，资源路径带 `withBase()`）|
+| 归档页 | `src/pages/[lang]/archive.astro` + `src/lib/archive.ts`（构建期按年份分组，纯函数有单测）|
+| 索引 | `npm run build` = `astro build && pagefind --site dist`，产物在 `dist/pagefind/`，随部署一起上传 |
+| 索引范围 | 只有带 `data-pagefind-body` 的文章 `<article>`；评论、目录、上下篇带 `data-pagefind-ignore` |
+| 导航 | `src/consts.ts` 的 `NAV` 与 `UI`（`search*` / `archive*` 文案）|
+
+两个平台都不用额外服务：索引是静态文件，GitHub Pages 和 Cloudflare Pages 构建时都会生成。`npm run dev` 不产索引，搜索页会显示「搜索暂时不可用」；要本地验证搜索先 `npm run build`。
+
+注意：`check:base` 与 `check:content` 只跑 `astro build`、不产 Pagefind 索引，所以搜索页的资源必须在运行时注入（不能写死 `<link>`），否则会被 `check:links` 判成死链。发布门槛 `check:frontend` 会检查 `pagefind/pagefind-entry.json` 等必需产物。
+
+端到端自检：`npm run build && npm run check:search`；线上检查：`LIVE_ORIGIN=https://yukki-rui.pages.dev LIVE_BASE=/ npm run check:search`。
+
 ## 部署地址
 
 | 平台 | `SITE_BASE` | `SITE_URL` |
@@ -132,6 +152,6 @@ Remove-Item Env:\SITE_URL
 5. ✅ Cloudflare 项目另加两个密钥（`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`，来自 GitHub OAuth App），后台登录靠它们换令牌，见 [使用说明第 10 节](docs/usage-guide.md)。
 6. ✅ 两个地址实测：首页、文章、RSS、后台登录与写入。
 
-GitHub 发布前会检查前端必需产物（关于页、标签页、404 与分享图），缺失会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。
+GitHub 发布前会检查前端必需产物（关于页、标签页、归档页、搜索页、Pagefind 索引、404 与分享图），缺失会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。
 
 将来更换自有域名，需要在所选托管平台配置 DNS，并同步更新 `SITE_URL` 与必要的 `SITE_BASE`、重新构建；同时要改 GitHub OAuth App 的 Homepage / callback 地址，以及 `public/admin/config.yml` 里的 `base_url`。

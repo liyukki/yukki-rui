@@ -55,7 +55,7 @@ function toNav(entry: Post | undefined) {
   ogType="article"
   alternate={alternate}
 >
-  <article class="prose rise post">
+  <article class="prose rise post" data-pagefind-body>
     <PostExtras
       lang={lang}
       copyLabel={UI[lang].copyCode}
@@ -66,7 +66,7 @@ function toNav(entry: Post | undefined) {
     />
     <header>
       <h1>{post.data.title}</h1>
-      <p class="post-meta">
+      <p class="post-meta" data-pagefind-ignore>
         <time datetime={post.data.pubDate.toISOString()}>{dateFmt.format(post.data.pubDate)}</time>
         {post.data.updatedDate && (
           <>

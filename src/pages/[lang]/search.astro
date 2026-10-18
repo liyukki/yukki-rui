@@ -1,0 +1,134 @@
+---
+/**
+ * 搜索页：Pagefind 索引由构建脚本生成到 dist/pagefind/。
+ *
+ * 资源在运行时注入而不是静态 <link>/<script>：scripts/check-links.mjs 会把
+ * 站内静态引用当真实文件校验，而 scripts/check-base-parity.mjs 与
+ * scripts/check-content.mjs 只跑 astro build、不产 pagefind 索引，
+ * 写死链接会让这些门禁误报死链。
+ */
+import PixelSprite from '../../components/PixelSprite.astro';
+import { SITE, UI, type Lang } from '../../consts';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { withBase } from '../../lib/url';
+
+export function getStaticPaths() {
+  return SITE.langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const bundlePath = withBase('pagefind/');
+const i18n = {
+  placeholder: UI[lang].searchPlaceholder,
+  zeroResults: UI[lang].searchEmpty,
+  error: UI[lang].searchError,
+};
+---
+<BaseLayout title={`${UI[lang].search} · ${SITE.title}`} description={UI[lang].searchHint} lang={lang}>
+  <article class="prose rise subpage">
+    <header class="subpage-heading">
+      <PixelSprite name="key" size={48} />
+      <span class="eyebrow">FIND AN ENTRY</span>
+      <h1>{UI[lang].search}</h1>
+      <p>{UI[lang].searchHint}</p>
+    </header>
+    <section class="card search-panel" aria-label={UI[lang].search}>
+      <div
+        class="search-mount"
+        data-search
+        data-bundle={bundlePath}
+        data-i18n={JSON.stringify(i18n)}
+      >
+        <div class="pagefind-mount" data-search-mount></div>
+        <p class="search-status" data-search-status role="status" hidden></p>
+        <noscript><p>{UI[lang].searchError}</p></noscript>
+      </div>
+    </section>
+  </article>
+</BaseLayout>
+
+<script is:inline data-astro-rerun>
+  (() => {
+    const root = document.querySelector('[data-search]');
+    if (!root || root.dataset.searchReady === '1') return;
+    root.dataset.searchReady = '1';
+
+    const bundle = root.dataset.bundle || '/pagefind/';
+    const mount = root.querySelector('[data-search-mount]');
+    const status = root.querySelector('[data-search-status]');
+    let i18n = {};
+    try {
+      i18n = JSON.parse(root.dataset.i18n || '{}');
+    } catch {
+      i18n = {};
+    }
+
+    const fail = () => {
+      if (!status) return;
+      status.hidden = false;
+      status.textContent = i18n.error || 'Search is unavailable right now.';
+    };
+
+    if (!mount) return;
+
+    const style = document.createElement('link');
+    style.rel = 'stylesheet';
+    style.href = `${bundle}pagefind-ui.css`;
+    document.head.append(style);
+
+    const script = document.createElement('script');
+    script.src = `${bundle}pagefind-ui.js`;
+    script.defer = true;
+    script.onerror = fail;
+    script.onload = () => {
+      try {
+        if (typeof window.PagefindUI !== 'function') throw new Error('PagefindUI missing');
+        new window.PagefindUI({
+          element: mount,
+          bundlePath: bundle,
+          showImages: false,
+          showSubResults: true,
+          translations: {
+            placeholder: i18n.placeholder,
+            zero_results: i18n.zeroResults,
+          },
+        });
+      } catch {
+        fail();
+      }
+    };
+    document.head.append(script);
+  })();
+</script>
+
+<style is:global>
+  .search-panel {
+    padding: var(--space-3) var(--space-4);
+  }
+  .search-status {
+    margin: var(--space-2) 0 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+  /* 让 Pagefind 自带样式跟站点主题变量靠拢 */
+  .pagefind-mount {
+    --pagefind-ui-primary: var(--accent);
+    --pagefind-ui-text: var(--text);
+    --pagefind-ui-background: var(--card);
+    --pagefind-ui-border: var(--line);
+    --pagefind-ui-tag: var(--card);
+    --pagefind-ui-border-width: 1px;
+    --pagefind-ui-border-radius: var(--radius);
+    --pagefind-ui-font: var(--font-sans);
+  }
+  .pagefind-mount .pagefind-ui__search-input {
+    font-family: var(--font-sans);
+  }
+  .pagefind-mount .pagefind-ui__result-link {
+    color: var(--link);
+  }
+  .pagefind-mount .pagefind-ui__result-excerpt mark {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: inherit;
+  }
+</style>
