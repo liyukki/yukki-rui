@@ -20,6 +20,7 @@
     "check:cms-config": "node scripts/check-cms-config.mjs",
     "check:cms-oauth": "node scripts/check-cms-oauth.mjs",
     "check:comments": "node scripts/check-comments.mjs",
+    "check:comments-live": "node scripts/check-comments-live.mjs",
     "verify": "npm run check && npm test && npm run check:base && npm run check:content",
     "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:frontend"
   },

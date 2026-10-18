@@ -1,4 +1,4 @@
-# 网站使用说明
+﻿# 网站使用说明
 
 面向站点主人。所有操作都在项目目录 `E:\deepseek\yukki-rui` 里完成，用 Git Bash 或 PowerShell。
 
@@ -22,7 +22,7 @@
 | 404 | 自动 |
 | RSS 订阅 | `/rss.xml`（中）`/rss-en.xml`（英）|
 
-**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、118 项单元测试通过、两种部署路径各 21 个页面无死链、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过。
+**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、119 项单元测试通过、两种部署路径各 21 个页面无死链、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过。
 
 **站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages）与 https://yukki-rui.pages.dev/ （Cloudflare Pages，中英双语、照片、RSS、sitemap 均实测正常）。
 
@@ -535,7 +535,9 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 两个平台都能看到、都能发：Cloudflare 上是同源请求；GitHub Pages 镜像没有 Functions，会跨域调主站（服务端 CORS 白名单只放行站点域名与本机预览），数据都落在主站。
 
-### 11.2 站长第一次配置（Cloudflare，一次性三步）
+### 11.2 Cloudflare 侧配置（已完成，改动时参考）
+
+2026-10-18 已经配好并线上验收通过，平时不用再动。若要迁到别的账号或重建，照这三步做：
 
 1. **建 D1 数据库**：Cloudflare 控制台 → Workers & Pages → **D1** → Create database，名字填 `yukki-rui-comments`。
 2. **给 Pages 项目绑定**：Workers & Pages → `yukki-rui` → Settings → **Functions** → D1 database bindings → Add binding，**Variable name 必须是 `DB`**，再选刚建的库。
@@ -543,7 +545,9 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 可选：再加 `COMMENTS_SALT`（Secret）给 IP 哈希加盐，不配就用默认值。
 
-改完自检：打开任意文章页，评论区不报「评论服务还没配置好」、发一条能显示出来，就说明三步都对了。
+令牌只在配置时出现一次，请自己存到密码管理器里；丢了不要紧，在 Cloudflare 里重新生成一个、再把管理页里存的旧值换掉即可（评论数据不受影响）。
+
+自检：`npm run check:comments-live`（只读，检查两个平台的渲染、接口、CORS 和管理页）；想连「发一条再删掉」一起验，设 `COMMENTS_ADMIN_TOKEN` 后加 `-- --write`。
 
 ### 11.3 怎么删评论（管理页）
 

@@ -1,4 +1,4 @@
-# 数据层修复与交接审核报告
+﻿# 数据层修复与交接审核报告
 
 日期：2026-10-10（Asia/Hong_Kong）。分支：`codex/fix-handoff`。基线：`7363b29`。本轮未提交、推送或发布网站。
 
@@ -312,7 +312,7 @@ Sveltia 的富文本编辑器是 Lexical，行为与 Decap 的 Slate 不同，�
 | 项目 | 结果 |
 |---|---|
 | `npx astro check` | 62 files，0 errors / 0 warnings |
-| `npx vitest run` | 11 files，118 tests 全通过（`comments.test.ts` 16 项、`comments-functions.test.ts` 33 项，D1 用 `node:sqlite` 做真实替身）|
+| `npx vitest run` | 11 files，119 tests 全通过（`comments.test.ts` 16 项、`comments-functions.test.ts` 34 项，D1 用 `node:sqlite` 做真实替身）|
 | `npm run build` | 21 页；产物里 `#comments` 的 `data-thread="/zh/posts/hello-world/"`、`data-api`、`data-page-size="20"` 正确（双 base 下 thread 正确去掉 base）|
 | `npm run check:cms-config` | 6/6 |
 | `npm run check:cms-oauth` | 13/13 |
@@ -323,10 +323,23 @@ Sveltia 的富文本编辑器是 Lexical，行为与 Decap 的 Slate 不同，�
 1. **JS 类型判别失败导致 astro check 10 个错误**：`comments-admin.js` 的 `authenticate()` 返回 `{ok:false,response} | {ok:true,env}`，JS 里 `ok` 被推断成 `boolean`（不是字面量判别式），`if (!auth.ok) return auth.response` 收窄失败，两个导出函数的返回类型变成 `Response | undefined`。改为 `authenticate()` 直接返回 `Response | null`。
 2. **端到端脚本首跑 26/28**：① 本地构建的 `data-api` 是 `https://yukki-rui.pages.dev/api/comments`（SITE_URL 指向生产），断言写死空串错误 → 改为「空或 endsWith('/api/comments')」；② 管理页未存令牌时没有初始状态文案 → 初始化分支补「先填写并保存管理令牌。」。
 
-### 待站长完成（Cloudflare 侧，一次性）
+### 线上配置与验收（2026-10-18，已完成）
 
-1. Workers & Pages → D1 → Create database，名 `yukki-rui-comments`；
-2. 项目 `yukki-rui` → Settings → Functions → D1 database bindings，**变量名 `DB`**；
-3. Settings → Variables and secrets 加 `COMMENTS_ADMIN_TOKEN`（Secret，随机长串，可选 `COMMENTS_SALT`），然后 **Retry deployment**。
+Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点更不容易出错，也留下了可复现的记录）：
 
-三步完成后线上验收：任一文章页发一条评论、刷新仍在；GitHub Pages 镜像同篇能看到；在 `/admin/comments/` 里删除后前台恢复空状态。
+| 项目 | 结果 |
+|---|---|
+| D1 数据库 | 新建 `yukki-rui-comments`（`a4d19c7e-67d7-4bb8-97c5-07a065d85929`），并用 API 执行建表与两个索引的 DDL |
+| Pages 绑定 | 项目 `yukki-rui` 的 production/preview 都加了 D1 绑定，变量名 `DB` |
+| 管理令牌 | production/preview 都设了 `COMMENTS_ADMIN_TOKEN`（secret_text）|
+| 部署 | 重试部署 `e44fadad`（提交 a5ddab3）后绑定生效；`/api/comments` 由 503 变 200 |
+| 线上接口验收 | **21/21**：GET 200、发评论 201、刷新仍在、1.5 秒限流、蜜罐、同 IP 60 秒限流 429、管理接口 401/401/200、删除、CORS 放行与拒绝、页面可达性 |
+| 真实浏览器验收 | **12/12**：Cloudflare 与 GitHub Pages 文章页各自「渲染 → 发评论 → 立即出现 → 纯文本（无注入）→ 管理接口可见 → 删除」全部通过，无脚本异常 |
+
+### 线上发现并修掉的缺陷：CORS 白名单域名拼写错误
+
+首轮真实浏览器验收时，Cloudflare 站 6/6 通过，GitHub Pages 镜像站评论加载失败。抓包定位：`POST /api/comments` 返回 `400 too-fast`（这是脚本发太快，属误报），但真正的问题是镜像站请求根本没到函数——CORS 白名单里把 GitHub 用户名写成了 `liukki`（少一个 y），真实来源 `https://liyukki.github.io` 被判 403。
+
+修复：`functions/api/comments.js` 与 `src/lib/comments.ts` 的白名单改为 `https://liyukki.github.io`（测试、脚本、设计文档同步修正），并加了回归测试——真实来源放行、拼错的来源必须拒绝。提交 `c88550f`，两个平台部署后复验：CORS 预检 204 且回显正确来源，浏览器验收 **12/12** 通过。
+
+这个缺陷说明：单元测试用自己编的域名也能全绿，**只有真实浏览器站在真实域名上才能暴露**。新增的 `npm run check:comments-live` 把这类检查固化下来（默认只读，`-- --write` 时跑发→查→删闭环）。

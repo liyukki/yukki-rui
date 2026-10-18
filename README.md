@@ -38,6 +38,7 @@ npm run dev
 | `npm run check:cms-config` | 可选：用真实 Sveltia 客户端加载 `public/admin/` 的真实配置，检查配置错误与登录入口（需 playwright；不参与发布检查）|
 | `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run check:comments` | 可选：用 wrangler 本地 Pages 运行时 + 真实 D1 模拟跑评论区端到端（发评论/XSS/限流/管理删除/CORS；需 playwright 与先 `npm run build`；不参与发布检查）|
+| `npm run check:comments-live` | 可选：对线上两个站点做评论区只读检查（渲染、接口、CORS、管理页；加 `-- --write` 且设 `COMMENTS_ADMIN_TOKEN` 时再跑一次发→查→删闭环）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
 | `npm run verify:frontend` | 上述检查加当前构建、链接检查及前端必需路由/分享图检查 |
 | `npm run preview` | 预览已有 `dist/` |
@@ -91,9 +92,9 @@ tags: [随笔]
 | 管理页 | `public/admin/comments/index.html`（令牌存本机 localStorage）|
 | 站点配置 | `src/consts.ts` 的 `COMMENTS`（enabled / origin / pageSize）|
 
-Cloudflare 侧一次性配置：建 D1 库 `yukki-rui-comments` → Pages 项目 Settings → Functions 加 D1 binding（**变量名必须是 `DB`**）→ Variables and secrets 加 `COMMENTS_ADMIN_TOKEN`（Secret）→ Retry deployment。步骤与排错见[使用说明第 11 节](docs/usage-guide.md)。
+Cloudflare 侧一次性配置（**已于 2026-10-18 配好**）：建 D1 库 `yukki-rui-comments` → Pages 项目 Settings → Functions 加 D1 binding（**变量名必须是 `DB`**）→ Variables and secrets 加 `COMMENTS_ADMIN_TOKEN`（Secret）→ Retry deployment。步骤与排错见[使用说明第 11 节](docs/usage-guide.md)。
 
-本地端到端自检：`npm run build && npm run check:comments`（脚本自己起 `wrangler pages dev`，在 `.tmp-comments-check/` 里建本地 D1，跑完自动关掉）。
+本地端到端自检：`npm run build && npm run check:comments`（脚本自己起 `wrangler pages dev`，在 `.tmp-comments-check/` 里建本地 D1，跑完自动关掉）。上线后可用 `npm run check:comments-live` 做线上只读检查（带 `-- --write` 时会真的发一条再删掉，需要 `COMMENTS_ADMIN_TOKEN`）。
 
 ## 部署地址
 
