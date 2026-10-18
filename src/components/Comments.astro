@@ -120,9 +120,12 @@ const i18n = {
 
   const NICKNAME_KEY = 'comments-author';
 
-  const root = document.getElementById('comments');
-
-  if (root && root.dataset.ready !== '1') {
+  /**
+   * 初始化评论区。可重复调用：View Transitions 换页后重新按当前 DOM 绑定。
+   */
+  function initComments(): void {
+    const root = document.getElementById('comments');
+    if (!root || root.dataset.ready === '1') return;
     root.dataset.ready = '1';
 
     const lang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
@@ -331,6 +334,9 @@ const i18n = {
 
     void load();
   }
+
+  initComments();
+  document.addEventListener('astro:page-load', initComments);
 </script>
 
 <style is:global>

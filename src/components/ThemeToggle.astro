@@ -11,15 +11,23 @@ const { lang } = Astro.props;
 </button>
 <script is:inline>
   (() => {
-    const button = document.getElementById('theme-toggle');
-    const sync = () => button?.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
-    sync();
-    button?.addEventListener('click', () => {
-      const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = theme;
-      try { localStorage.setItem('theme', theme); } catch {}
+    const init = () => {
+      const button = document.getElementById('theme-toggle');
+      if (!button) return;
+      const sync = () => button.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
       sync();
-    });
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => {
+        const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+        try { localStorage.setItem('theme', theme); } catch {}
+        sync();
+      });
+    };
+    init();
+    // 页面转场后按钮是新的 DOM 节点，需要重新绑定。
+    document.addEventListener('astro:page-load', init);
   })();
 </script>
 <style>

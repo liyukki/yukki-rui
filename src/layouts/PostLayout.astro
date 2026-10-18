@@ -1,25 +1,52 @@
 ---
 /**
- * 文章页布局：标题、日期、可选更新日期、标签、正文 slot 与（可选）评论。
+ * 文章页布局：标题、日期、阅读时长、标签、目录、正文 slot、上一篇/下一篇与（可选）评论。
  * 语言切换只在确有真实译文时指向译文页，否则 Header 回目标语言首页。
  */
 import Comments from '../components/Comments.astro';
+import PostExtras from '../components/PostExtras.astro';
+import PostNav from '../components/PostNav.astro';
+import PostToc from '../components/PostToc.astro';
 import TagList from '../components/TagList.astro';
 import { UI } from '../consts';
 import type { Post } from '../lib/posts';
+import {
+  countReadingMinutes,
+  formatReadingTime,
+  selectTocHeadings,
+  type ReadingHeading,
+} from '../lib/reading';
 import { postHref } from '../lib/url';
 import BaseLayout from './BaseLayout.astro';
 
 interface Props {
   post: Post;
   translations?: Post;
+  /** Astro `render()` 返回的标题列表；缺省时不渲染目录。 */
+  headings?: ReadingHeading[];
+  /** 更新的一篇（上一篇）；缺省不渲染对应卡片。 */
+  prev?: Post;
+  /** 更早的一篇（下一篇）。 */
+  next?: Post;
 }
-const { post, translations } = Astro.props;
+const { post, translations, headings, prev, next } = Astro.props;
 const lang = post.data.lang;
 const alternate = translations
   ? postHref(translations.data.lang, translations.id)
   : undefined;
 const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', { dateStyle: 'long' });
+const tocHeadings = selectTocHeadings(headings ?? []);
+const readingTime = formatReadingTime(countReadingMinutes(post.body ?? ''), UI[lang].readingTime);
+
+/** 把文章条目转成上下篇卡片需要的形状；日期在布局层统一格式化。 */
+function toNav(entry: Post | undefined) {
+  if (!entry) return null;
+  return {
+    href: postHref(entry.data.lang, entry.id),
+    title: entry.data.title,
+    date: dateFmt.format(entry.data.pubDate),
+  };
+}
 ---
 <BaseLayout
   title={post.data.title}
@@ -28,7 +55,15 @@ const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', { dateSt
   ogType="article"
   alternate={alternate}
 >
-  <article class="prose rise">
+  <article class="prose rise post">
+    <PostExtras
+      lang={lang}
+      copyLabel={UI[lang].copyCode}
+      copiedLabel={UI[lang].copiedCode}
+      copyFailedLabel={UI[lang].copyFailed}
+      backToTopLabel={UI[lang].backToTop}
+      closeLabel={UI[lang].closeLightbox}
+    />
     <header>
       <h1>{post.data.title}</h1>
       <p class="post-meta">
@@ -39,12 +74,58 @@ const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', { dateSt
             <time datetime={post.data.updatedDate.toISOString()}>{dateFmt.format(post.data.updatedDate)}</time>
           </>
         )}
+        {' · '}<span class="post-reading">{readingTime}</span>
       </p>
       <TagList lang={lang} tags={post.data.tags} />
     </header>
-    <div class="post-body">
-      <slot />
+    <PostToc headings={tocHeadings} lang={lang} variant="inline" label={UI[lang].toc} />
+    <div class="post-layout">
+      <div class="post-body">
+        <slot />
+      </div>
+      <PostToc headings={tocHeadings} lang={lang} variant="aside" label={UI[lang].toc} />
     </div>
+    <PostNav
+      prev={toNav(prev)}
+      next={toNav(next)}
+      prevLabel={UI[lang].prevPost}
+      nextLabel={UI[lang].nextPost}
+    />
     <Comments lang={lang} />
   </article>
 </BaseLayout>
+
+<style>
+  /* 文章容器比默认正文宽，给右侧 sticky 目录留位置。 */
+  .post {
+    max-width: var(--maxw-wide);
+  }
+
+  .post-layout {
+    display: grid;
+    gap: var(--space-5);
+  }
+
+  .post-reading {
+    color: var(--text-dim);
+  }
+
+  /* 目录组件在子组件里，需要 :global 才能从父组件命中。 */
+  @media (min-width: 1024px) {
+    .post-layout {
+      grid-template-columns: minmax(0, 72ch) 200px;
+      justify-content: center;
+      align-items: start;
+    }
+
+    :global(.post-toc--inline) {
+      display: none;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    :global(.post-toc--aside) {
+      display: none;
+    }
+  }
+</style>

@@ -14,8 +14,14 @@ export async function getStaticPaths() {
 interface Props { post: Post }
 const { post } = Astro.props;
 const translation = await getTranslations(post);
-const { Content } = await render(post);
+const { Content, headings } = await render(post);
+
+/** 同语言文章按发布日期倒序：index-1 是更新的，index+1 是更早的。 */
+const siblings = await getPosts(post.data.lang);
+const index = siblings.findIndex((entry) => entry.id === post.id);
+const newer = index > 0 ? siblings[index - 1] : undefined;
+const older = index >= 0 ? siblings[index + 1] : undefined;
 ---
-<PostLayout post={post} translations={translation}>
+<PostLayout post={post} translations={translation} headings={headings} prev={older} next={newer}>
   <Content />
 </PostLayout>

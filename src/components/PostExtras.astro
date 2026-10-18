@@ -1,0 +1,481 @@
+---
+/**
+ * 文章页阅读增强（客户端）：阅读进度条、返回顶部、代码复制、TOC 高亮、图片灯箱。
+ *
+ * - 只负责交互，目录/上下篇等静态内容由 PostToc、PostNav 渲染；
+ * - Astro 客户端脚本拿不到 props，所以文案写到根节点的 data-*；
+ * - 兼容 View Transitions：init() 每次先 abort 旧 controller，转场后可重入；
+ * - 不新增依赖、不写内联事件，全部 addEventListener。
+ */
+import type { Lang } from '../consts';
+
+interface Props {
+  lang: Lang;
+  copyLabel: string;
+  copiedLabel: string;
+  copyFailedLabel: string;
+  backToTopLabel: string;
+  /** 灯箱关闭按钮的可见/辅助文案；不传时按 lang 取「关闭」/「Close」。 */
+  closeLabel?: string;
+}
+
+const { lang, copyLabel, copiedLabel, copyFailedLabel, backToTopLabel, closeLabel } = Astro.props;
+const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
+---
+<div
+  class="post-extras"
+  data-post-extras
+  data-lang={lang}
+  data-copy-label={copyLabel}
+  data-copied-label={copiedLabel}
+  data-copy-failed-label={copyFailedLabel}
+  data-back-to-top-label={backToTopLabel}
+  data-close-label={closeText}
+>
+  <div class="reading-progress" data-reading-progress aria-hidden="true"><span></span></div>
+  <button class="back-to-top" data-back-to-top type="button" aria-label={backToTopLabel} title={backToTopLabel} hidden>
+    <span aria-hidden="true">↑</span>
+  </button>
+</div>
+
+<script>
+  /**
+   * 交互初始化：所有 window/document 监听都挂在 AbortController 上，
+   * 转场后 init() 重跑时先 abort 旧 controller，保证不重复绑定。
+   * 客户端拿不到 props，因此文案统一从 [data-post-extras] 的 data-* 读取。
+   */
+  let controller: AbortController | null = null;
+
+  function init(): void {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+
+    const root = document.querySelector<HTMLElement>('[data-post-extras]');
+    const copyLabel = root?.dataset.copyLabel ?? '';
+    const copiedLabel = root?.dataset.copiedLabel ?? copyLabel;
+    const copyFailedLabel = root?.dataset.copyFailedLabel ?? copyLabel;
+    const closeLabel = root?.dataset.closeLabel ?? '×';
+
+    /* ---------- 阅读进度条 + 返回顶部 ---------- */
+    // 文章容器的 .rise 入场动画结束后仍保留 transform，会给 position: fixed
+    // 造出一个 containing block（固定在文章而不是视口上）。把这两枚节点挪到
+    // body，既保留 SSR 的 DOM 契约，又能真正固定在视口。
+    const progress = document.querySelector<HTMLElement>('[data-reading-progress]');
+    if (progress && progress.parentElement !== document.body) document.body.append(progress);
+    const backToTop = document.querySelector<HTMLButtonElement>('[data-back-to-top]');
+    if (backToTop && backToTop.parentElement !== document.body) document.body.append(backToTop);
+    const progressBar = progress?.querySelector<HTMLElement>('span') ?? null;
+
+    const updateScrollState = (): void => {
+      if (progressBar) {
+        const distance = document.documentElement.scrollHeight - window.innerHeight;
+        const ratio = distance > 0 ? Math.min(1, Math.max(0, window.scrollY / distance)) : 0;
+        progressBar.style.width = `${(ratio * 100).toFixed(2)}%`;
+      }
+      if (backToTop) backToTop.hidden = window.scrollY <= 600;
+    };
+
+    window.addEventListener('scroll', updateScrollState, { signal, passive: true });
+    window.addEventListener('resize', updateScrollState, { signal, passive: true });
+    updateScrollState();
+
+    backToTop?.addEventListener(
+      'click',
+      () => {
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: 0, behavior: reduceMotion ? 'instant' : 'smooth' });
+      },
+      { signal },
+    );
+
+    /* ---------- TOC 高亮 ---------- */
+    const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>('[data-post-toc] a[href^="#"]')];
+    const tocHeadings = [
+      ...document.querySelectorAll<HTMLElement>('.post-body h2[id], .post-body h3[id]'),
+    ];
+
+    if (tocLinks.length > 0 && tocHeadings.length > 0 && typeof IntersectionObserver === 'function') {
+      // 同一标题可能同时出现在移动端折叠目录与桌面侧栏目录里，所以一个 hash 对应多个链接。
+      const linksByHash = new Map<string, HTMLAnchorElement[]>();
+      for (const link of tocLinks) {
+        const href = link.getAttribute('href') ?? '';
+        if (!href.startsWith('#') || href.length < 2) continue;
+        const rawHash = href.slice(1);
+        let hash = rawHash;
+        try {
+          hash = decodeURIComponent(rawHash);
+        } catch {
+          hash = rawHash;
+        }
+        const bucket = linksByHash.get(hash);
+        if (bucket) bucket.push(link);
+        else linksByHash.set(hash, [link]);
+      }
+
+      const visibleHeadings = new Set<HTMLElement>();
+      let activeId: string | null = null;
+
+      const syncActiveLink = (): void => {
+        let topmost: HTMLElement | null = null;
+        for (const heading of tocHeadings) {
+          if (!visibleHeadings.has(heading)) continue;
+          if (!topmost || heading.getBoundingClientRect().top < topmost.getBoundingClientRect().top) {
+            topmost = heading;
+          }
+        }
+        // 视口内没有标题时保留上一次的高亮，避免长段落中间高亮闪空。
+        if (!topmost) return;
+        if (topmost.id === activeId) return;
+        const links = linksByHash.get(topmost.id) ?? [];
+        for (const candidate of tocLinks) candidate.classList.remove('is-active');
+        for (const link of links) link.classList.add('is-active');
+        activeId = topmost.id;
+      };
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!(entry.target instanceof HTMLElement)) continue;
+            if (entry.isIntersecting) visibleHeadings.add(entry.target);
+            else visibleHeadings.delete(entry.target);
+          }
+          syncActiveLink();
+        },
+        { threshold: 0 },
+      );
+
+      for (const heading of tocHeadings) observer.observe(heading);
+      signal.addEventListener('abort', () => observer.disconnect(), { once: true });
+    }
+
+    /* ---------- 代码复制 ---------- */
+    const copyTimers = new WeakMap<HTMLButtonElement, number>();
+
+    /** 读取代码文本：优先 code 子节点，避免把复制按钮自身的文案也算进去。 */
+    const codeText = (pre: HTMLPreElement, button: HTMLButtonElement): string => {
+      const code = pre.querySelector('code');
+      if (code instanceof HTMLElement) return code.innerText;
+      button.hidden = true;
+      const text = pre.innerText;
+      button.hidden = false;
+      return text;
+    };
+
+    for (const pre of document.querySelectorAll<HTMLPreElement>('.post-body pre')) {
+      if (pre.querySelector('[data-code-copy]')) continue;
+      pre.style.position = 'relative';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'code-copy';
+      button.dataset.codeCopy = '';
+      button.setAttribute('aria-label', copyLabel);
+      button.textContent = copyLabel;
+      const language = pre.dataset.language;
+      if (language) button.title = language;
+      pre.append(button);
+    }
+
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const button = target.closest<HTMLButtonElement>('[data-code-copy]');
+        if (!button) return;
+        const pre = button.closest('pre');
+        if (!(pre instanceof HTMLPreElement)) return;
+        void copyCode(pre, button);
+      },
+      { signal },
+    );
+
+    const flashCopyLabel = (button: HTMLButtonElement, label: string): void => {
+      const pending = copyTimers.get(button);
+      if (pending !== undefined) window.clearTimeout(pending);
+      button.textContent = label;
+      const timer = window.setTimeout(() => {
+        button.textContent = copyLabel;
+        button.classList.remove('is-copied');
+        copyTimers.delete(button);
+      }, 2000);
+      copyTimers.set(button, timer);
+    };
+
+    async function copyCode(pre: HTMLPreElement, button: HTMLButtonElement): Promise<void> {
+      let copied = false;
+      try {
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+          throw new Error('clipboard-unavailable');
+        }
+        await navigator.clipboard.writeText(codeText(pre, button));
+        copied = true;
+      } catch {
+        copied = false;
+      }
+      button.classList.toggle('is-copied', copied);
+      flashCopyLabel(button, copied ? copiedLabel : copyFailedLabel);
+    }
+
+    /* ---------- 图片灯箱 ---------- */
+    let lightbox: HTMLDivElement | null = null;
+    let opener: HTMLImageElement | null = null;
+    let previousBodyOverflow = '';
+
+    function closeLightbox(): void {
+      if (!lightbox) return;
+      lightbox.remove();
+      lightbox = null;
+      document.body.style.overflow = previousBodyOverflow;
+      previousBodyOverflow = '';
+      const target = opener;
+      opener = null;
+      if (target?.isConnected) target.focus();
+    }
+
+    function openLightbox(source: HTMLImageElement): void {
+      closeLightbox();
+
+      const box = document.createElement('div');
+      box.className = 'img-lightbox';
+      box.dataset.imgLightbox = '';
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      box.setAttribute('aria-label', source.alt || closeLabel);
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'img-lightbox__close';
+      close.setAttribute('aria-label', closeLabel);
+      close.title = closeLabel;
+      close.textContent = '×';
+
+      const image = document.createElement('img');
+      image.className = 'img-lightbox__img';
+      image.src = source.currentSrc || source.src;
+      image.alt = source.alt;
+
+      box.append(close, image);
+      document.body.append(box);
+
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      lightbox = box;
+      opener = source;
+
+      close.addEventListener('click', closeLightbox, { signal });
+      box.addEventListener(
+        'click',
+        (event) => {
+          // 只有点在遮罩上才关闭，点图片本身不关。
+          if (event.target === box) closeLightbox();
+        },
+        { signal },
+      );
+      close.focus();
+    }
+
+    for (const image of document.querySelectorAll<HTMLImageElement>('.post-body img')) {
+      // 关闭灯箱后把焦点还给原图；tabindex 同时让键盘也能触达。
+      image.tabIndex = 0;
+    }
+
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLImageElement) || !target.matches('.post-body img')) return;
+        event.preventDefault();
+        openLightbox(target);
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === 'Escape') {
+          closeLightbox();
+          return;
+        }
+        const target = event.target;
+        if (!(target instanceof HTMLImageElement) || !target.matches('.post-body img')) return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openLightbox(target);
+      },
+      { signal },
+    );
+
+    // 转场离开当前页时，确保灯箱节点和 body 滚动锁不会遗留。
+    signal.addEventListener('abort', closeLightbox, { once: true });
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-reading-progress]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  // 首次加载时 astro:page-load 可能已经错过（或还没挂 ClientRouter），直接补一次。
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  /* 进度条：固定视口顶部，宽度按阅读进度增长 */
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    width: 100%;
+    height: 3px;
+    background: color-mix(in srgb, var(--line) 40%, transparent);
+    pointer-events: none;
+  }
+
+  .reading-progress > span {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--glow-a);
+    transition: width 0.1s linear;
+  }
+
+  /* 返回顶部：固定右下角圆形按钮 */
+  .back-to-top {
+    position: fixed;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 2px solid var(--line);
+    border-radius: 50%;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: 1.15rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform var(--dur) var(--ease-pop), border-color var(--dur), box-shadow var(--dur);
+  }
+
+  .back-to-top[hidden] {
+    display: none;
+  }
+
+  .back-to-top:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-hover), 0 0 12px var(--glow-a);
+  }
+
+  .back-to-top:active {
+    transform: translateY(1px);
+    box-shadow: 0 1px 0 0 var(--card-edge);
+  }
+
+  /*
+   * 下面这些节点都由客户端运行时创建（不在 Astro 模板里，拿不到 scoped 属性），
+   * 所以样式必须写成 :global()。
+   */
+  :global(.code-copy) {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    padding: 0.15em 0.55em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: 0 2px 0 0 var(--card-edge);
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.04em;
+    line-height: 1.5;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color var(--dur), border-color var(--dur), transform var(--dur);
+  }
+
+  :global(.code-copy:hover),
+  :global(.code-copy:focus-visible) {
+    transform: translateY(-1px);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  :global(.code-copy.is-copied) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  :global(.post-body img) {
+    cursor: zoom-in;
+  }
+
+  :global(.img-lightbox) {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: grid;
+    place-items: center;
+    padding: min(4vw, 32px);
+    background: rgb(0 0 0 / 85%);
+    cursor: zoom-out;
+  }
+
+  :global(.img-lightbox__img) {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 92vw;
+    max-height: 92vh;
+    object-fit: contain;
+    cursor: default;
+    box-shadow: 0 0 0 2px var(--line), 0 0 40px rgb(0 0 0 / 45%);
+  }
+
+  :global(.img-lightbox__close) {
+    position: absolute;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 2px solid var(--line);
+    border-radius: 50%;
+    background: var(--card);
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform var(--dur) var(--ease-pop), border-color var(--dur), color var(--dur);
+  }
+
+  :global(.img-lightbox__close:hover) {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reading-progress > span,
+    .back-to-top,
+    :global(.code-copy),
+    :global(.img-lightbox__close) {
+      transition: none;
+    }
+  }
+</style>

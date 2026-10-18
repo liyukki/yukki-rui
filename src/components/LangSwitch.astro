@@ -16,9 +16,16 @@ const target = alternateUrl ?? langHref(lang === 'zh' ? 'en' : 'zh');
 </a>
 <script is:inline>
   (() => {
-    const link = document.querySelector('a[data-lang-target]');
-    link?.addEventListener('click', () => {
-      try { localStorage.setItem('lang', link.dataset.langTarget); } catch {}
-    });
+    const init = () => {
+      const link = document.querySelector('a[data-lang-target]');
+      if (!link || link.dataset.bound === '1') return;
+      link.dataset.bound = '1';
+      link.addEventListener('click', () => {
+        try { localStorage.setItem('lang', link.dataset.langTarget); } catch {}
+      });
+    };
+    init();
+    // 页面转场后链接是新的 DOM 节点，需要重新绑定。
+    document.addEventListener('astro:page-load', init);
   })();
 </script>

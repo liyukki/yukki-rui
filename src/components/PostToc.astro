@@ -1,0 +1,139 @@
+---
+/**
+ * 文章目录。aside 版是正文右侧的 sticky 侧栏，inline 版是窄屏用的折叠面板。
+ * 两版的显示切换由调用方布局控制；文案全部来自 props，组件内不写死语言。
+ * 当前项高亮由客户端脚本给链接加 .is-active，这里只负责样式。
+ */
+import type { Lang } from '../consts';
+import type { ReadingHeading } from '../lib/reading';
+
+interface Props {
+  headings: ReadingHeading[];
+  lang: Lang;
+  variant: 'aside' | 'inline';
+  label: string;
+}
+
+const { headings, lang, variant, label } = Astro.props;
+/** 只有一节时目录没有意义，直接不渲染。 */
+const showToc = headings.length >= 2;
+---
+
+{showToc && variant === 'aside' && (
+  <aside class="post-toc post-toc--aside" data-post-toc data-lang={lang}>
+    <p class="post-toc__label">{label}</p>
+    <nav aria-label={label}>
+      <ol class="post-toc__list">
+        {headings.map((heading) => (
+          <li class:list={['post-toc__item', `post-toc__item--h${heading.depth}`]}>
+            <a href={`#${heading.slug}`}>{heading.text}</a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  </aside>
+)}
+
+{showToc && variant === 'inline' && (
+  <details class="post-toc post-toc--inline" data-post-toc data-lang={lang}>
+    <summary>{label}</summary>
+    <nav aria-label={label}>
+      <ol class="post-toc__list">
+        {headings.map((heading) => (
+          <li class:list={['post-toc__item', `post-toc__item--h${heading.depth}`]}>
+            <a href={`#${heading.slug}`}>{heading.text}</a>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  </details>
+)}
+
+<style>
+  .post-toc {
+    max-width: 100%;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+    line-height: 1.55;
+  }
+
+  .post-toc__label {
+    margin: 0 0 var(--space-2);
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.08em;
+  }
+
+  .post-toc__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .post-toc__item a {
+    display: block;
+    padding: 0.3em 0.2em 0.3em var(--space-2);
+    border-left: 2px solid var(--line);
+    color: inherit;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+    transition: color var(--dur), border-color var(--dur);
+  }
+
+  .post-toc__item--h3 a {
+    padding-left: calc(var(--space-2) + 0.9em);
+    font-size: var(--fs-tiny);
+  }
+
+  .post-toc__item a:hover,
+  .post-toc__item a.is-active,
+  .post-toc__item.is-active > a {
+    color: var(--accent);
+    border-left-color: var(--accent);
+  }
+
+  .post-toc__item a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
+
+  .post-toc--aside {
+    position: sticky;
+    top: calc(var(--px) + 24px);
+    align-self: start;
+    max-height: 70vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding-right: var(--space-1);
+    scrollbar-width: thin;
+  }
+
+  .post-toc--inline {
+    margin: 0 0 var(--space-4);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .post-toc--inline summary {
+    padding: var(--space-2) var(--space-3);
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+
+  .post-toc--inline summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
+
+  .post-toc--inline nav {
+    padding: 0 var(--space-3) var(--space-2);
+  }
+</style>

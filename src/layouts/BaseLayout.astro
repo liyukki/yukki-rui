@@ -1,5 +1,6 @@
 ---
 /** 页面骨架：引入全局 CSS，集中 BaseHead 与主题初始化脚本。 */
+import { ClientRouter } from 'astro:transitions';
 import '../styles/tokens.css';
 import '../styles/global.css';
 import '../styles/world.css';
@@ -23,12 +24,18 @@ const { title, description, lang, ogType, ogImage, alternate } = Astro.props;
 <html lang={lang === 'zh' ? 'zh-CN' : 'en'}>
   <head>
     <BaseHead title={title} description={description} lang={lang} ogType={ogType} ogImage={ogImage} alternate={alternate} />
+    <ClientRouter />
     <script is:inline>
       (() => {
-        let saved;
-        try { saved = localStorage.getItem('theme'); } catch {}
-        document.documentElement.dataset.theme = saved === 'light' || saved === 'dark'
-          ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        const applyTheme = () => {
+          let saved;
+          try { saved = localStorage.getItem('theme'); } catch {}
+          document.documentElement.dataset.theme = saved === 'light' || saved === 'dark'
+            ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        };
+        applyTheme();
+        // View Transitions 会替换 <html> 的属性，转场后必须重新贴上主题，否则会闪回默认主题。
+        document.addEventListener('astro:after-swap', applyTheme);
       })();
     </script>
   </head>

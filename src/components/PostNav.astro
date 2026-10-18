@@ -1,0 +1,125 @@
+---
+/**
+ * 上一篇 / 下一篇。两侧都为空时不渲染；只有一侧时用无链接占位卡保持两列栅格。
+ * 文案（上一篇 / 下一篇）与日期字符串全部由调用方传入。
+ */
+interface NavItem {
+  href: string;
+  title: string;
+  date: string;
+}
+
+interface Props {
+  prev: NavItem | null;
+  next: NavItem | null;
+  prevLabel: string;
+  nextLabel: string;
+}
+
+const { prev, next, prevLabel, nextLabel } = Astro.props;
+const showNav = prev !== null || next !== null;
+---
+
+{showNav && (
+  <nav class="post-nav" aria-label={`${prevLabel} / ${nextLabel}`}>
+    {prev ? (
+      <a class="post-nav__card post-nav__card--prev" href={prev.href} rel="prev">
+        <span class="post-nav__label">{prevLabel}</span>
+        <span class="post-nav__title">{prev.title}</span>
+        <span class="post-nav__date">{prev.date}</span>
+      </a>
+    ) : (
+      <span class="post-nav__card post-nav__card--prev post-nav__card--empty" aria-hidden="true"></span>
+    )}
+
+    {next ? (
+      <a class="post-nav__card post-nav__card--next" href={next.href} rel="next">
+        <span class="post-nav__label">{nextLabel}</span>
+        <span class="post-nav__title">{next.title}</span>
+        <span class="post-nav__date">{next.date}</span>
+      </a>
+    ) : (
+      <span class="post-nav__card post-nav__card--next post-nav__card--empty" aria-hidden="true"></span>
+    )}
+  </nav>
+)}
+
+<style>
+  .post-nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
+    border-top: 2px solid var(--line);
+  }
+
+  .post-nav__card {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-3);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    text-decoration: none;
+    transition: border-color var(--dur), box-shadow var(--dur), transform var(--dur);
+  }
+
+  a.post-nav__card:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-hover);
+    text-decoration: none;
+    transform: translateY(-2px);
+  }
+
+  a.post-nav__card:hover .post-nav__title {
+    color: var(--accent);
+  }
+
+  a.post-nav__card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius);
+  }
+
+  .post-nav__label {
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.06em;
+  }
+
+  .post-nav__title {
+    font-size: var(--fs-body);
+    font-weight: 600;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    transition: color var(--dur);
+  }
+
+  .post-nav__date {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--fs-tiny);
+  }
+
+  .post-nav__card--empty {
+    border-style: dashed;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  @media (min-width: 768px) {
+    .post-nav {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .post-nav__card--next {
+      text-align: right;
+    }
+  }
+</style>
