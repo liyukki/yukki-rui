@@ -224,7 +224,7 @@ Sveltia 是 Decap 的 drop-in 替代（富文本编辑器换成 Lexical），官
 | 配置硬差异（Sveltia 严格校验） | ① `media_folder` / `public_folder` 必须是以 `/` 开头的绝对路径；② file collection 的 `name` 不能含点号（`home.zh` → `home-zh`，`file:` 路径不变，Astro 读取不受影响） |
 | 回滚能力 | `config.yml` 仍同时兼容 Decap；回滚只需把 `index.html` 里的脚本地址换回 Decap |
 | 正文编辑器 | 字段顺序与提示按配置渲染；工具栏有段落样式下拉（段落、1–6 级标题、无序/有序列表、引用块、**代码块**）、加粗/斜体/删除线/代码/链接/图片/「以 Markdown 编辑」 |
-| 代码块后续输入 | **正常**（Decap 那个坑不复现）；换块类型或在块外点击即可继续写 |
+| 代码块后续输入 | 分两种情况：块后面还有段落时正常（按 ↓ 就能离开块继续写）；块是**全文最后一个块**时光标会被困在块内，脱身办法见下节「线上后台实测」 |
 | 表格 | 没有表格按钮，用「以 Markdown 编辑」手写 Markdown 表格 |
 | 窄屏 | 390px 宽度下字段单列、提示保留、无横向溢出 |
 
@@ -245,3 +245,47 @@ Sveltia 是 Decap 的 drop-in 替代（富文本编辑器换成 Lexical），官
 ### 文档同步
 
 README（后台选型、命令表、`CMS_OAUTH_CHROME`）与使用说明第 8/10 节全部改写为 Sveltia 流程：本地编辑走「使用本地仓库」（不再需要 `npm run cms`），线上登录按钮是「使用 GitHub 登录」，保存即发布，并新增「怎么写正文（工具栏）」「怎么上传照片」与配置报错等排错条目。
+
+## 线上后台实测：写入、删除与一个会让构建失败的缺陷（DSH，2026-10-18）
+
+用站长自己的登录态在受控 Edge 里对线上 `https://yukki-rui.pages.dev/admin/` 做了完整的「新建 → 存 → 删」操作，并据此修掉迁移带出的一个构建缺陷。
+
+### 代码块之后到底能不能接着写（线上实测）
+
+Sveltia 的富文本编辑器是 Lexical，行为与 Decap 的 Slate 不同，但也分两种情况：
+
+| 情形 | 实测结果 |
+|---|---|
+| 代码块**后面还有段落** | 正常。插入代码块后按 ↓ 光标落到下一段，继续输入的文字落在下一段（实测：块内容 `code();第一段。`，下一段变成 `最后一段。MARK`）|
+| 代码块是**全文最后一个块** | 光标被困在块内——点块下方空白（编辑器内还有约 67px 空区）、按 ↓、按 Enter 都还是往块里写；点样式下拉选「段落」会把整块**转成普通段落**（代码块丢失，代码要重贴）|
+| 脱身办法 | ① 推荐：先把整篇正文写完，再把光标放到要变成代码的那一段，用样式下拉把它转成代码块——这样块后面总有内容；② 或点工具栏「以 Markdown 编辑」切到源码，在围栏后面另起一段 |
+
+「以 Markdown 编辑」切过去后，正文源码就是标准围栏写法（实测读到 ` ```plain\ncode();第一段。\n```\n\n最后一段。MARK`），可当兜底手段。
+
+### 写入与删除的真实链路
+
+| 步骤 | 结果 |
+|---|---|
+| 新建《后台代码块验证（自动化，随后删除）》，正文含一个中间代码块，点保存 | 保存后自动回到列表；仓库出现提交 `acad3b9`，文件 frontmatter 完整（title/description/pubDate/lang/draft/tags），正文是 ` ```plain ` 围栏 + 段落 |
+| 删除该条目 | 列表里勾选 →「删除选中的条目」→ 确认框「删除条目 您确定要删除选中的 1 个条目吗？」→ 仓库出现提交 `e41aee6`，文件从仓库消失 |
+
+后台按钮的 aria-label 里带 U+2068/U+2069 控制字符（如 `Select ⁨标题⁩`），Playwright 按可访问名称匹配不到，自动化要用 `aria-label*="…"` 子串匹配。
+
+### 迁移带出的构建缺陷（已修）
+
+`acad3b9` 一推上来，**两个平台的构建都失败了**（GitHub Actions run `39096904946` 18s 失败；Cloudflare Pages 该部署显示 No deployment available）。原因：留空「更新日期」时后台会写出 `updatedDate: ''`，而 schema 是 `z.coerce.date()`：
+
+```text
+[InvalidContentEntryDataError] posts → 后台代码块验证自动化随后删除 data does not match collection schema.
+  updatedDate: Expected type `"date"`, received `"object"`
+```
+
+`new Date('')` 是 Invalid Date，zod 判定不通过，整站内容就构建不出来了（线上服务的是上一个成功部署，所以站点本身没掉，但仓库已经推不出新版本）。
+
+修复（`src/content.config.ts`）：加 `emptyToUndefined` 预处理，把空字符串当成「没填」，覆盖 `posts.updatedDate`、`posts.translationKey`、`site.heroImage.src/width/height`、`site.work.status` 这些「可选但非字符串」的字段。注意 `.optional()` 必须写在 `z.preprocess` 的**内层** schema 上（`z.preprocess(fn, z.coerce.date().optional())`）：写在外层时预处理产出的 `undefined` 仍会交给内层日期校验，照样报同一条错——这轮自己踩过。
+
+修复后 `npm run build` 恢复正常；删掉测试文章后仓库又是 21 页。删除提交 `e41aee6` 的部署在两个平台都成功，也反过来证明「失败只由那一个空字段引起」。
+
+### 文档纠正
+
+使用说明 §10.3 与 §10.5 原先写「光标移到块外就能继续写」「样式下拉会变回段落」，线上实测证明对文末代码块不成立，已按上表改写为「先写完整正文、再回头把某段转成代码块 / 用 以 Markdown 编辑」。

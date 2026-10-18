@@ -66,7 +66,7 @@ collections:
         name: translationKey
         widget: string
         required: false
-      - { label: 正文, name: body, widget: markdown, hint: 工具栏「以 Markdown 编辑」可切到源码模式；代码块用样式下拉里的「代码块」 }
+      - { label: 正文, name: body, widget: markdown, hint: '代码块：先把正文写完，再把光标放到要变代码的那段、用样式下拉转成「代码块」（块后面有段落时按 ↓ 才能接着写）。卡在块里时点「以 Markdown 编辑」手写围栏即可' }
 
   - name: site
     label: 个人资料

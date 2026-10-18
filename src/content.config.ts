@@ -1,8 +1,18 @@
-import { defineCollection } from 'astro:content';
+﻿import { defineCollection } from 'astro:content';
 // Astro 7 里从 'astro:content' 导入 z 已被标记 deprecated，
 // 正确来源是 'astro/zod'（转发 zod v4）。
 import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
+
+/**
+ * 后台表单把「没填」的可选字段写成空字符串（Sveltia 与 Decap 都是），
+ * 对字符串字段无害，但喂给日期、数字、枚举就会让整篇内容校验失败，
+ * 进而让构建挂掉——例如「更新日期」是可空字段，站长留空保存就会写出
+ * `updatedDate: ''`，`z.coerce.date()` 收到 Invalid Date 直接报
+ * InvalidContentEntryDataError。这里统一把空字符串当成「没填」。
+ */
+const emptyToUndefined = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
 
 const posts = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './src/content/posts' }),
@@ -12,9 +22,9 @@ const posts = defineCollection({
     pubDate: z.coerce.date(),
     lang: z.enum(['zh', 'en']),
     tags: z.array(z.string()).default([]),
-    updatedDate: z.coerce.date().optional(),
+    updatedDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
     draft: z.boolean().default(false),
-    translationKey: z.string().optional(),
+    translationKey: z.preprocess(emptyToUndefined, z.string().optional()),
   }),
 });
 
@@ -49,9 +59,9 @@ const site = defineCollection({
     // 页面用 withBase 引用，两种部署路径都安全）；宽高防布局跳动。
     heroImage: z
       .object({
-        src: z.string().optional(),
-        width: z.number().optional(),
-        height: z.number().optional(),
+        src: z.preprocess(emptyToUndefined, z.string().optional()),
+        width: z.preprocess(emptyToUndefined, z.coerce.number().optional()),
+        height: z.preprocess(emptyToUndefined, z.coerce.number().optional()),
       })
       .optional(),
     contact: z
@@ -66,7 +76,7 @@ const site = defineCollection({
         text: z.string().optional(),
         linkLabel: z.string().optional(),
         linkUrl: z.string().optional(),
-        status: z.enum(['WIP', 'LIVE']).optional(),
+        status: z.preprocess(emptyToUndefined, z.enum(['WIP', 'LIVE']).optional()),
       })
       .default({}),
     about: z
