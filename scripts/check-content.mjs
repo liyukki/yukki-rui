@@ -2,15 +2,20 @@
 /** 在真实 Astro 构建中检查文章渲染、草稿译文及 RSS；不使用 Astro API 的 mock。 */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildForBase } from './check-base-parity.mjs';
 
-const directory = mkdtempSync(join(tmpdir(), 'yukki-content-check-'));
-const project = join(directory, 'project');
 const originalProject = fileURLToPath(new URL('../', import.meta.url));
+/**
+ * 临时工程必须放在项目目录内部：放在系统临时目录时要靠软链接指到 node_modules，
+ * 而 Astro 内部组件（如 ClientRouter.astro）经 realpath 解析后路径与主模块不一致，
+ * 在 Linux/CI 上会报 "No cached compile metadata found"。放到项目内后 Node 按
+ * 目录层级自然找到同一份 node_modules，不再依赖软链接。
+ */
+const directory = mkdtempSync(join(originalProject, '.tmp-content-check-'));
+const project = join(directory, 'project');
 const contentDirectory = join(project, 'src', 'content', 'posts');
 const key = `verification-${randomUUID().slice(0, 8)}`;
 const published = `${key}-published`;
@@ -23,7 +28,6 @@ try {
     const original = join(originalProject, file);
     if (existsSync(original)) cpSync(original, join(project, file), { recursive: true });
   }
-  symlinkSync(join(originalProject, 'node_modules'), join(project, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   for (const [id, lang, isDraft] of [[published, 'zh', false], [draft, 'en', true], [draftZh, 'zh', true]]) {
     const path = join(contentDirectory, `${id}.md`);
     // 测试文章只存在于临时源码副本；即使进程被强制终止也不会污染原项目。
