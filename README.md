@@ -10,6 +10,10 @@
 
 页头还有**归档与站内搜索**：归档按年份翻旧文；搜索用 Pagefind 在构建时生成静态索引，纯浏览器检索、不需要服务器（见[使用说明第 13 节](docs/usage-guide.md)）。
 
+文章页还会**自动生成分享图**:每篇文章在构建时产出一张 1200×630 的卡片图(像素风,和站点同一套配色与字体),页面里同时带 JSON-LD 结构化数据(见[使用说明第 14 节](docs/usage-guide.md))。
+
+运营上有**自动提醒**:新评论每 30 分钟汇总进一条 GitHub Issue,躺太久(3 天以上)的草稿每周提醒一次,可选推到手机(见[使用说明第 15 节](docs/usage-guide.md))。
+
 | 平台 | 地址 | 说明 |
 |---|---|---|
 | GitHub Pages | <https://liyukki.github.io/yukki-rui/> | 展示用；纯静态，没有登录函数 |
@@ -39,6 +43,7 @@ npm run dev
 | `npm run check:base` | 两种部署路径下分别构建，并检查全部真实页面与引用 |
 | `npm run check:content` | 真实构建验证 Markdown、草稿页面、草稿译文和 RSS |
 | `npm run check:frontend` | 前端必需路由、404、分享图等发布门槛 |
+| `npm run check:og` | 分享图与结构化数据门槛:解码每张 PNG 确认不是空白卡片、逐项核对 JSON-LD(纯静态,不需要浏览器;需先 `npm run build`) |
 | `npm run check:cms-config` | 可选：用真实 Sveltia 客户端加载 `public/admin/` 的真实配置，检查配置错误与登录入口（需 playwright；不参与发布检查）|
 | `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run check:comments` | 可选：用 wrangler 本地 Pages 运行时 + 真实 D1 模拟跑评论区端到端（发评论/XSS/限流/管理删除/CORS；需 playwright 与先 `npm run build`；不参与发布检查）|
@@ -46,7 +51,7 @@ npm run dev
 | `npm run check:reading` | 可选：阅读体验端到端检查（本地跑 `dist/`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可对线上部署跑），覆盖目录、阅读时长、上下篇、进度条、返回顶部、代码复制、灯箱与 View Transitions（需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run check:search` | 可选：搜索与归档端到端检查（归档分组、Pagefind 检索与索引隔离、无结果文案、移动端；需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
-| `npm run verify:frontend` | 上述检查加当前构建、链接检查及前端必需路由/分享图检查 |
+| `npm run verify:frontend` | 上述检查加当前构建、链接检查、分享图/结构化数据与前端必需路由检查 |
 | `npm run preview` | 预览已有 `dist/` |
 
 `check:base` 在系统临时目录构建，保留现有 `dist/`；`--keep` 会打印临时产物地址。`check:content` 在临时源码副本中新增测试文章，原始 src 与 dist 均不改动。本轮不把“后端检查通过”等同于“前端已完成”。
@@ -119,6 +124,23 @@ Cloudflare 侧一次性配置（**已于 2026-10-18 配好**）：建 D1 库 `yu
 
 端到端自检：`npm run build && npm run check:search`；线上检查：`LIVE_ORIGIN=https://yukki-rui.pages.dev LIVE_BASE=/ npm run check:search`。
 
+## 分享图与结构化数据
+
+| 部分 | 位置 |
+|---|---|
+| 卡片外观(纯逻辑 + 单测)| `src/lib/og.ts` + `tests/og.test.ts` |
+| 构建期出图 | `src/pages/og/[...slug].png.ts`(satori → SVG → resvg → PNG),产物在 `dist/og/<文章 id>.png` |
+| 字体 | `src/assets/fonts/ark-pixel-12px-proportional-zh_hans.ttf`(Ark Pixel 12px,OFL 授权;只在构建期读,不进产物)|
+| 结构化数据 | `src/components/JsonLd.astro`;文章页 `BlogPosting`、首页 `WebSite` |
+| 接线 | `src/layouts/PostLayout.astro` 传 `ogImage` 与 `jsonLd`,`BaseLayout.astro` 负责输出 |
+| 发布门槛 | `npm run check:og`(解码 PNG 确认不是空白卡片 + 逐项核对 JSON-LD;已并入 `verify:frontend` 与 CI)|
+
+`satori` 与 `@resvg/resvg-js` 都只在构建期用(devDependencies),访客端零新增依赖。注意 Astro 的路由参数会吃掉 id 里的点(英文文章 `hello-world.en` 的页面路径是 `hello-worlden`),所以图片文件名与 `ogImagePath()` 必须保持一致,否则 `check:links` 会报死链。图上的网址取自 `SITE_URL`,本地构建默认是 `localhost:4321`。
+
+## 运营提醒
+
+`.github/workflows/ops-reminders.yml`:每 30 分钟把新评论写进固定的「新评论提醒」Issue(已读位置记在 Issue 正文的 HTML 注释里,不额外存状态),每周一提醒躺了 3 天以上的草稿;没有待提醒的草稿时自动关闭提醒 Issue。需要仓库 secret `COMMENTS_ADMIN_TOKEN`(已配置),可选 `NTFY_TOPIC` 推手机;手动跑:`gh workflow run ops-reminders.yml -f job=comments`。
+
 ## 部署地址
 
 | 平台 | `SITE_BASE` | `SITE_URL` |
@@ -152,6 +174,6 @@ Remove-Item Env:\SITE_URL
 5. ✅ Cloudflare 项目另加两个密钥（`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`，来自 GitHub OAuth App），后台登录靠它们换令牌，见 [使用说明第 10 节](docs/usage-guide.md)。
 6. ✅ 两个地址实测：首页、文章、RSS、后台登录与写入。
 
-GitHub 发布前会检查前端必需产物（关于页、标签页、归档页、搜索页、Pagefind 索引、404 与分享图），缺失会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。
+GitHub 发布前会检查前端必需产物（关于页、标签页、归档页、搜索页、Pagefind 索引、404 与分享图），缺失会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。此外 `npm run check:og` 会解码每篇的分享图(确认不是空白卡片,尺寸 1200×630)并核对 JSON-LD 字段。
 
 将来更换自有域名，需要在所选托管平台配置 DNS，并同步更新 `SITE_URL` 与必要的 `SITE_BASE`、重新构建；同时要改 GitHub OAuth App 的 Homepage / callback 地址，以及 `public/admin/config.yml` 里的 `base_url`。

@@ -24,7 +24,7 @@
 | 404 | 自动 |
 | RSS 订阅 | `/rss.xml`（中）`/rss-en.xml`（英）|
 
-**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、134 项单元测试通过、两种部署路径各 27 个页面无死链、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过、阅读体验端到端自检 23 项通过、搜索与归档端到端自检 19 项通过。
+**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、147 项单元测试通过、两种部署路径各 27 个页面无死链、分享图与结构化数据 17 个页面自洽、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过、阅读体验端到端自检 23 项通过、搜索与归档端到端自检 19 项通过。
 
 **站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages）与 https://yukki-rui.pages.dev/ （Cloudflare Pages，中英双语、照片、RSS、sitemap 均实测正常）。
 
@@ -36,6 +36,10 @@
 
 **新增：搜索与归档**。页头多了「归档」和「搜索」：归档按年份翻旧文，搜索在浏览器里直接查全文（Pagefind 静态索引，不依赖任何服务器），见第 13 节。
 
+
+**新增:分享图与结构化数据**。每篇文章在构建时自动生成一张 1200×630 的分享图,页面里同时带 JSON-LD 结构化数据——贴链接到微信/X 时卡片用的是文章自己的标题,见第 14 节。
+
+**新增:运营提醒**。有人评论、或草稿躺太久,GitHub 会主动给你开一条提醒 Issue,不用天天翻后台,见第 15 节。
 ---
 
 ## 1. 日常最常用：本地预览
@@ -357,6 +361,7 @@ GitHub 每次推送都会自动跑检查，缺关键页面时会**拒绝发布**
 | `npm run check:comments-live` | 可选：线上评论区只读检查（`-- --write` 时连发→查→删一起验）|
 | `npm run check:reading` | 可选：阅读体验端到端（需先 `npm i -D playwright` 与 `npm run build`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可跑线上）|
 | `npm run check:search` | 可选：搜索与归档端到端（归档分组、Pagefind 检索、无结果文案、索引隔离、移动端；需先 `npm i -D playwright` 与 `npm run build`）|
+| `npm run check:og` | 只查分享图与结构化数据(解码每张 PNG 确认不是空白卡片、逐项核对 JSON-LD 字段;需先 build,已包含在 `verify:frontend` 里)|
 
 ---
 
@@ -623,13 +628,51 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 ---
 
-## 14. 还缺什么
+## 14. 分享图与结构化数据
+
+在微信 / X / 群里贴文章链接时,平台会抓一张卡片图。现在**每篇文章都有自己的一张**(像素风,和站点同一套配色与字体),页面里还带一份 JSON-LD 结构化数据(给搜索引擎看的机器可读信息)。
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 卡片外观 | `src/lib/og.ts` | 1200×630、配色、字号,以及标题/摘要的字数上限(中文 20/40,英文 52/88)|
+| 生成时机 | 构建期(`npm run build`)| `src/pages/og/[...slug].png.ts` 用 satori + resvg 出图,产物在 `dist/og/`;两个平台都不需要额外服务 |
+| 字体 | `src/assets/fonts/ark-pixel-12px-proportional-zh_hans.ttf` | Ark Pixel 12px(OFL 授权);只用于构建,不进产物、不占访客带宽 |
+| 结构化数据 | 文章页 `BlogPosting`、首页 `WebSite` | 组件是 `src/components/JsonLd.astro` |
+
+**改外观**:配色在 `src/lib/og.ts` 顶部的 `COLORS`;字号都取 12 的整数倍(像素字体在整数倍下最清晰)。想换字体:把 ttf 放进 `src/assets/fonts/`,再改 `src/pages/og/[...slug].png.ts` 里的文件名(satori 不支持 woff2)。
+
+**图上的网址**来自 `SITE_URL`:线上是各平台的域名,本地构建默认是 `localhost:4321`,所以本地预览看到 localhost 是正常的。
+
+**发布前自查**:`npm run build && npm run check:og`——它会解码每张 PNG 确认不是空白卡片,再核对 JSON-LD 字段;已包含在 `npm run verify:frontend` 里。
+
+---
+
+## 15. 运营提醒:新评论通知与草稿提醒
+
+不想天天翻后台?仓库里有一个定时工作流(`.github/workflows/ops-reminders.yml`)替你看两件事:
+
+| 提醒 | 什么时候 | 出现在哪 |
+|---|---|---|
+| 新评论 | 每 30 分钟查一次 | 固定的 GitHub Issue「新评论提醒」,新评论以评论形式追加进去 |
+| 草稿躺太久 | 每周一早上 | Issue「草稿提醒:待发布的文章」;草稿处理完后这条 Issue 会自动关闭 |
+
+- **已读位置**记在 Issue 正文的 HTML 注释里(`<!-- lastId: N -->`),不需要额外的数据库;第一次运行只看最近 45 分钟,不会把历史评论一次性刷出来。
+- **想在手机上收**:仓库 Settings → Secrets → 新增 `NTFY_TOPIC`(随便取一个 32 位随机串当密码),手机装 [ntfy](https://ntfy.sh/) App 订阅同一个名字。不配就只在 Issue 里提醒。
+- **必需密钥**:`COMMENTS_ADMIN_TOKEN`(已于 2026-10-19 配好)。
+- **想立刻跑一次**:`gh workflow run ops-reminders.yml -f job=comments`(也可以 `job=drafts` 或 `job=auto`)。
+- **想改频率 / 想关掉**:改工作流里的 `cron`,或在 GitHub 的 Actions 页面禁用这个工作流。
+- **两个注意点**:公开仓库的 Issue 也是公开的(评论本来就公开在页面上);仓库连续 60 天没有活动时 GitHub 会自动暂停定时任务,有新提交后恢复。
+
+## 16. 还缺什么
 
 **上线工作已全部完成**：两个平台在跑，网页后台可以登录并改内容（新建/删除文章都已实测，提交真的进了仓库）。
 
 剩下都是可选项：
 
 - **个人素材**：想换真实的自我介绍、邮箱、社交账号、第二件作品，直接在后台「个人资料」里改，不用碰代码（第 4 节）。
+
+- **想看访问量**:Cloudflare Pages 控制台 → 项目 `yukki-rui` → Metrics → Web Analytics → Enable,之后边缘会自动注入统计脚本(免费、无 cookie);只对 pages.dev 与绑定域名生效,GitHub Pages 镜像统计不到。这一步要你登录控制台点一下,还没开。
+- **分享与页面**(D 组剩下的):友链页、Now 页、作品集、最近在听——这些要你先给素材;RSS 现在只输出摘要,想要全文版也可以说一声。
 - **想换域名**：见第 7 节，注意还要同步改 GitHub OAuth App 的两个地址和 `config.yml` 的 `base_url`。
 - **可选功能**：给英文页单独换一张形象照（10.3）。
 

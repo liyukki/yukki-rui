@@ -55,6 +55,7 @@ GPT 中断前实际已完成全部展示层工作（组件、布局、页面、�
 | 验收项 | 实际结果 |
 |---|---|
 | `npm run verify:frontend` | 类型检查 46 文件 0 errors/0 warnings/0 hints（P2 修复后）；48 单测通过；双路径各 17 页、682 条站内引用通过；内容集成通过；构建 17 页；check:links 无死链；check:frontend 结构门槛通过 |
+| 本地端到端(真实浏览器)| `npm run check:reading` **23/23**、`npm run check:search` **19/19**:动过布局的文章页与首页仍正常(目录/阅读时长/上下篇/进度条/代码复制/灯箱/转场、归档与检索、窄屏无横向溢出、无脚本异常)|
 | `node scripts/check-base-parity.mjs --self-test` | 两种 base 通过；失败路径自检拒绝坏前缀 |
 | 375px 首页 | 导航/英雄区/双子像素角色/文章卡片/页脚渲染正常，无横向溢出（截图确认） |
 | 桌面 1280px | 英雄区双列 544px+435px、grid-2 双列 532px×2，无横向溢出 |
@@ -420,4 +421,83 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 
 ### 尚未做
 
-A/B/C/D 里的 P3（Cloudflare Web Analytics、GitHub Actions 评论通知与草稿提醒）与 P4（每篇独立 OG 图、JSON-LD）仍待做，调研与最小实现路径已归档在 `docs/superpowers/research/2026-10-18-roadmap-research.md`。
+当时记的是「P3 与 P4 仍待做」;这两项随后在 2026-10-19 做完(见下面两节),P3 里的访问统计因为需要登录 Cloudflare 控制台,单独留在最后。
+
+## 运营提醒:新评论通知与草稿提醒(GitHub Actions,2026-10-19,P3)
+
+站长确认 A/B/C/D 全做后,P3(C 组)先做「不需要站长操作」的两项;访问统计要登录控制台,留到最后。
+
+选型:**GitHub Actions + Issue**。理由是这套东西不新增账号、不新增服务(仓库自带的 Actions 与 Issues 就够),评论内容本来就公开在网页上;否掉了邮件(要发信服务、自有域名或应用专用密码)与第三方推送服务(多一个账号要维护)。手机推送作为可选增强用 ntfy:免注册、topic 名即密钥,不配就只写 Issue。
+
+### 交付内容
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 工作流 | `.github/workflows/ops-reminders.yml` | 两个 job:`comments` 每 30 分钟、`drafts` 每周一 01:00 UTC(北京时间 09:00);手动触发可以只跑其中一个 |
+| 已读位置 | 固定的「新评论提醒」Issue 正文 | 用 HTML 注释 `<!-- lastId: N -->` 记最大评论 id,不引入额外存储;首次运行只看最近 45 分钟,避免把历史评论一次性刷出来 |
+| 草稿提醒 | 固定的「草稿提醒:待发布的文章」Issue | `draft: true` 且起稿满 3 天的文章;没有待提醒的草稿时自动关闭这条 Issue |
+| 手机推送(可选) | 仓库 secret `NTFY_TOPIC` | 未配置就跳过;推送失败不影响 Issue 写入 |
+| 必需 secret | `COMMENTS_ADMIN_TOKEN` | 已于 2026-10-19 添加到仓库 secrets;缺失时 job 直接跳过而不是报错 |
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 手动触发 | `gh workflow run ops-reminders.yml -f job=comments` 与 `-f job=drafts` 都跑通,运行 39223037274、39223122670 等均 success |
+| 真评论链路 | 用线上接口发一条测试评论(id=8,昵称「通知测试」)后触发 → Issue #2「新评论提醒」被创建,正文带 `<!-- lastId: 8 -->`,并列出这条评论;随后删掉测试评论、重跑,输出「新评论 0 条(已读位置 8 → 8)」,正文推进为「目前还没有新评论」 |
+| 草稿链路 | `going-live.md` 已躺 3 天 → Issue #1「草稿提醒:待发布的文章」列出标题与文件路径;补上「草稿处理完后自动关闭」分支后重跑,输出「没有躺太久的草稿。」并关闭提醒 |
+| 幂等 | 没有新评论时不重复建 Issue、不重复追加评论;已读位置只在确实推进时才改写正文 |
+
+### 本轮踩到的坑
+
+1. **没 checkout 的 job 里 `gh` 找不到仓库**:`drafts` 那个 job 不 checkout,`gh issue list` 会报「not a git repository」,必须显式给 `GH_REPO: ${{ github.repository }}`(提交 f996f1f)。
+2. **公共仓库的提醒 Issue 是公开的**:评论者昵称和正文会出现在 Issue 里(正文已截断 300 字)。将来若不希望公开,就把通知改成只走 ntfy。
+3. **定时任务会被暂停**:公共仓库连续 60 天没有活动时 GitHub 会自动停用 schedule,有新提交后恢复——「没收到提醒」先看这一条。
+
+### 尚未做
+
+**访问统计(Cloudflare Web Analytics)**:调研结论是 Pages 控制台一键开启(Metrics → Web Analytics → Enable),边缘自动注入 beacon、不用手贴脚本,只对 pages.dev 与绑定域名生效,GitHub Pages 镜像统计不到。这一步必须登录 Cloudflare 控制台的浏览器会话才能点,因此留在这里。已用 wrangler 的 OAuth 令牌试过 API(`/accounts/{id}/rum/site_info/list`),返回 403 Authentication error——该令牌不能代替控制台登录。
+
+## 每篇文章的分享图与结构化数据(2026-10-19,P4)
+
+D 组里「不需要站长提供素材」的部分:每篇文章在构建期生成一张 1200×630 的分享图,页面里同时输出 JSON-LD 结构化数据。选型与最小实现路径见 `docs/superpowers/research/2026-10-18-roadmap-research.md` 的 P4-1/P4-2;当时否决了 Playwright 截图(CI 装不了浏览器)与运行时生成(GitHub Pages 没有 Functions)。
+
+### 交付内容
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 卡片纯逻辑 | `src/lib/og.ts` | 尺寸、配色、flex 结构、`clampText` 截断与中英各一套字数上限(中文 20/40,英文 52/88);可被单测覆盖 |
+| 构建期路由 | `src/pages/og/[...slug].png.ts` | `getStaticPaths` 遍历文章 → satori 出 SVG → resvg 出 PNG;响应带 `cache-control: immutable` |
+| 字体 | `src/assets/fonts/ark-pixel-12px-proportional-zh_hans.ttf` | Ark Pixel 12px(OFL,许可文本随仓库);放在 `src/assets` 而不是 `public`,只进构建不进产物;字号取 12 的整数倍最清晰 |
+| 结构化数据 | `src/components/JsonLd.astro` | `set:html` 不转义,所以手动把 `<` 换成 `\u003c`,防止正文里出现 `</script>` 提前闭合 |
+| 接线 | `src/layouts/PostLayout.astro`、`src/layouts/BaseLayout.astro`、`src/pages/[lang]/index.astro` | 文章页传 `ogImage` 与 BlogPosting;首页输出 WebSite;BaseLayout 新增可选 `jsonLd` 属性 |
+| 单测 | `tests/og.test.ts` | 13 项:路径换算、id 里的点、截断、字数上限、卡片结构与字段 |
+| 发布门槛 | `scripts/check-og.mjs`(`npm run check:og`,已并入 `verify:frontend` 与 GitHub Actions) | 见下「为什么还要一个检查脚本」 |
+| 依赖 | `satori` + `@resvg/resvg-js`(devDependencies) | 只用于构建期,浏览器端零新增依赖;lockfile 含 `@resvg/resvg-linux-x64-gnu`,CI(linux)能装 |
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| `npx astro check` | 80 files,0 errors / 0 warnings / 0 hints(新代码先是带出 3 条提示:多余的 `JsonLd` import、`getStaticPaths` 该用 async、`check-og.mjs` 里没用到的 import,都已清掉) |
+| `npx vitest run` | 14 files,**147 tests** 全通过(新增 og 13 项) |
+| `npm run verify:frontend` | 退出码 0:两种 base 各 **27 个真实页面、1099 条站内引用**通过,构建、死链、分享图/结构化数据、前端必需产物全过 |
+| `npm run check:og` | **17 个页面 / 8 块 JSON-LD / 6 张文章分享图**:og:image 与 JSON-LD 自洽,图都是 1200×630 且确实有渲染内容 |
+| 视觉验收 | 4 张预览图人工看图确认:中文、英文、超长标题、英文最坏情况(两行标题 + 两行摘要,底部一行不碰撞、装饰不越界) |
+| 负向验证 | 故意弄坏三处,检查都拦住了:①把某篇的卡片图换成默认深色图 → 「背景占比过低/缺少强调色装饰」;②删掉文章页 JSON-LD → 「缺少 JSON-LD 结构化数据」;③把 `@type` 改成 Article → 「类型是 Article,应为 BlogPosting」 |
+
+### 为什么还要一个检查脚本
+
+OG 图是**二进制产物**:文件在、尺寸对,也可能是字体没加载、渲染出来的空白卡片;JSON-LD 是内联在页面里的字符串,字段拼错、写错类型,构建都不会报错。`check:og` 因此做了两件 `check:links` / `check:frontend` 做不到的事:自己解码 PNG(用 `node:zlib` 写了个最小解码器,不引依赖)统计背景色/正文色/强调色像素与颜色总数,以及解析 JSON-LD 并与页面上的 `og:title`、canonical、页面语言逐项比对。
+
+### 本轮踩到的坑
+
+1. **Astro 路由参数会吃掉 id 里的点**:英文文章 id 是 `hello-world.en`,页面路径实际是 `/en/posts/hello-worlden/`,所以构建期产出的分享图也叫 `hello-worlden.png`。最初 `ogImagePath` 按原 id 拼路径,`check:links` 直接报死链——两处必须一致(单测里固化了这条)。
+2. **satori 默认 content-box**:声明 `height: 630px` 之后还会再叠上上下 padding,底部那一行与右下装饰会被裁到画布外;必须 `boxSizing: border-box`。
+3. **satori 只认 flex**:`block` / `inline` 的正常排版不生效,间距全靠 flex 与 margin;长文本也不会自己缩,得靠 `clampText` 截断加 `overflow: hidden` 兜底。
+4. **字体是这套方案的主要成本**:satori 不支持 woff2,而仓库原先 0 个字体文件。最终选 Ark Pixel 12px 像素字体(与站点像素风一致、OFL 可商用、5.2MB 只进构建),并用截图确认中文不缺字。
+5. **图上印的网址来自 `SITE_URL`**:本地构建默认是 `LOCAL_SITE_URL`(localhost:4321),所以本地预览的分享图会印 `localhost:4321`——不是 bug;两个平台都配了 `SITE_URL`,线上印的是各自域名。
+
+### 尚未做
+
+D 组剩下的是「要站长给素材」的部分:友链页、Now 页、作品集、最近在听;RSS 也还是摘要输出,全文输出未做。
