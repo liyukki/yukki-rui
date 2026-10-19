@@ -1,0 +1,14 @@
+---
+/**
+ * 结构化数据（JSON-LD）。
+ *
+ * set:html 不转义，所以必须手动把 `<` 换成 `\u003c`，
+ * 否则正文里出现 </script> 就能提前闭合脚本标签。
+ */
+interface Props {
+  data: Record<string, unknown>;
+}
+const { data } = Astro.props;
+const json = JSON.stringify(data).replace(/</g, '\\u003c');
+---
+<script type="application/ld+json" is:inline set:html={json} />

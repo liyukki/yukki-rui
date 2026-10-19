@@ -62,6 +62,13 @@ jobs:
         if: github.event_name != 'pull_request'
         run: npm run check:frontend
 
+      # 分享图与结构化数据也用 GitHub Pages 的 base/地址验一遍(构建产物就是这份)。
+      - name: Check share images and structured data
+        run: npm run check:og
+        env:
+          SITE_BASE: /${{ github.event.repository.name }}/
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
       - uses: actions/configure-pages@v5
         if: github.event_name != 'pull_request'
 

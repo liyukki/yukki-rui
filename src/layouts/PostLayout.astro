@@ -8,15 +8,16 @@ import PostExtras from '../components/PostExtras.astro';
 import PostNav from '../components/PostNav.astro';
 import PostToc from '../components/PostToc.astro';
 import TagList from '../components/TagList.astro';
-import { UI } from '../consts';
+import { SITE, UI } from '../consts';
 import type { Post } from '../lib/posts';
+import { ogImagePath } from '../lib/og';
 import {
   countReadingMinutes,
   formatReadingTime,
   selectTocHeadings,
   type ReadingHeading,
 } from '../lib/reading';
-import { postHref } from '../lib/url';
+import { absoluteHref, postHref, withBase } from '../lib/url';
 import BaseLayout from './BaseLayout.astro';
 
 interface Props {
@@ -47,12 +48,33 @@ function toNav(entry: Post | undefined) {
     date: dateFmt.format(entry.data.pubDate),
   };
 }
+
+/** 每篇文章的分享图由 src/pages/og/[...slug].png.ts 在构建期生成。 */
+const shareImage = ogImagePath(post.id);
+const canonical = absoluteHref(Astro.url.pathname);
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.data.title,
+  description: post.data.description,
+  datePublished: post.data.pubDate.toISOString(),
+  dateModified: (post.data.updatedDate ?? post.data.pubDate).toISOString(),
+  inLanguage: lang === 'zh' ? 'zh-CN' : 'en',
+  keywords: post.data.tags.join(','),
+  mainEntityOfPage: canonical,
+  image: absoluteHref(withBase(shareImage)),
+  url: canonical,
+  author: { '@type': 'Person', name: SITE.author },
+  publisher: { '@type': 'Organization', name: SITE.name },
+};
 ---
 <BaseLayout
   title={post.data.title}
   description={post.data.description}
   lang={lang}
   ogType="article"
+  ogImage={shareImage}
+  jsonLd={jsonLd}
   alternate={alternate}
 >
   <article class="prose rise post" data-pagefind-body>

@@ -7,6 +7,7 @@ import '../styles/world.css';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
+import JsonLd from '../components/JsonLd.astro';
 import NoteRain from '../components/NoteRain.astro';
 import type { Lang } from '../consts';
 
@@ -16,14 +17,17 @@ interface Props {
   lang: Lang;
   ogType?: 'website' | 'article';
   ogImage?: string;
+  /** 结构化数据；缺省不输出 JSON-LD */
+  jsonLd?: Record<string, unknown>;
   /** 另一语言对应页（已含 base）；同时传给 BaseHead 的 hreflang 与 Header 的语言按钮 */
   alternate?: string;
 }
-const { title, description, lang, ogType, ogImage, alternate } = Astro.props;
+const { title, description, lang, ogType, ogImage, jsonLd, alternate } = Astro.props;
 ---
 <html lang={lang === 'zh' ? 'zh-CN' : 'en'}>
   <head>
     <BaseHead title={title} description={description} lang={lang} ogType={ogType} ogImage={ogImage} alternate={alternate} />
+    {jsonLd && <JsonLd data={jsonLd} />}
     <ClientRouter />
     <script is:inline>
       (() => {

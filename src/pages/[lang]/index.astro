@@ -7,7 +7,7 @@ import { SITE, RSS_PATH, HERO_IMAGE, type Lang } from '../../consts';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getPosts, getTags } from '../../lib/posts';
 import { getSiteInfo, getHeroImage } from '../../lib/site-info';
-import { langHref, withBase } from '../../lib/url';
+import { absoluteHref, langHref, withBase } from '../../lib/url';
 export function getStaticPaths() { return SITE.langs.map((lang) => ({ params: { lang } })); }
 const lang = Astro.params.lang as Lang;
 const posts = await getPosts(lang);
@@ -48,8 +48,18 @@ const decor = [
   { name: 'star-pink', x: 80, y: 63, size: 22 }, { name: 'note-orange', x: 12, y: 67, size: 30 },
   { name: 'star-blue', x: 42, y: 14, size: 18 }, { name: 'coin-sprite', x: 66, y: 79, size: 22 },
 ];
+const homeUrl = absoluteHref(withBase(`${lang}/`));
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: SITE.title,
+  url: homeUrl,
+  description: zh ? SITE.description : 'A bilingual personal blog written in Markdown.',
+  inLanguage: zh ? 'zh-CN' : 'en',
+  author: { '@type': 'Person', name: SITE.author },
+};
 ---
-<BaseLayout title={SITE.title} description={SITE.description} lang={lang} alternate={langHref(zh ? 'en' : 'zh')}>
+<BaseLayout title={SITE.title} description={SITE.description} lang={lang} jsonLd={jsonLd} alternate={langHref(zh ? 'en' : 'zh')}>
   <div class="world-status"><span><i></i> YUKKI'S WORLD</span><span>LOG / {String(posts.length).padStart(2, '0')} <b>✦</b> {zh ? '欢迎访问' : 'WELCOME'}</span></div>
   <section class="hero pixel-world" aria-labelledby="welcome">
     <div class="world-hud"><span>WORLD 01 · HOME</span><span aria-label={zh ? '装饰生命值' : 'Decorative life meter'}>♥ ♥ ♥ <small>FULL OF IDEAS</small></span></div>

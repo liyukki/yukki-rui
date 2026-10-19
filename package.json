@@ -22,9 +22,10 @@
     "check:comments": "node scripts/check-comments.mjs",
     "check:comments-live": "node scripts/check-comments-live.mjs",
     "verify": "npm run check && npm test && npm run check:base && npm run check:content",
-    "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:frontend",
+    "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:og && npm run check:frontend",
     "check:reading": "node scripts/check-reading.mjs",
-    "check:search": "node scripts/check-search.mjs"
+    "check:search": "node scripts/check-search.mjs",
+    "check:og": "node scripts/check-og.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^8.0.3",
@@ -34,8 +35,10 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@resvg/resvg-js": "^2.6.2",
     "decap-server": "^3.11.4",
     "pagefind": "^1.5.2",
+    "satori": "^0.62.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3"
   }
