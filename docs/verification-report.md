@@ -454,9 +454,14 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 2. **公共仓库的提醒 Issue 是公开的**:评论者昵称和正文会出现在 Issue 里(正文已截断 300 字)。将来若不希望公开,就把通知改成只走 ntfy。
 3. **定时任务会被暂停**:公共仓库连续 60 天没有活动时 GitHub 会自动停用 schedule,有新提交后恢复——「没收到提醒」先看这一条。
 
-### 尚未做
+### 访问统计:已开通(2026-10-19)
 
-**访问统计(Cloudflare Web Analytics)**:调研结论是 Pages 控制台一键开启(Metrics → Web Analytics → Enable),边缘自动注入 beacon、不用手贴脚本,只对 pages.dev 与绑定域名生效,GitHub Pages 镜像统计不到。这一步必须登录 Cloudflare 控制台的浏览器会话才能点,因此留在这里。已用 wrangler 的 OAuth 令牌试过 API(`/accounts/{id}/rum/site_info/list`),返回 403 Authentication error——该令牌不能代替控制台登录。
+这一步需要登录 Cloudflare 控制台,最终在受控 Edge 里完成(沿用 DSh 那套「复制登录态 + 调试端口」的办法;这次还处理了 Edge 的 `--no-startup-window` 后台进程占着 Cookies 文件导致复制失败的问题)。
+
+- 控制台:Web analytics → Set up hostname → `yukki-rui.pages.dev` → 生成公开 site token(不是密钥,可以进仓库)。
+- 接入方式:账号级 Web Analytics 是**手插脚本**,不是 Pages 项目的边缘自动注入;脚本在 `src/components/BaseHead.astro`,开关与 token 在 `src/consts.ts` 的 `WEB_ANALYTICS`。两个平台插同一段脚本,访问汇总到同一个统计站点。
+- 门禁:`scripts/check-frontend.mjs` 在 `WEB_ANALYTICS.enabled` 为 true 时,要求 `dist/zh/index.html` 里同时出现 `beacon.min.js` 与 token,防止「代码里开了、构建没输出」。
+- 验证:构建产物里有脚本;两平台重新部署后线上页面均可见 `cloudflareinsights.com/beacon.min.js`(token 一致)。
 
 ## 每篇文章的分享图与结构化数据(2026-10-19,P4)
 
@@ -498,6 +503,36 @@ OG 图是**二进制产物**:文件在、尺寸对,也可能是字体没加载�
 4. **字体是这套方案的主要成本**:satori 不支持 woff2,而仓库原先 0 个字体文件。最终选 Ark Pixel 12px 像素字体(与站点像素风一致、OFL 可商用、5.2MB 只进构建),并用截图确认中文不缺字。
 5. **图上印的网址来自 `SITE_URL`**:本地构建默认是 `LOCAL_SITE_URL`(localhost:4321),所以本地预览的分享图会印 `localhost:4321`——不是 bug;两个平台都配了 `SITE_URL`,线上印的是各自域名。
 
+### 同批:现在 / 作品 / 最近在听三页(2026-10-19)
+
+素材来自站长:在听 hitorie、喜欢 wowaka 与术曲;作品先放这个站。三页都是构建期静态页,内容走新增的内容集合 `pages`,在网页后台里就能改(新增了六项 Sveltia 配置)。
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 页面 | `src/pages/[lang]/now.astro`、`works.astro`、`listening.astro` | 共用 `src/components/InfoList.astro` 渲染条目:可选状态徽章、元信息、外链,歌单额外带序号 |
+| 内容集合 | `src/content.config.ts` 新增 `pages` | id = `<page>.<lang>`;同时把 `site` 的匹配改成只收顶层 `*.json`(见下「踩到的坑」)|
+| 清洗规则 | `src/lib/page-items.ts` | 纯函数 `normalizeItems`:丢掉没标题的条目、去掉首尾空白、链接必须「文字 + 地址」成对;5 项单测 |
+| 读取与兜底 | `src/lib/page-content.ts` | 取不到文件或字段留空时返回空内容,页面显示兜底文案,构建不会失败 |
+| 导航 | `src/consts.ts` | 中英各 8 项:首页 / 现在 / 作品 / 在听 / 归档 / 标签 / 搜索 / 关于 |
+| 后台 | `public/admin/config.yml` | 「独立页面」下六个文件(中英 × 三页),改内容不用碰代码 |
+| 发布门槛 | `scripts/check-pages.mjs`(`npm run check:pages`) | 24 项浏览器端到端自检 |
+
+验证记录:
+
+| 项目 | 结果 |
+|---|---|
+| `npx astro check` | 87 files,0 errors / 0 warnings / 0 hints |
+| `npx vitest run` | 15 files,**153 tests** 全通过(新增条目清洗 5 项 + 门禁用例 1 项)|
+| `npm run verify:frontend` | 退出码 0;`check:frontend` 的必需产物已含六个新页面 |
+| `npm run check:pages` | **24/24**:导航 8 项且链接带 base、三页标题与条目、作品页状态徽章与两个外链(新窗口打开)、歌单序号与艺人、英文三页标题、hreflang 对应页、description、窄屏 390px 三页无横向溢出、无 4xx 与脚本异常 |
+| `npm run check:search` / `npm run check:reading` | **19/19** 与 **23/23**(导航项数断言从 5 更新为 8 后仍全过)|
+
+踩到的坑:
+
+1. **`site` 集合的 glob 会把新文件一起吃掉**:该集合用 `**/*.json` 且 `generateId = lang`,新增 `site/pages/*.json` 后同一个语言出现两个文件、id 直接相撞。改成 `*.json` 只收顶层,新页面另立 `pages` 集合、id 用 `<page>.<lang>`。
+2. **碰 `astro:content` 的模块不能直接进单测**:vitest 里没有这个虚拟模块,测试整个 suite 起不来。按仓库里 `hero-image.ts` 的既有套路,把纯规则拆到 `page-items.ts`,测试只 import 纯模块(与 `tests/site-info.test.ts` 复制 schema 的理由是同一条)。
+
+
 ### 尚未做
 
-D 组剩下的是「要站长给素材」的部分:友链页、Now 页、作品集、最近在听;RSS 也还是摘要输出,全文输出未做。
+**友链页**先不做:站长反馈朋友们目前没有自己的站点,以后有了再加。**RSS 全文输出**仍待办。

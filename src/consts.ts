@@ -19,6 +19,9 @@ export type Lang = (typeof SITE.langs)[number];
 export const NAV: Record<Lang, ReadonlyArray<{ label: string; path: string }>> = {
   zh: [
     { label: '首页', path: 'zh/' },
+    { label: '现在', path: 'zh/now/' },
+    { label: '作品', path: 'zh/works/' },
+    { label: '在听', path: 'zh/listening/' },
     { label: '归档', path: 'zh/archive/' },
     { label: '标签', path: 'zh/tags/' },
     { label: '搜索', path: 'zh/search/' },
@@ -26,6 +29,9 @@ export const NAV: Record<Lang, ReadonlyArray<{ label: string; path: string }>> =
   ],
   en: [
     { label: 'Home', path: 'en/' },
+    { label: 'Now', path: 'en/now/' },
+    { label: 'Works', path: 'en/works/' },
+    { label: 'Listening', path: 'en/listening/' },
     { label: 'Archive', path: 'en/archive/' },
     { label: 'Tags', path: 'en/tags/' },
     { label: 'Search', path: 'en/search/' },
@@ -82,6 +88,15 @@ export const UI: Record<Lang, Record<string, string>> = {
     searchError: '搜索暂时不可用，请稍后再试。',
     archiveHint: '按年份翻旧文。',
     archiveCount: '{count} 篇',
+    now: '现在',
+    works: '作品',
+    listening: '最近在听',
+    nowHint: '最近在忙什么:一份随时会过期的快照。',
+    worksHint: '做过的东西,目前主要是这个站。',
+    listeningHint: '循环中的曲子,大多是 hitorie 与术曲。',
+    updatedPrefix: '更新于',
+    emptyItems: '还没有内容,稍后再来看。',
+    keepExploring: '继续探索',
     notFoundTitle: '页面不存在',
     notFoundBody: '这个页面不存在。',
     readMore: '阅读全文',
@@ -133,6 +148,15 @@ export const UI: Record<Lang, Record<string, string>> = {
     searchError: 'Search is unavailable right now. Please try again later.',
     archiveHint: 'Browse older posts by year.',
     archiveCount: '{count} posts',
+    now: 'Now',
+    works: 'Works',
+    listening: 'Listening',
+    nowHint: 'What I am up to — a snapshot that expires fast.',
+    worksHint: 'Things I have built; mostly this site for now.',
+    listeningHint: 'On repeat: mostly hitorie and Vocaloid songs.',
+    updatedPrefix: 'Updated',
+    emptyItems: 'Nothing here yet — check back later.',
+    keepExploring: 'Keep exploring',
     notFoundTitle: 'Page not found',
     notFoundBody: 'This page does not exist.',
     readMore: 'Read more',
@@ -157,6 +181,19 @@ export const COMMENTS = {
 
 /** 默认 OG 图，相对 public/ 的路径。1200×630。 */
 export const OG_IMAGE = '/og-default.png';
+
+/**
+ * Cloudflare Web Analytics(浏览器端访问统计)。
+ *
+ * token 是**公开的 site token**(本来就会出现在页面源码里),不是密钥,可以放心提交。
+ * 2026-10-19 在 Cloudflare 控制台为 yukki-rui.pages.dev 开通;两个平台插同一段脚本,
+ * 所以 Cloudflare Pages 与 GitHub Pages 的访问会汇总到同一个统计站点。
+ * 想关掉:把 enabled 改成 false(只是不再输出脚本,统计站点本身不会删除)。
+ */
+export const WEB_ANALYTICS = {
+  enabled: true,
+  token: '8a26bb2204aa45f58a5937686cf051d0',
+} as const;
 
 /**
  * 首页英雄区与关于页的形象图片。

@@ -1,0 +1,19 @@
+{
+  "page": "listening",
+  "lang": "zh",
+  "intro": "最近在循环的歌。喜欢日本乐队 hitorie,也很喜欢 wowaka 与术曲(ボカロ)。歌单会慢慢往里加。",
+  "items": [
+    {
+      "title": "loveless",
+      "meta": "hitorie"
+    },
+    {
+      "title": "monocolour",
+      "meta": "hitorie"
+    },
+    {
+      "title": "Nami[A]me",
+      "meta": "hitorie"
+    }
+  ]
+}

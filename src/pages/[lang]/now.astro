@@ -1,0 +1,54 @@
+---
+/**
+ * now 页。内容读自内容集合 pages(src/content/site/pages/now.<lang>.json,网页后台可编辑),
+ * 文件缺失或字段留空时用 consts.ts 里的兜底文案。
+ */
+import InfoList from '../../components/InfoList.astro';
+import PixelSprite from '../../components/PixelSprite.astro';
+import { SITE, UI, type Lang } from '../../consts';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPageContent } from '../../lib/page-content';
+import { langHref, withBase } from '../../lib/url';
+
+export function getStaticPaths() {
+  return SITE.langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const copy = UI[lang];
+const content = await getPageContent('now', lang);
+const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', { dateStyle: 'long' });
+---
+
+<BaseLayout
+  title={`${copy.now} · ${SITE.title}`}
+  description={copy.nowHint}
+  lang={lang}
+  alternate={withBase(lang === 'zh' ? 'en/now/' : 'zh/now/')}
+>
+  <article class="prose rise subpage">
+    <header class="subpage-heading">
+      <PixelSprite name="note-orange" size={48} />
+      <span class="eyebrow">QUEST LOG</span>
+      <h1>{copy.now}</h1>
+      <p>{content.intro || copy.nowHint}</p>
+      {content.updatedAt && (
+        <p class="page-updated">{copy.updatedPrefix} {dateFmt.format(content.updatedAt)}</p>
+      )}
+    </header>
+    <InfoList items={content.items} empty={copy.emptyItems} />
+    <nav class="subpage-actions" aria-label={copy.keepExploring}>
+      <a class="pixel-button" href={withBase(`${lang}/works/`)}>{copy.works}</a>
+      <a class="pixel-button" href={langHref(lang)}>{copy.backHome}</a>
+    </nav>
+  </article>
+</BaseLayout>
+<style>
+  .page-updated {
+    margin-top: 10px;
+    font: 600 0.7rem var(--font-mono);
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+</style>
+

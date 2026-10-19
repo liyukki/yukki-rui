@@ -44,6 +44,7 @@ npm run dev
 | `npm run check:content` | 真实构建验证 Markdown、草稿页面、草稿译文和 RSS |
 | `npm run check:frontend` | 前端必需路由、404、分享图等发布门槛 |
 | `npm run check:og` | 分享图与结构化数据门槛:解码每张 PNG 确认不是空白卡片、逐项核对 JSON-LD(纯静态,不需要浏览器;需先 `npm run build`) |
+| `npm run check:pages` | 现在 / 作品 / 最近在听三页的端到端自检(需 `npm run build` + playwright;也可用 `LIVE_ORIGIN`/`LIVE_BASE` 跑线上) |
 | `npm run check:cms-config` | 可选：用真实 Sveltia 客户端加载 `public/admin/` 的真实配置，检查配置错误与登录入口（需 playwright；不参与发布检查）|
 | `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run check:comments` | 可选：用 wrangler 本地 Pages 运行时 + 真实 D1 模拟跑评论区端到端（发评论/XSS/限流/管理删除/CORS；需 playwright 与先 `npm run build`；不参与发布检查）|
@@ -140,6 +141,22 @@ Cloudflare 侧一次性配置（**已于 2026-10-18 配好**）：建 D1 库 `yu
 ## 运营提醒
 
 `.github/workflows/ops-reminders.yml`:每 30 分钟把新评论写进固定的「新评论提醒」Issue(已读位置记在 Issue 正文的 HTML 注释里,不额外存状态),每周一提醒躺了 3 天以上的草稿;没有待提醒的草稿时自动关闭提醒 Issue。需要仓库 secret `COMMENTS_ADMIN_TOKEN`(已配置),可选 `NTFY_TOPIC` 推手机;手动跑:`gh workflow run ops-reminders.yml -f job=comments`。
+
+## 访问统计
+
+Cloudflare Web Analytics(免费、无 cookie):开关与站点 token 在 `src/consts.ts` 的 `WEB_ANALYTICS`,`src/components/BaseHead.astro` 输出 `beacon.min.js`。两个平台插同一段脚本,数据汇总到控制台的 `yukki-rui.pages.dev`。`check:frontend` 会在开启时校验产物里确实有脚本——防止「代码里开了、构建没输出」这种线上永远没数据的情况。
+
+## 现在 / 作品 / 最近在听
+
+| 部分 | 位置 |
+|---|---|
+| 页面 | `src/pages/[lang]/now.astro`、`works.astro`、`listening.astro`(构建期静态,共用 `src/components/InfoList.astro` 渲染条目)|
+| 内容 | `src/content/site/pages/<page>.<lang>.json`(内容集合 `pages`,id 是 `<page>.<lang>`)|
+| 规则 | `src/lib/page-items.ts`(条目清洗的纯函数,有单测)+ `src/lib/page-content.ts`(读取与兜底)|
+| 后台 | `public/admin/config.yml` 的「独立页面」六个文件,直接在后台改 JSON 内容 |
+| 发布门槛 | `npm run check:pages`(导航、条目、状态徽章、外链、双语对应页、窄屏不溢出;需先 `npm run build`)|
+
+条目规则:标题必填(没标题的条目会跳过)、链接必须文字与地址成对、状态徽章只有作品页显示;内容清空时页面显示兜底文案而不是报错。
 
 ## 部署地址
 

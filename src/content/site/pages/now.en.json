@@ -1,0 +1,29 @@
+{
+  "page": "now",
+  "lang": "en",
+  "updatedAt": "2026-10-19",
+  "intro": "What I am up to right now — like a quest log for my own life.",
+  "items": [
+    {
+      "title": "Shipping this blog",
+      "meta": "2026-10",
+      "text": "Built yukki-rui from scratch: bilingual posts, a browser admin, a no-login comment section, archive and Pagefind search, plus a build-time share image for every post. It runs on both Cloudflare Pages and GitHub Pages."
+    },
+    {
+      "title": "School",
+      "meta": "Second year",
+      "text": "Coursework comes first; spare time goes to code and writing."
+    },
+    {
+      "title": "Listening",
+      "meta": "On repeat",
+      "text": "The Japanese band hitorie and Vocaloid songs — details on the Listening page."
+    },
+    {
+      "title": "Next up",
+      "meta": "Queued",
+      "text": "Keep filling in content and polishing the small details."
+    }
+  ]
+}
+

@@ -1,0 +1,96 @@
+---
+/**
+ * 条目列表:现在 / 作品 / 最近在听三页共用。
+ *
+ * 状态徽章(status)、元信息(meta)、外链都是可选的;列表为空时显示兜底文案,
+ * 这样后台把内容清空也不会让页面开天窗。具体清洗规则在 lib/page-content.ts(有单测)。
+ */
+import type { PageItem } from '../lib/page-items';
+
+interface Props {
+  items: PageItem[];
+  empty: string;
+  /** track 会在每条前面加序号,用来当歌单看 */
+  variant?: 'card' | 'track';
+}
+const { items, empty, variant = 'card' } = Astro.props;
+---
+
+{
+  items.length === 0 ? (
+    <p class="card info-empty">{empty}</p>
+  ) : (
+    <ul class:list={['info-list', `info-list--${variant}`]}>
+      {items.map((item, index) => (
+        <li class="card info-item">
+          {variant === 'track' && (
+            <span class="info-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+          )}
+          <div class="info-body">
+            <div class="info-head">
+              <h2>{item.title}</h2>
+              {item.status && <span class="status-badge">{item.status}</span>}
+              {item.meta && <span class="tech-chip">{item.meta}</span>}
+            </div>
+            {item.text && <p>{item.text}</p>}
+            {item.link && (
+              <a class="text-link" href={item.link.url} target="_blank" rel="noreferrer">
+                {item.link.label} ↗
+              </a>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+<style>
+  .info-empty {
+    padding: var(--space-3) var(--space-4);
+    color: var(--text-dim);
+  }
+  .info-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-3);
+  }
+  .info-item {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+  .info-index {
+    flex: none;
+    padding-top: 0.15em;
+    font: 700 1rem var(--font-pixel);
+    color: var(--link);
+    letter-spacing: 0.06em;
+  }
+  .info-body {
+    min-width: 0;
+  }
+  .info-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+  .info-head h2 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .info-item p {
+    margin: 0.5em 0 0;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+  }
+  .info-item .text-link {
+    display: inline-block;
+    margin-top: 0.6em;
+  }
+</style>
+

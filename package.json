@@ -25,7 +25,8 @@
     "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:og && npm run check:frontend",
     "check:reading": "node scripts/check-reading.mjs",
     "check:search": "node scripts/check-search.mjs",
-    "check:og": "node scripts/check-og.mjs"
+    "check:og": "node scripts/check-og.mjs",
+    "check:pages": "node scripts/check-pages.mjs"
   },
   "dependencies": {
     "@astrojs/mdx": "^8.0.3",

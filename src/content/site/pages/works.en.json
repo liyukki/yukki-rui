@@ -1,0 +1,24 @@
+{
+  "page": "works",
+  "lang": "en",
+  "intro": "The project so far is the site you are reading.",
+  "items": [
+    {
+      "title": "yukki rui · bilingual blog",
+      "meta": "Astro 7 · static output · 2026",
+      "status": "LIVE",
+      "text": "A bilingual blog built from scratch: Markdown authoring with static output at build time, a browser-based admin, a no-login comment section on Cloudflare D1, Pagefind search and archive pages, plus per-post share images and JSON-LD generated during the build. One repository deploys to both Cloudflare Pages and GitHub Pages.",
+      "linkLabel": "Live site",
+      "linkUrl": "https://yukki-rui.pages.dev/"
+    },
+    {
+      "title": "Source code",
+      "meta": "GitHub · public repo",
+      "status": "LIVE",
+      "text": "All the code is public, including the pre-release gates: type check, unit tests, dead-link checks for both deployment paths, and browser end-to-end checks.",
+      "linkLabel": "GitHub",
+      "linkUrl": "https://github.com/liyukki/yukki-rui"
+    }
+  ]
+}
+

@@ -1,0 +1,24 @@
+{
+  "page": "works",
+  "lang": "zh",
+  "intro": "目前的作品就是你现在看的这个站。",
+  "items": [
+    {
+      "title": "yukki rui · 中英双语个人博客",
+      "meta": "Astro 7 · 静态生成 · 2026",
+      "status": "LIVE",
+      "text": "自己从零做的双语博客:Markdown 写作、构建期生成静态页面;带网页后台(浏览器登录就能改内容)、免登录评论区(Cloudflare D1)、Pagefind 站内搜索与归档,每篇文章还会自动生成分享图与 JSON-LD 结构化数据。同一个仓库同时部署在 Cloudflare Pages 与 GitHub Pages。",
+      "linkLabel": "线上地址",
+      "linkUrl": "https://yukki-rui.pages.dev/"
+    },
+    {
+      "title": "这个站的源码",
+      "meta": "GitHub · 公开仓库",
+      "status": "LIVE",
+      "text": "全部代码开源,包含发布前的自动检查:类型检查、单元测试、两种部署路径的死链检查,以及浏览器端到端自检。",
+      "linkLabel": "GitHub",
+      "linkUrl": "https://github.com/liyukki/yukki-rui"
+    }
+  ]
+}
+

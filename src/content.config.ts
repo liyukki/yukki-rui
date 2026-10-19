@@ -41,8 +41,10 @@ const site = defineCollection({
   // 不能依赖默认 id：glob 默认用 github-slugger 处理文件名，
   // 会把 home.zh.json 的 id 变成 homezh（点号被吃掉，和文章文件名同理）。
   // 直接以数据里的 lang 字段作为 id，getEntry('site', 'zh') 即可命中。
+  // 只收顶层文件:page-*.json 那些「独立页面」的内容在下面的 pages 集合里,
+  // 若这里用 '**/*.json',两边的 id 会撞在一起(都以语言为 id)。
   loader: glob({
-    pattern: '**/*.json',
+    pattern: '*.json',
     base: './src/content/site',
     generateId: ({ data }) => String(data.lang),
   }),
@@ -90,4 +92,37 @@ const site = defineCollection({
   }),
 });
 
-export const collections = { posts, site };
+/**
+ * 独立页面的内容(现在 / 作品 / 最近在听),按「页面 + 语言」一个文件。
+ *
+ * 为什么不并进 site 集合:那个集合的 id 就是语言(getEntry('site', 'zh') 这样取值),
+ * 一个语言只能有一个文件;这里 id 用 <page>.<lang>,同一个语言可以有很多页。
+ * 页面读取时同样带代码内兜底,文件缺失或字段留空都不会让构建失败。
+ */
+const pages = defineCollection({
+  loader: glob({
+    pattern: '**/*.json',
+    base: './src/content/site/pages',
+    generateId: ({ data }) => `${data.page}.${data.lang}`,
+  }),
+  schema: z.object({
+    page: z.enum(['now', 'works', 'listening']),
+    lang: z.enum(['zh', 'en']),
+    updatedAt: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+    intro: z.string().optional(),
+    items: z
+      .array(
+        z.object({
+          title: z.string().optional(),
+          meta: z.string().optional(),
+          text: z.string().optional(),
+          status: z.preprocess(emptyToUndefined, z.enum(['WIP', 'LIVE', 'PAUSED']).optional()),
+          linkLabel: z.string().optional(),
+          linkUrl: z.preprocess(emptyToUndefined, z.string().optional()),
+        }),
+      )
+      .default([]),
+  }),
+});
+
+export const collections = { posts, site, pages };

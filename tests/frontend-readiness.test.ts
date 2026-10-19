@@ -38,6 +38,12 @@ const REQUIRED = [
   'en/archive/index.html',
   'zh/search/index.html',
   'en/search/index.html',
+  'zh/now/index.html',
+  'en/now/index.html',
+  'zh/works/index.html',
+  'en/works/index.html',
+  'zh/listening/index.html',
+  'en/listening/index.html',
   '404.html',
   'og-default.png',
   'pagefind/pagefind-entry.json',
@@ -54,6 +60,12 @@ it('缺少搜索索引时不通过结构验收', () => {
   const result = run(REQUIRED.filter((file) => !file.startsWith('pagefind/')));
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('pagefind/pagefind-entry.json');
+});
+
+it('缺少现在/作品/最近在听页面时仍然失败', () => {
+  const result = run(REQUIRED.filter((file) => !/(now|works|listening)/.test(file)));
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('zh/now/index.html');
 });
 
 it('必需路由、搜索索引和默认分享图齐全后通过结构验收', () => {

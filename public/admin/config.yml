@@ -191,3 +191,153 @@ collections:
               - { label: Section heading, name: heading, widget: string, required: false }
               - { label: Site description, name: body, widget: text, required: false }
               - { label: Bio (background, interests, contact), name: pending, widget: text, required: false }
+      - name: page-zh-now
+        label: 现在(中文)
+        file: src/content/site/pages/now.zh.json
+        format: json
+        fields:
+          - { label: 页面标识(勿改), name: page, widget: hidden, default: now }
+          - { label: Lang, name: lang, widget: hidden, default: zh }
+          - { label: 更新日期(可空,页面显示「更新于 …」), name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: 引言(留空就用代码里的兜底文案), name: intro, widget: text, required: false }
+          - label: 条目(标题必填;没填标题的条目不会显示)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: 标题, name: title, widget: string }
+              - { label: 元信息(日期 / 艺人 / 技术栈), name: meta, widget: string, required: false }
+              - { label: 说明, name: text, widget: text, required: false }
+              - { label: 链接文字(可空), name: linkLabel, widget: string, required: false }
+              - { label: 链接地址(可空;文字与地址都填了才显示链接), name: linkUrl, widget: string, required: false }
+              - label: 状态(只有作品页会显示徽章)
+                name: status
+                widget: select
+                options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
+                required: false
+      - name: page-en-now
+        label: Now (English)
+        file: src/content/site/pages/now.en.json
+        format: json
+        fields:
+          - { label: Page key (do not change), name: page, widget: hidden, default: now }
+          - { label: Lang, name: lang, widget: hidden, default: en }
+          - { label: 'Updated on (optional)', name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: Intro (falls back to built-in copy when empty), name: intro, widget: text, required: false }
+          - label: Items (a title is required; entries without one are skipped)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: Title, name: title, widget: string }
+              - { label: Meta (date, artist, tech stack), name: meta, widget: string, required: false }
+              - { label: Description, name: text, widget: text, required: false }
+              - { label: Link label (optional), name: linkLabel, widget: string, required: false }
+              - { label: Link URL (optional; shown only when both label and URL are set), name: linkUrl, widget: string, required: false }
+              - label: Status (badge is shown on the Works page)
+                name: status
+                widget: select
+                options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
+                required: false
+      - name: page-zh-works
+        label: 作品(中文)
+        file: src/content/site/pages/works.zh.json
+        format: json
+        fields:
+          - { label: 页面标识(勿改), name: page, widget: hidden, default: works }
+          - { label: Lang, name: lang, widget: hidden, default: zh }
+          - { label: 更新日期(可空,页面显示「更新于 …」), name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: 引言(留空就用代码里的兜底文案), name: intro, widget: text, required: false }
+          - label: 条目(标题必填;没填标题的条目不会显示)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: 标题, name: title, widget: string }
+              - { label: 元信息(日期 / 艺人 / 技术栈), name: meta, widget: string, required: false }
+              - { label: 说明, name: text, widget: text, required: false }
+              - { label: 链接文字(可空), name: linkLabel, widget: string, required: false }
+              - { label: 链接地址(可空;文字与地址都填了才显示链接), name: linkUrl, widget: string, required: false }
+              - label: 状态(只有作品页会显示徽章)
+                name: status
+                widget: select
+                options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
+                required: false
+      - name: page-en-works
+        label: Works (English)
+        file: src/content/site/pages/works.en.json
+        format: json
+        fields:
+          - { label: Page key (do not change), name: page, widget: hidden, default: works }
+          - { label: Lang, name: lang, widget: hidden, default: en }
+          - { label: 'Updated on (optional)', name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: Intro (falls back to built-in copy when empty), name: intro, widget: text, required: false }
+          - label: Items (a title is required; entries without one are skipped)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: Title, name: title, widget: string }
+              - { label: Meta (date, artist, tech stack), name: meta, widget: string, required: false }
+              - { label: Description, name: text, widget: text, required: false }
+              - { label: Link label (optional), name: linkLabel, widget: string, required: false }
+              - { label: Link URL (optional; shown only when both label and URL are set), name: linkUrl, widget: string, required: false }
+              - label: Status (badge is shown on the Works page)
+                name: status
+                widget: select
+                options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
+                required: false
+      - name: page-zh-listening
+        label: 最近在听(中文)
+        file: src/content/site/pages/listening.zh.json
+        format: json
+        fields:
+          - { label: 页面标识(勿改), name: page, widget: hidden, default: listening }
+          - { label: Lang, name: lang, widget: hidden, default: zh }
+          - { label: 更新日期(可空,页面显示「更新于 …」), name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: 引言(留空就用代码里的兜底文案), name: intro, widget: text, required: false }
+          - label: 条目(标题必填;没填标题的条目不会显示)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: 标题, name: title, widget: string }
+              - { label: 元信息(日期 / 艺人 / 技术栈), name: meta, widget: string, required: false }
+              - { label: 说明, name: text, widget: text, required: false }
+              - { label: 链接文字(可空), name: linkLabel, widget: string, required: false }
+              - { label: 链接地址(可空;文字与地址都填了才显示链接), name: linkUrl, widget: string, required: false }
+              - label: 状态(只有作品页会显示徽章)
+                name: status
+                widget: select
+                options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
+                required: false
+      - name: page-en-listening
+        label: Listening (English)
+        file: src/content/site/pages/listening.en.json
+        format: json
+        fields:
+          - { label: Page key (do not change), name: page, widget: hidden, default: listening }
+          - { label: Lang, name: lang, widget: hidden, default: en }
+          - { label: 'Updated on (optional)', name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: Intro (falls back to built-in copy when empty), name: intro, widget: text, required: false }
+          - label: Items (a title is required; entries without one are skipped)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: Title, name: title, widget: string }
+              - { label: Meta (date, artist, tech stack), name: meta, widget: string, required: false }
+              - { label: Description, name: text, widget: text, required: false }
+              - { label: Link label (optional), name: linkLabel, widget: string, required: false }
+              - { label: Link URL (optional; shown only when both label and URL are set), name: linkUrl, widget: string, required: false }
+              - label: Status (badge is shown on the Works page)
+                name: status
+                widget: select
+                options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
+                required: false
