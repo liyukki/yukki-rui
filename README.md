@@ -14,6 +14,8 @@
 
 运营上有**自动提醒**:新评论每 30 分钟汇总进一条 GitHub Issue,躺太久(3 天以上)的草稿每周提醒一次,可选推到手机(见[使用说明第 15 节](docs/usage-guide.md))。
 
+订阅源是**全文输出**:中文 `/rss.xml`、英文 `/rss-en.xml`,阅读器里直接看完整正文,不用点回网站。正文跟随 Astro 自己的渲染管线生成(代码高亮、优化后的图片与网页一致),站内地址自动补成绝对地址(见[使用说明第 17 节](docs/usage-guide.md))。
+
 | 平台 | 地址 | 说明 |
 |---|---|---|
 | GitHub Pages | <https://liyukki.github.io/yukki-rui/> | 展示用；纯静态，没有登录函数 |
@@ -41,7 +43,7 @@ npm run dev
 | `npm run build` | 构建到 `dist/` |
 | `npm run check:links` | 检查当前 dist 全部 HTML、RSS、sitemap、robots 的站内引用 |
 | `npm run check:base` | 两种部署路径下分别构建，并检查全部真实页面与引用 |
-| `npm run check:content` | 真实构建验证 Markdown、草稿页面、草稿译文和 RSS |
+| `npm run check:content` | 真实构建验证 Markdown、草稿页面、草稿译文和 RSS 全文与地址补全 |
 | `npm run check:frontend` | 前端必需路由、404、分享图等发布门槛 |
 | `npm run check:og` | 分享图与结构化数据门槛:解码每张 PNG 确认不是空白卡片、逐项核对 JSON-LD(纯静态,不需要浏览器;需先 `npm run build`) |
 | `npm run check:pages` | 现在 / 作品 / 最近在听三页的端到端自检(需 `npm run build` + playwright;也可用 `LIVE_ORIGIN`/`LIVE_BASE` 跑线上) |
@@ -92,6 +94,17 @@ tags: [随笔]
 没有译文时，语言导航可跳目标语言首页，但 SEO 的 `hreflang` 不把首页声明成文章译文。
 
 文章链接使用真实 `post.id`。默认 glob loader 会将文件名转换为 slug：当前 `hello-world.en.md` 的 ID 是 `hello-worlden`，不是 `hello-world` 或 `hello-world.en`。使用 `getTranslations()` 和 `postHref()`，不要推测另一语言的 URL。
+
+## RSS 订阅（全文输出）
+
+| 部分 | 位置 |
+|---|---|
+| 生成 | `src/lib/feed.ts`：每篇文章的正文用 Astro Container API 渲染 `render(post).Content`，产出进 `content:encoded`；`description` 保留摘要 |
+| 地址补全 | `src/lib/feed-html.ts`：把正文里的图片/站内链接补成绝对地址（含部署 base），`srcset` 一并处理；纯函数，有单测 |
+| 入口 | `src/pages/rss.xml.ts`（中）、`src/pages/rss-en.xml.ts`（英），`site` 取 `Astro.site` |
+| 发布门槛 | `npm run check:content` 在两种 base 下断言：正文是渲染后的 HTML、图片地址带站点前缀、没有残留的站内相对地址 |
+
+为什么不自己把 Markdown 转一遍：用 Container API 走 Astro 自己的渲染管线，代码高亮、优化后的图片、扩展语法都与网页端完全一致，不会出现「网页对、订阅错」的两套排版；代价是每篇文章构建时多渲染一次（当前 6 篇已发布文章，可忽略）。注意以 `/` 开头的引用按 URL 标准补到站点根（origin），不会替你补部署 base——Astro 渲染时已把 base 写进资源地址，feed 只补 origin 就够。
 
 ## 评论区
 

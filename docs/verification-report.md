@@ -537,4 +537,41 @@ OG 图是**二进制产物**:文件在、尺寸对,也可能是字体没加载�
 
 ### 尚未做
 
-**友链页**先不做:站长反馈朋友们目前没有自己的站点,以后有了再加。**RSS 全文输出**仍待办。
+**友链页**先不做:站长反馈朋友们目前没有自己的站点,以后有了再加。
+
+---
+
+## RSS 全文输出(2026-10-19,P5)
+
+D 组最后一项可选项:两个订阅源从「只有摘要」升级为「全文」。约束有两条:正文排版必须和网页一致(否则代码块、表格、优化后的图片在阅读器里会走样);构建必须保持完全静态,两个平台都不能加运行时依赖。
+
+### 交付内容
+
+| 部分 | 位置 | 说明 |
+|---|---|---|
+| 正文生成 | `src/lib/feed.ts` | 每篇文章用 `render(post).Content` + Astro Container API 渲染成 HTML,放进 `content:encoded`;`description` 仍保留摘要给列表用 |
+| 地址补全 | `src/lib/feed-html.ts` | 纯函数:根路径补 origin、相对路径按文章地址解析、srcset 逐项补全、解码/重编码 HTML 实体、幂等 |
+| 单测 | `tests/feed-html.test.ts` | **13 项**:根路径按 URL 标准补 origin、相对路径以文章地址为基准、绝对地址/锚点/mailto/data/协议相对地址原样保留、srcset 描述符、HTML 实体往返、重复调用幂等 |
+| 集成门禁 | `scripts/check-content.mjs` | 测试文章的正文带一张本地图片;在 `/` 与 `/yukki-rui/` 两种部署路径下断言:RSS 正文是渲染后的 HTML(`<strong>`)、图片地址带站点前缀、没有残留的站内相对地址 |
+| 依赖 | 无新增 | Container API 来自 Astro 本体,构建期不引入新依赖 |
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| `npx astro check` | 90 files,0 errors / 0 warnings / 0 hints |
+| `npx vitest run` | 16 files,**166 tests** 全通过(新增 feed-html 13 项) |
+| `npm run verify:frontend` | 退出码 0:`check:base` 两种 base 各 **33 个真实页面、1452 条站内引用**通过;`check:content` 两种 base 均报「RSS 全文」通过;`check:links` 33 个 HTML 页面 1452 条引用无死链;`check:og` 17 个页面、8 块 JSON-LD、6 张分享图自洽;`check:frontend` 必需产物齐全且统计脚本在位 |
+| 产物抽查 | `dist/rss.xml`:4 篇中文文章各带 `<content:encoded>`;图片是 `/_astro/<hash>.webp` 的绝对地址;`&lt;p&gt;`、`&lt;h2` 出现说明是渲染后的 HTML,不是 Markdown 源码。`dist/rss-en.xml`:2 篇英文文章同样 |
+| 子路径构建 | 以 `SITE_BASE=/yukki-rui/`、`SITE_URL=https://liyukki.github.io/yukki-rui/` 构建:文章链接与正文图片地址都带 `/yukki-rui/` 前缀,没有漏前缀的资源 |
+
+### 为什么写在构建期
+
+网页端渲染文章用的是 Astro 的完整管线:Markdown 扩展、代码高亮、图片优化(`/_astro/*.webp`)、自定义组件。RSS 全文如果自己写 Markdown 转换,迟早会和网页端走样;而用 Container API 渲染同一个 `Content` 组件,订阅源里的 HTML 就是网页端产物本身,一致性免费拿到。代价是 feed 路由变成异步渲染,构建时长略有增加(实测全站构建仍在 5 秒内)。
+
+### 踩到的坑
+
+1. **`content` 字段是实体编码的 HTML,不是 CDATA**:`@astrojs/rss` 把 `content` 直接交给 XMLBuilder,`<p>` 会被转义成 `&lt;p&gt;`。一开始以为要手写 CDATA,读库源码(序列化时 `item["content:encoded"] = result.content`)并实测后确认:实体编码正是 RSS 的约定,阅读器先做 XML 解码再按 HTML 渲染,不需要也不应该手写 CDATA。
+2. **根路径引用不会自动补部署 base**:`new URL('/_astro/x.webp', pageUrl)` 补到 origin 根,不会带 `/yukki-rui/`。第一版单测按「补成带 base 的绝对地址」写,失败后才想明白:Astro 渲染 HTML 时已经把 base 写进了资源地址(`/yukki-rui/_astro/...`),feed 只补 origin 才是对的;这个边界写进了单测注释。
+3. **vitest 不能 import 碰 `astro:content` 的模块**:`feed.ts` 一被测试 import,整个 suite 直接起不来(虚拟模块不可解析)。沿用 `page-items.ts` 的既有套路,纯地址逻辑拆到 `feed-html.ts`,测试只 import 纯模块。
+4. **Container API 要复用实例**:Container API 目前仍挂在 `experimental_AstroContainer` 名下,每个 feed 创建一个容器、所有文章共用一个;每篇文章 new 一个会重复初始化渲染环境。
