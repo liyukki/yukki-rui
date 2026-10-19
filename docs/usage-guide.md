@@ -700,10 +700,10 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 |---|---|---|
 | 入口 | `src/pages/rss.xml.ts`、`src/pages/rss-en.xml.ts` | 中英各一路,地址跟着部署环境自动变成 `https://.../` 或 `https://.../yukki-rui/` |
 | 正文生成 | `src/lib/feed.ts` | 用 Astro 自己的渲染管线(Container API)渲染每篇文章,所以代码高亮、优化后的图片、扩展语法都和网页端一模一样 |
-| 地址补全 | `src/lib/feed-html.ts` | 订阅器没有「当前页面」概念,正文里的图片和站内链接必须补成绝对地址(含部署前缀),否则阅读器里图片会 404 |
+| 地址补全 | `src/lib/feed-html.ts` | 订阅器没有「当前页面」概念,正文里的图片和站内链接必须补成绝对地址(含部署前缀),否则阅读器里图片会 404;作者手写的 `/zh/about/` 根路径会补上部署 base,已经带前缀的地址不会重复加,`srcset` 里的 `data:` 地址也不会被逗号拆坏 |
 | 摘要 | 文章 `description` 字段 | 阅读器列表里显示的那句话;正文单独放在 `content:encoded` |
 
-**发布前自查**:`npm run verify:frontend`(其中的 `check:content` 会在两种部署路径下断言:正文是渲染后的 HTML、图片地址带站点前缀、没有残留的站内相对地址)。
+**发布前自查**:`npm run verify:frontend`(其中的 `check:content` 会在两种部署路径下分别断言中英 RSS:正文是渲染后的 HTML、根路径链接与图片带站点前缀、`srcset` 保持完整、没有残留的站内相对地址)。
 
 **改什么会影响订阅**:文章标题、摘要、日期、正文都会进订阅源,改了推送即可;`draft: true` 的文章不进订阅源。阅读器有缓存,新文章可能不会立刻出现,手动刷新订阅即可。
 

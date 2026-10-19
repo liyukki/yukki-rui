@@ -100,11 +100,11 @@ tags: [随笔]
 | 部分 | 位置 |
 |---|---|
 | 生成 | `src/lib/feed.ts`：每篇文章的正文用 Astro Container API 渲染 `render(post).Content`，产出进 `content:encoded`；`description` 保留摘要 |
-| 地址补全 | `src/lib/feed-html.ts`：把正文里的图片/站内链接补成绝对地址（含部署 base），`srcset` 一并处理；纯函数，有单测 |
+| 地址补全 | `src/lib/feed-html.ts`：标签扫描只改真实地址属性，图片/站内链接补成绝对地址（含部署 base），`srcset` 按候选解析；注释、脚本/样式文本与 `data:` URL 不会被误改；纯函数，有单测 |
 | 入口 | `src/pages/rss.xml.ts`（中）、`src/pages/rss-en.xml.ts`（英），`site` 取 `Astro.site` |
-| 发布门槛 | `npm run check:content` 在两种 base 下断言：正文是渲染后的 HTML、图片地址带站点前缀、没有残留的站内相对地址 |
+| 发布门槛 | `npm run check:content` 在两种 base 下分别断言中英 RSS：正文是渲染后的 HTML、根路径链接与图片带站点前缀、`srcset` 保持完整、没有残留的站内相对地址 |
 
-为什么不自己把 Markdown 转一遍：用 Container API 走 Astro 自己的渲染管线，代码高亮、优化后的图片、扩展语法都与网页端完全一致，不会出现「网页对、订阅错」的两套排版；代价是每篇文章构建时多渲染一次（当前 6 篇已发布文章，可忽略）。注意以 `/` 开头的引用按 URL 标准补到站点根（origin），不会替你补部署 base——Astro 渲染时已把 base 写进资源地址，feed 只补 origin 就够。
+为什么不自己把 Markdown 转一遍：用 Container API 走 Astro 自己的渲染管线，代码高亮、优化后的图片、扩展语法都与网页端完全一致，不会出现「网页对、订阅错」的两套排版；代价是每篇文章构建时多渲染一次（当前 6 篇已发布文章，可忽略）。作者手写的 `/zh/about/` 这类根路径会按 `Astro.site` 补上部署 base；已经带 `/yukki-rui/` 的地址不会重复加前缀。
 
 ## 评论区
 

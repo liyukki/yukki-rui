@@ -19,8 +19,52 @@ const project = join(directory, 'project');
 const contentDirectory = join(project, 'src', 'content', 'posts');
 const key = `verification-${randomUUID().slice(0, 8)}`;
 const published = `${key}-published`;
+const publishedEn = `${key}-published-en`;
 const draft = `${key}-draft`;
 const draftZh = `${key}-draft-zh`;
+
+/** 给 RSS 全文断言提供可重复的探针：图片、srcset、作者手写根路径。 */
+function bodyFor(lang, isDraft) {
+  if (isDraft) return `**Verified Markdown body ${key}**\n`;
+  return [
+    `**Verified Markdown body ${key}**`,
+    '',
+    '![probe](./images/你在看什么呀.jpg)',
+    '',
+    `<img srcset="data:image/svg+xml,%3Csvg%3E 1x, ./images/你在看什么呀.jpg 2x" alt="srcset probe">`,
+    '',
+    `<q cite="/${lang}/about/">root-relative probe</q>`,
+    '',
+  ].join('\n');
+}
+
+function decodeXmlText(xml) {
+  return xml
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function assertFullFeed(xml, label, lang, site, id) {
+  const items = (xml.match(/<item>/g) ?? []).length;
+  const contents = (xml.match(/<content:encoded>/g) ?? []).length;
+  assert.ok(items > 0, `${label} RSS 没有文章`);
+  assert.equal(contents, items, `${label} RSS 有文章没有 content:encoded 全文`);
+  assert.ok(xml.includes('&lt;strong&gt;Verified Markdown body'), `${label} RSS 正文没有渲染后的 HTML`);
+  assert.ok(!xml.includes('**Verified Markdown body'), `${label} RSS 输出的是 Markdown 原文而不是渲染后的 HTML`);
+  assert.ok(xml.includes(`${site}_astro/`), `${label} RSS 正文里的图片没有补成绝对地址（缺少站点前缀）`);
+  assert.ok(xml.includes(`${site}${lang}/about/`), `${label} RSS 根路径链接没有补上部署 base`);
+  const srcsets = [...decodeXmlText(xml).matchAll(/\ssrcset="([^"]*)"/g)].map((match) => match[1]);
+  assert.ok(srcsets.some((value) => value.startsWith('data:image/svg+xml,%3Csvg%3E 1x, ')), `${label} RSS 改坏了 srcset 里的 data: 地址`);
+  assert.ok(srcsets.some((value) => value.includes(`${site}${lang}/posts/${id}/images/`)), `${label} RSS srcset 里的相对图片没有补成绝对地址`);
+  assert.ok(!/(?:href|src|cite)=&quot;\/(?!\/)/.test(xml), `${label} RSS 正文里仍有站内相对地址`);
+  const origin = new URL(site).origin;
+  if (new URL(site).pathname !== '/') {
+    assert.ok(!xml.includes(`${origin}/${lang}/about/`), `${label} RSS 根路径链接丢掉了部署 base`);
+  }
+}
 
 try {
   mkdirSync(project);
@@ -28,14 +72,15 @@ try {
     const original = join(originalProject, file);
     if (existsSync(original)) cpSync(original, join(project, file), { recursive: true });
   }
-  for (const [id, lang, isDraft] of [[published, 'zh', false], [draft, 'en', true], [draftZh, 'zh', true]]) {
+  for (const [id, lang, isDraft, translationKey] of [
+    [published, 'zh', false, `${key}-published`],
+    [publishedEn, 'en', false, `${key}-published-en`],
+    [draft, 'en', true, `${key}-draft`],
+    [draftZh, 'zh', true, `${key}-draft`],
+  ]) {
     const path = join(contentDirectory, `${id}.md`);
-    // 已发布那篇带一张本地图片：用来验证 RSS 全文里的图片地址被补成绝对地址。
-    const body = isDraft
-      ? `**Verified Markdown body ${key}**\n`
-      : `**Verified Markdown body ${key}**\n\n![probe](./images/你在看什么呀.jpg)\n`;
     // 测试文章只存在于临时源码副本；即使进程被强制终止也不会污染原项目。
-    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: 2026-10-10\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${key}\n---\n\n${body}`, { flag: 'wx' });
+    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: 2026-10-10\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${translationKey}\n---\n\n${bodyFor(lang, isDraft)}`, { flag: 'wx' });
   }
   for (const [name, base] of [['root', '/'], ['subpath', '/yukki-rui/']]) {
     const output = join(directory, name);
@@ -50,14 +95,14 @@ try {
     const rss = readFileSync(join(output, 'rss.xml'), 'utf8');
     const englishRss = readFileSync(join(output, 'rss-en.xml'), 'utf8');
     assert.ok(rss.includes(new URL(`${base}zh/posts/${published}/`, site).href), 'RSS 文章地址缺少部署路径');
+    assert.ok(englishRss.includes(new URL(`${base}en/posts/${publishedEn}/`, site).href), '英文 RSS 文章地址缺少部署路径');
     assert.ok(!rss.includes(draftZh) && !englishRss.includes(draft), '草稿进入了 RSS');
-    // RSS 全文：正文必须是渲染后的 HTML（不是 Markdown 原文），且站内地址补成绝对地址，
-    // 否则订阅器里图片 404、链接丢掉部署前缀。断言同时覆盖两种 base。
-    assert.ok(rss.includes('<content:encoded>'), 'RSS 没有输出 content:encoded 全文');
-    assert.ok(rss.includes('&lt;strong&gt;Verified Markdown body'), 'RSS 正文没有渲染后的 HTML');
-    assert.ok(!rss.includes('**Verified Markdown body'), 'RSS 输出的是 Markdown 原文而不是渲染后的 HTML');
-    assert.ok(rss.includes(`${site}_astro/`), 'RSS 正文里的图片没有补成绝对地址（缺少站点前缀）');
-    assert.ok(!/(?:href|src)=&quot;\/(?!\/)/.test(rss), 'RSS 正文里仍有站内相对地址');
+    assertFullFeed(rss, '中文', 'zh', site, published);
+    assertFullFeed(englishRss, '英文', 'en', site, publishedEn);
+    assert.ok(rss.includes(new URL(`${base}zh/posts/${published}/`, site).href), '中文 RSS 缺少中文探针文章');
+    assert.ok(englishRss.includes(new URL(`${base}en/posts/${publishedEn}/`, site).href), '英文 RSS 缺少英文探针文章');
+    assert.ok(!rss.includes(new URL(`${base}en/posts/${publishedEn}/`, site).href), '英文探针文章混进了中文 RSS');
+    assert.ok(!englishRss.includes(new URL(`${base}zh/posts/${published}/`, site).href), '中文探针文章混进了英文 RSS');
     // 个人资料集合（/admin 后台编辑的数据源）：以数据文件为准断言渲染。
     // 文案会随站点主人的编辑变化，所以不能写死具体句子 —— 改为读取 JSON，
     // 断言其中的值确实出现在对应语言的页面上。
@@ -109,7 +154,7 @@ try {
     const adminHtml = readFileSync(join(output, 'admin', 'index.html'), 'utf8');
     assert.ok(adminHtml.includes('./upload-helper.js'), 'admin/index.html 缺少上传助手脚本引用');
     assert.ok(existsSync(join(output, 'admin', 'upload-helper.js')), 'admin/upload-helper.js 没有产出到构建目录');
-    console.log(`✓ base = ${base}：Markdown 渲染、草稿页面、草稿译文、RSS 全文、个人资料集合和后台产物集成检查通过`);
+    console.log(`✓ base = ${base}：Markdown 渲染、草稿页面、草稿译文、双语 RSS 全文与地址补全、个人资料集合和后台产物集成检查通过`);
   }
 } catch (error) {
   console.error(error.message);

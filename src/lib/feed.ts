@@ -23,7 +23,7 @@ async function feedItem(post: Post, site: string, container: Container) {
     pubDate: post.data.pubDate,
     link,
     // RSS 的 content:encoded 约定是「实体编码后的 HTML」，@astrojs/rss 负责转义。
-    content: absolutizeFeedHtml(body, link),
+    content: absolutizeFeedHtml(body, link, site),
   };
 }
 

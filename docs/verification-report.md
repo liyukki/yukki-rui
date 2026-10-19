@@ -573,6 +573,38 @@ D 组最后一项可选项:两个订阅源从「只有摘要」升级为「全�
 ### 踩到的坑
 
 1. **`content` 字段是实体编码的 HTML,不是 CDATA**:`@astrojs/rss` 把 `content` 直接交给 XMLBuilder,`<p>` 会被转义成 `&lt;p&gt;`。一开始以为要手写 CDATA,读库源码(序列化时 `item["content:encoded"] = result.content`)并实测后确认:实体编码正是 RSS 的约定,阅读器先做 XML 解码再按 HTML 渲染,不需要也不应该手写 CDATA。
-2. **根路径引用不会自动补部署 base**:`new URL('/_astro/x.webp', pageUrl)` 补到 origin 根,不会带 `/yukki-rui/`。第一版单测按「补成带 base 的绝对地址」写,失败后才想明白:Astro 渲染 HTML 时已经把 base 写进了资源地址(`/yukki-rui/_astro/...`),feed 只补 origin 才是对的;这个边界写进了单测注释。
+2. **根路径引用不会自动补部署 base**:`new URL('/_astro/x.webp', pageUrl)` 补到 origin 根,不会带 `/yukki-rui/`。第一版单测按「补成带 base 的绝对地址」写,失败后曾判断「Astro 已把 base 写进资源地址,feed 只补 origin 就够」。后续发现作者手写的 `/zh/about/` 并不经过 Astro 资源管线,因此该结论已修正:feed 现在接收 `Astro.site` 并显式补部署 base,见本节末尾的边界修复记录。
 3. **vitest 不能 import 碰 `astro:content` 的模块**:`feed.ts` 一被测试 import,整个 suite 直接起不来(虚拟模块不可解析)。沿用 `page-items.ts` 的既有套路,纯地址逻辑拆到 `feed-html.ts`,测试只 import 纯模块。
 4. **Container API 要复用实例**:Container API 目前仍挂在 `experimental_AstroContainer` 名下,每个 feed 创建一个容器、所有文章共用一个;每篇文章 new 一个会重复初始化渲染环境。
+
+
+---
+
+## RSS 地址改写边界修复(2026-10-19,后续)
+
+上一节记录的初版全文订阅已经上线,但地址改写还有四个边界问题:作者手写的根路径链接会丢掉部署 base;全局正则会把正文文本、注释和脚本里的 URL 样式内容误当属性改写;`srcset` 按逗号切分会拆坏 `data:` URL;发布门禁只完整断言了中文 feed。
+
+### 修复内容
+
+| 问题 | 修复 |
+|---|---|
+| 根路径丢失 base | `absolutizeUrl()` 接收 `siteUrl`;作者手写的 `/zh/about/` 解析到部署站点根,已带 `/yukki-rui/` 的地址不重复加前缀 |
+| 误改正文/注释/脚本 | `absolutizeFeedHtml()` 改为标签扫描,只改真实标签的地址属性;跳过注释和 `script/style/textarea/title/pre` 等原始文本区域 |
+| 属性覆盖不足 | 统一处理 `href/src/poster/cite/action/formaction/data/xlink:href`,并支持无引号属性 |
+| `srcset` 被逗号拆坏 | 按候选语法扫描 URL 与描述符,保留 `data:` URL、`1x`、`640w` |
+| 门禁只覆盖中文 | 临时工程增加已发布英文探针;两种 base 下分别断言中英 feed 的根路径、图片、`srcset`、草稿过滤和语言隔离 |
+
+### 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| `npx vitest run tests/feed-html.test.ts` | 21 项通过 |
+| `npm run verify:frontend` | 退出码 0;类型检查 90 文件 0 errors/0 warnings/0 hints;16 个测试文件 174 项通过;两种 base 各 33 个真实页面、1452 条站内引用通过;双语 RSS 全文与地址补全检查通过;链接、分享图和前端必需产物检查通过 |
+| `npm run check:reading` | 23/23 通过 |
+| `npm run check:search` | 19/19 通过 |
+| `npm run check:pages` | 24/24 通过 |
+| `npm run check:comments` | 28/28 通过 |
+| `npm run check:comments-live` | 15/15 通过 |
+| `git diff --check` | 无空白错误 |
+
+其中 `check:content` 的探针同时覆盖:已发布中英文章、图片绝对地址、作者手写根路径 `cite`、含 `data:` 的 `srcset`,以及两种部署 base。
