@@ -30,8 +30,12 @@ try {
   }
   for (const [id, lang, isDraft] of [[published, 'zh', false], [draft, 'en', true], [draftZh, 'zh', true]]) {
     const path = join(contentDirectory, `${id}.md`);
+    // 已发布那篇带一张本地图片：用来验证 RSS 全文里的图片地址被补成绝对地址。
+    const body = isDraft
+      ? `**Verified Markdown body ${key}**\n`
+      : `**Verified Markdown body ${key}**\n\n![probe](./images/你在看什么呀.jpg)\n`;
     // 测试文章只存在于临时源码副本；即使进程被强制终止也不会污染原项目。
-    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: 2026-10-10\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${key}\n---\n\n**Verified Markdown body ${key}**\n`, { flag: 'wx' });
+    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: 2026-10-10\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${key}\n---\n\n${body}`, { flag: 'wx' });
   }
   for (const [name, base] of [['root', '/'], ['subpath', '/yukki-rui/']]) {
     const output = join(directory, name);
@@ -47,6 +51,13 @@ try {
     const englishRss = readFileSync(join(output, 'rss-en.xml'), 'utf8');
     assert.ok(rss.includes(new URL(`${base}zh/posts/${published}/`, site).href), 'RSS 文章地址缺少部署路径');
     assert.ok(!rss.includes(draftZh) && !englishRss.includes(draft), '草稿进入了 RSS');
+    // RSS 全文：正文必须是渲染后的 HTML（不是 Markdown 原文），且站内地址补成绝对地址，
+    // 否则订阅器里图片 404、链接丢掉部署前缀。断言同时覆盖两种 base。
+    assert.ok(rss.includes('<content:encoded>'), 'RSS 没有输出 content:encoded 全文');
+    assert.ok(rss.includes('&lt;strong&gt;Verified Markdown body'), 'RSS 正文没有渲染后的 HTML');
+    assert.ok(!rss.includes('**Verified Markdown body'), 'RSS 输出的是 Markdown 原文而不是渲染后的 HTML');
+    assert.ok(rss.includes(`${site}_astro/`), 'RSS 正文里的图片没有补成绝对地址（缺少站点前缀）');
+    assert.ok(!/(?:href|src)=&quot;\/(?!\/)/.test(rss), 'RSS 正文里仍有站内相对地址');
     // 个人资料集合（/admin 后台编辑的数据源）：以数据文件为准断言渲染。
     // 文案会随站点主人的编辑变化，所以不能写死具体句子 —— 改为读取 JSON，
     // 断言其中的值确实出现在对应语言的页面上。
@@ -98,7 +109,7 @@ try {
     const adminHtml = readFileSync(join(output, 'admin', 'index.html'), 'utf8');
     assert.ok(adminHtml.includes('./upload-helper.js'), 'admin/index.html 缺少上传助手脚本引用');
     assert.ok(existsSync(join(output, 'admin', 'upload-helper.js')), 'admin/upload-helper.js 没有产出到构建目录');
-    console.log(`✓ base = ${base}：Markdown 渲染、草稿页面、草稿译文、RSS、个人资料集合和后台产物集成检查通过`);
+    console.log(`✓ base = ${base}：Markdown 渲染、草稿页面、草稿译文、RSS 全文、个人资料集合和后台产物集成检查通过`);
   }
 } catch (error) {
   console.error(error.message);
