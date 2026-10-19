@@ -49,6 +49,7 @@ jobs:
       - name: 拉取新评论并写入通知 Issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           COMMENTS_ADMIN_TOKEN: ${{ secrets.COMMENTS_ADMIN_TOKEN }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
@@ -124,6 +125,7 @@ jobs:
       - name: 找出躺太久的草稿
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
