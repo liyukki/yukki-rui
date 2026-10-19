@@ -461,7 +461,9 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 - 控制台:Web analytics → Set up hostname → `yukki-rui.pages.dev` → 生成公开 site token(不是密钥,可以进仓库)。
 - 接入方式:账号级 Web Analytics 是**手插脚本**,不是 Pages 项目的边缘自动注入;脚本在 `src/components/BaseHead.astro`,开关与 token 在 `src/consts.ts` 的 `WEB_ANALYTICS`。两个平台插同一段脚本,访问汇总到同一个统计站点。
 - 门禁:`scripts/check-frontend.mjs` 在 `WEB_ANALYTICS.enabled` 为 true 时,要求 `dist/zh/index.html` 里同时出现 `beacon.min.js` 与 token,防止「代码里开了、构建没输出」。
-- 验证:构建产物里有脚本;两平台重新部署后线上页面均可见 `cloudflareinsights.com/beacon.min.js`(token 一致)。
+- 验证(构建):`dist/zh/index.html` 里有脚本;`check:frontend` 在统计开启时强制校验这一点。
+- 验证(线上):两个平台的页面源码都带 `beacon.min.js` 与同一 token;用真实浏览器打开 `pages.dev/zh/`、`pages.dev/zh/now/`、`liyukki.github.io/yukki-rui/zh/works/`,三页都成功 `GET beacon.min.js` 并 `POST https://cloudflareinsights.com/cdn-cgi/rum`,无脚本异常。
+- 控制台:Web analytics 里已出现站点 `yukki-rui.pages.dev`(2026-10-19 创建),数据在几分钟内开始入库。
 
 ## 每篇文章的分享图与结构化数据(2026-10-19,P4)
 
