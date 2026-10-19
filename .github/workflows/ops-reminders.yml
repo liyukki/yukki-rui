@@ -1,0 +1,155 @@
+name: Ops reminders
+
+# 运营提醒：新评论通知 + 草稿提醒
+#
+# 设计要点
+# - 新评论：每 30 分钟调一次评论管理接口，把新评论写进固定的「新评论提醒」Issue，
+#   已读位置（最大评论 id）记在该 Issue 正文的 HTML 注释里，不依赖额外存储。
+#   第一次运行时只看最近 45 分钟，避免把历史评论一次性全通知。
+# - 草稿：每周一检查 frontmatter 里 draft: true 且起稿超过 3 天的文章，写进固定的
+#   「草稿提醒：待发布的文章」Issue。没有需要提醒的内容时不创建 Issue。
+# - 可选：在仓库 secrets 里加 NTFY_TOPIC，就能同时推到手机（ntfy.sh，免注册）。
+#
+# 需要的 secrets：COMMENTS_ADMIN_TOKEN（评论管理令牌）
+# 可选 secrets：NTFY_TOPIC（ntfy 主题名，32 位随机串）
+#
+# 注意：公共仓库的 Issue 是公开的（评论内容本来就公开在页面上）；仓库连续 60 天
+# 没有活动时 GitHub 会自动停用定时任务，有新提交后会恢复。
+
+on:
+  schedule:
+    # 每 30 分钟：新评论
+    - cron: '*/30 * * * *'
+    # 每周一 01:00 UTC（北京时间 09:00）：草稿提醒
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: '要跑哪个任务'
+        type: choice
+        options: [auto, comments, drafts]
+        default: auto
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-reminders
+  cancel-in-progress: false
+
+jobs:
+  comments:
+    name: 新评论通知
+    if: >-
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'comments' || inputs.job == 'auto'))
+      || (github.event_name == 'schedule' && github.event.schedule == '*/30 * * * *')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取新评论并写入通知 Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENTS_ADMIN_TOKEN: ${{ secrets.COMMENTS_ADMIN_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${COMMENTS_ADMIN_TOKEN:-}" ]; then
+            echo "没有配置 COMMENTS_ADMIN_TOKEN，跳过新评论通知。"
+            exit 0
+          fi
+
+          title='新评论提醒'
+          state_hint='本 Issue 由工作流自动维护：新评论会以评论形式追加到这里。'
+
+          # 找到固定的通知 Issue，并从正文里读出已读位置（最大评论 id）
+          issues=$(gh issue list --state open --limit 100 --json number,title,body)
+          number=$(printf '%s' "$issues" | jq -r '.[] | select(.title == "新评论提醒") | .number' | head -n 1)
+          number=${number:-}
+          last=0
+          if [ -n "$number" ]; then
+            last=$(printf '%s' "$issues" \
+              | jq -r --argjson n "$number" '.[] | select(.number == $n) | .body' \
+              | grep -o 'lastId: [0-9]*' | head -n 1 | awk '{print $2}')
+            last=${last:-0}
+          fi
+
+          curl -fsS -H "Authorization: Bearer $COMMENTS_ADMIN_TOKEN" \
+            'https://yukki-rui.pages.dev/api/comments-admin?limit=100' > /tmp/comments.json
+
+          if [ "$last" = "0" ]; then
+            # 第一次运行：只看最近 45 分钟
+            since=$(date -u -d '-45 minutes' +%Y-%m-%dT%H:%M:%SZ)
+            jq --arg since "$since" '[.items[] | select(.createdAt >= $since)]' /tmp/comments.json > /tmp/new.json
+          else
+            jq --argjson last "$last" '[.items[] | select(.id > $last)]' /tmp/comments.json > /tmp/new.json
+          fi
+
+          count=$(jq length /tmp/new.json)
+          maxid=$(jq -r '[.items[].id] | max // 0' /tmp/comments.json)
+          echo "新评论 $count 条（已读位置 $last → $maxid）"
+
+          if [ "$count" = "0" ]; then
+            # 没有新评论：只在不重复建 Issue 的前提下推进已读位置
+            if [ -n "$number" ] && [ "$maxid" -gt "$last" ]; then
+              gh issue edit "$number" --body "<!-- lastId: $maxid -->"$'\n\n'"${state_hint}已读位置：最新评论 id = $maxid。" >/dev/null
+            fi
+            exit 0
+          fi
+
+          body=$(jq -r '.[] | "- **\(.author)** · \(.createdAt) · `\(.thread)`\n\n  \(.body | gsub("\\n"; " ") | .[0:300])\n"' /tmp/new.json)
+          state="<!-- lastId: $maxid -->"$'\n\n'"${state_hint}已读位置：最新评论 id = $maxid。"
+
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+            gh issue edit "$number" --body "$state" >/dev/null
+          else
+            gh issue create --title "$title" --body "$state"$'\n\n'"${body}" >/dev/null
+          fi
+
+          if [ -n "${NTFY_TOPIC:-}" ]; then
+            msg=$(jq -r '[.[] | "\(.author)：\(.body | gsub("\\n"; " ") | .[0:80])"] | .[0:3] | join("\n")' /tmp/new.json)
+            curl -fsS -X POST -H 'Title: yukki rui 有新评论' -H 'Tags: speech_balloon' \
+              -d "$msg" "https://ntfy.sh/$NTFY_TOPIC" || echo "ntfy 推送失败（不影响流程）"
+          fi
+
+  drafts:
+    name: 草稿提醒
+    if: >-
+      (github.event_name == 'workflow_dispatch' && (inputs.job == 'drafts' || inputs.job == 'auto'))
+      || (github.event_name == 'schedule' && github.event.schedule == '0 1 * * 1')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 找出躺太久的草稿
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          now=$(date -u +%s)
+          rows=''
+          for f in src/content/posts/*.md; do
+            grep -q '^draft: true' "$f" || continue
+            title=$(grep -m1 '^title:' "$f" | sed -e 's/^title:[[:space:]]*//' -e 's/^"//' -e 's/"$//')
+            date=$(grep -m1 '^pubDate:' "$f" | sed -e 's/^pubDate:[[:space:]]*//' -e 's/^"//' -e 's/"$//')
+            ts=$(date -u -d "$date" +%s 2>/dev/null || echo "$now")
+            days=$(( (now - ts) / 86400 ))
+            if [ "$days" -ge 3 ]; then
+              rows="${rows}- **${title}**（\`${f}\`）起稿 ${days} 天\n"
+            fi
+          done
+
+          if [ -z "$rows" ]; then
+            echo "没有躺太久的草稿。"
+            exit 0
+          fi
+
+          body=$(printf '以下草稿已经躺了 3 天以上，可以发布，也可以干脆删掉：\n\n%b' "$rows")
+          number=$(gh issue list --state open --limit 100 --json number,title \
+            --jq '.[] | select(.title == "草稿提醒：待发布的文章") | .number' | head -n 1)
+          if [ -n "${number:-}" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title '草稿提醒：待发布的文章' --body "$body"
+          fi
