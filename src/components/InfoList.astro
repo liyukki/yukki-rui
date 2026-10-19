@@ -6,6 +6,7 @@
  * 这样后台把内容清空也不会让页面开天窗。具体清洗规则在 lib/page-content.ts(有单测)。
  */
 import type { PageItem } from '../lib/page-items';
+import { withBase } from '../lib/url';
 
 interface Props {
   items: PageItem[];
@@ -34,7 +35,12 @@ const { items, empty, variant = 'card' } = Astro.props;
             </div>
             {item.text && <p>{item.text}</p>}
             {item.link && (
-              <a class="text-link" href={item.link.url} target="_blank" rel="noreferrer">
+              <a
+                class="text-link"
+                href={item.link.url.startsWith('/') ? withBase(item.link.url) : item.link.url}
+                target={item.link.url.startsWith('/') ? undefined : '_blank'}
+                rel={item.link.url.startsWith('/') ? undefined : 'noreferrer'}
+              >
                 {item.link.label} ↗
               </a>
             )}

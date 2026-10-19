@@ -9,7 +9,7 @@
       "status": "LIVE",
       "text": "A bilingual blog built from scratch: Markdown authoring with static output at build time, a browser-based admin, a no-login comment section on Cloudflare D1, Pagefind search and archive pages, plus per-post share images and JSON-LD generated during the build. One repository deploys to both Cloudflare Pages and GitHub Pages.",
       "linkLabel": "Live site",
-      "linkUrl": "https://yukki-rui.pages.dev/"
+      "linkUrl": "/"
     },
     {
       "title": "Source code",

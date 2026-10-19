@@ -93,10 +93,18 @@ try {
   const badges = await page.locator('.info-item .status-badge').allInnerTexts();
   check('作品页显示状态徽章', badges.length >= 2 && badges.every((text) => text.trim() === 'LIVE'), badges.join(','));
   const links = await page.locator('.info-item .text-link').evaluateAll((els) => els.map((el) => ({ href: el.getAttribute('href'), target: el.getAttribute('target'), text: el.textContent.trim() })));
+  const siteLink = links.find((item) => item.text.includes('线上地址'));
+  const repoLink = links.find((item) => item.text.includes('GitHub'));
   check(
-    '作品页外链正确且新窗口打开',
-    links.length === 2 && links.every((item) => item.target === '_blank' && /^https:\/\//.test(item.href ?? '')) && links.some((item) => item.href === 'https://yukki-rui.pages.dev/'),
-    links.map((item) => `${item.text}→${item.href}`).join(' '),
+    '作品页有站内线上地址与仓库外链',
+    links.length === 2 &&
+      !!siteLink &&
+      !!repoLink &&
+      (siteLink.href ?? '').startsWith(BASE) &&
+      siteLink.target !== '_blank' &&
+      repoLink.target === '_blank' &&
+      (repoLink.href ?? '').startsWith('https://github.com/'),
+    links.map((item) => `${item.text}→${item.href}(${item.target ?? 'same'})`).join(' '),
   );
 
   // 4. 最近在听:序号、乐队名
