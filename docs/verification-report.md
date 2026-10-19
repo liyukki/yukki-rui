@@ -564,6 +564,7 @@ D 组最后一项可选项:两个订阅源从「只有摘要」升级为「全�
 | `npm run verify:frontend` | 退出码 0:`check:base` 两种 base 各 **33 个真实页面、1452 条站内引用**通过;`check:content` 两种 base 均报「RSS 全文」通过;`check:links` 33 个 HTML 页面 1452 条引用无死链;`check:og` 17 个页面、8 块 JSON-LD、6 张分享图自洽;`check:frontend` 必需产物齐全且统计脚本在位 |
 | 产物抽查 | `dist/rss.xml`:4 篇中文文章各带 `<content:encoded>`;图片是 `/_astro/<hash>.webp` 的绝对地址;`&lt;p&gt;`、`&lt;h2` 出现说明是渲染后的 HTML,不是 Markdown 源码。`dist/rss-en.xml`:2 篇英文文章同样 |
 | 子路径构建 | 以 `SITE_BASE=/yukki-rui/`、`SITE_URL=https://liyukki.github.io/yukki-rui/` 构建:文章链接与正文图片地址都带 `/yukki-rui/` 前缀,没有漏前缀的资源 |
+| 线上 | 推送后两个平台各实测 `GET /rss.xml`、`/rss-en.xml`:HTTP 200,`content:encoded` 中文 4 篇 / 英文 2 篇,文章与图片地址都是各自域名的绝对地址(GitHub Pages 版带 `/yukki-rui/`),正文图片 URL HTTP 200 且 `image/webp`,无残留站内相对地址 |
 
 ### 为什么写在构建期
 
