@@ -397,7 +397,7 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 | 搜索页 | `src/pages/[lang]/search.astro` | 页面里只放挂载点与 i18n data 属性，`pagefind-ui.js` / `pagefind-ui.css` 在运行时注入（原因见下） |
 | 导航 | `src/consts.ts` | `NAV` 增加「归档 / 搜索」（中英各 5 项）；`UI` 增加 `search*` / `archive*` 8 个文案键 |
 | 索引范围 | `src/layouts/PostLayout.astro`、`PostExtras`/`PostToc`/`PostNav`/`Comments` | 只有文章 `<article>` 带 `data-pagefind-body`；目录、上下篇、评论、增强脚本容器带 `data-pagefind-ignore` |
-| 构建 | `package.json` | `"build": "astro build && pagefind --site dist"`；本地实测索引 2 种语言、6 篇文章、550 词（草稿被排除）|
+| 构建 | `package.json` | `"build": "astro build && pagefind --site dist"`；本地实测索引 2 种语言、6 篇文章、528 词（草稿被排除，正文外的日期/阅读时长已排除）|
 | 发布门槛 | `scripts/check-frontend.mjs` + `tests/frontend-readiness.test.ts` | required 增加归档页、搜索页、`pagefind/pagefind-entry.json`、`pagefind/pagefind-ui.js`；单测同步 |
 
 ### 验证记录
@@ -408,6 +408,7 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 | `npx vitest run` | 13 files，**134 tests** 全通过（新增归档 4 项 + 前端门禁 2 项）|
 | `npm run verify:frontend` | 退出码 0：两种 base 各 **27 个真实页面、1099 条站内引用**通过，构建、死链、前端必需产物全过 |
 | 本地端到端 `npm run check:search` | **19/19**：中英导航各 5 项且链接带 base、归档年份分组/条目/篇数/倒序、英文归档、搜索框与本地化占位、中文检索命中且链接指向站内文章、无结果文案、搜索页与归档页自身不进索引、英文检索、点结果进文章页、经页头导航转场进搜索页后仍可检索、390px 窄屏归档与搜索页均无横向溢出、Pagefind 资源无 4xx、无脚本异常 |
+| 线上验收（2026-10-18） | 提交 `7daead6` 推送后，两平台各跑一遍 `check:search` 均 **19/19**：Cloudflare `LIVE_ORIGIN=https://yukki-rui.pages.dev LIVE_BASE=/`、GitHub Pages `LIVE_ORIGIN=https://liyukki.github.io LIVE_BASE=/yukki-rui/`（重点验证了 base 为 `/yukki-rui/` 时 Pagefind 资源与索引路径）|
 
 ### 本轮踩到的坑
 
@@ -415,6 +416,7 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 2. **搜索页必须排除自身与界面元素**：Pagefind 只索引带 `data-pagefind-body` 的页面；不标记的话搜索页、归档页的标题文案会被搜到（自检里用「ARCHIVE LEDGER」验证 0 结果）。评论、目录、上一篇/下一篇也加了 `data-pagefind-ignore`，否则正文会被目录/邻居标题污染。
 3. **中文无 stemming 是正常的**：`pagefind` 输出 `Note: Pagefind doesn't support stemming for the language zh-cn`，检索仍可用（按字匹配），不要用 `--force-language` 强制成英文（会让中英混排索引错乱）。
 4. **`npm i -D pagefind` 会把 extraneous 的 playwright 清掉**：本地端到端的几个 `check:*` 脚本依赖 playwright，仓库约定不把它写进 `package.json`（避免云端构建装浏览器内核），所以本机要用时临时 `npm i --no-save playwright`。
+5. **线上首次检索比本地慢得多**：线上要下载 wasm 与索引，第一轮「搜索」会在 1.2 秒后才出结果，固定 `waitForTimeout(1200)` 的断言会误报「结果=0」。已把 `scripts/check-search.mjs` 的 `searchFor()` 改为 `waitForFunction` 等确定信号（出现结果条目，或出现「没有找到」提示），最多 20 秒，本地与两平台线上都能稳定通过。同类问题在 P1 的 `check:reading` 也修过一次——线上脚本断言要等状态、不要等时长。
 
 ### 尚未做
 

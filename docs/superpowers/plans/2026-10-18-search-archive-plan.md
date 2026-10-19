@@ -2,7 +2,7 @@
 
 > 设计见 `docs/superpowers/specs/2026-10-18-search-archive-design.md`。
 >
-> **状态（2026-10-18）**：Task 1–4 已完成并通过门禁（`check:search` 本地 19/19）；Task 5 进行中（文档已改，待提交与线上验收）。
+> **状态（2026-10-18）**：Task 1–5 全部完成。代码与文档已随提交 `7daead6` 上线；本地 `check:search` 19/19，Cloudflare Pages 与 GitHub Pages 线上各 19/19（`LIVE_ORIGIN` / `LIVE_BASE`）。
 
 ## 全局约束
 

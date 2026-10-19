@@ -68,13 +68,26 @@ page.on('response', (res) => {
   if (res.status() >= 400) failedResponses.push(`${res.status()} ${res.url()}`);
 });
 
-async function searchFor(term) {
+// 线上首次检索要下载 wasm 与索引，不能只等固定时长；
+// 等到「出现结果」或「出现无结果提示」这两个确定信号之一，再断言。
+async function searchFor(term, expectResults = true) {
   const input = page.locator('.pagefind-ui__search-input');
   await input.waitFor({ timeout: 15000 });
   await input.fill('');
   await input.fill(term);
   await input.press('Enter').catch(() => {});
-  await page.waitForTimeout(1200);
+  await page
+    .waitForFunction(
+      (wantResults) => {
+        const results = document.querySelectorAll('.pagefind-ui__result').length;
+        const message = document.querySelector('.pagefind-ui__message')?.textContent ?? '';
+        return wantResults ? results > 0 : /没有找到|No results/i.test(message);
+      },
+      expectResults,
+      { timeout: 20000 },
+    )
+    .catch(() => {});
+  await page.waitForTimeout(300);
 }
 
 try {
@@ -128,13 +141,13 @@ try {
   check('搜索结果链接指向站内文章', !!zhFirstHref && zhFirstHref.includes('/zh/posts/'), String(zhFirstHref));
 
   // 6. 无结果文案
-  await searchFor('zzzznotfoundzzzz');
+  await searchFor('zzzznotfoundzzzz', false);
   const zeroText = (await page.locator('.pagefind-ui__message').innerText().catch(() => '')).trim();
   const zeroResults = await page.locator('.pagefind-ui__result').count();
   check('无结果时显示本地化提示', zeroResults === 0 && zeroText.includes('没有找到相关内容'), zeroText.slice(0, 40));
 
   // 7. 搜索页自身不会被索引（只索引 data-pagefind-body 的文章正文）
-  await searchFor('ARCHIVE LEDGER');
+  await searchFor('ARCHIVE LEDGER', false);
   const selfResults = await page.locator('.pagefind-ui__result').count();
   check('搜索页与归档页自身不进索引', selfResults === 0, `结果=${selfResults}`);
 
