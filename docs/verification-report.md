@@ -463,7 +463,7 @@ Cloudflare 侧用 wrangler 的 OAuth 令牌调 API 完成（比在控制台点�
 - 门禁:`scripts/check-frontend.mjs` 在 `WEB_ANALYTICS.enabled` 为 true 时,要求 `dist/zh/index.html` 里同时出现 `beacon.min.js` 与 token,防止「代码里开了、构建没输出」。
 - 验证(构建):`dist/zh/index.html` 里有脚本;`check:frontend` 在统计开启时强制校验这一点。
 - 验证(线上):两个平台的页面源码都带 `beacon.min.js` 与同一 token;用真实浏览器打开 `pages.dev/zh/`、`pages.dev/zh/now/`、`liyukki.github.io/yukki-rui/zh/works/`,三页都成功 `GET beacon.min.js` 并 `POST https://cloudflareinsights.com/cdn-cgi/rum`,无脚本异常。
-- 控制台:Web analytics 里已出现站点 `yukki-rui.pages.dev`(2026-10-19 创建),数据在几分钟内开始入库。
+- 控制台:Web analytics 里已出现站点 `yukki-rui.pages.dev`(2026-10-19 创建);上报请求返回 **204**(已接收),控制台通常在几十分钟内出第一批数据,刚开通时显示 0 是正常的。
 
 ## 每篇文章的分享图与结构化数据(2026-10-19,P4)
 
