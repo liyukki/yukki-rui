@@ -1,6 +1,7 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 import {
   collectTags,
+  compareByDateDesc,
   findTranslation,
   selectPosts,
 } from './post-select';
@@ -14,18 +15,23 @@ export type Post = CollectionEntry<'posts'>;
  * 因而能被单元测试覆盖。这里只做数据搬运。
  *
  * isProd 用 import.meta.env.PROD：astro build 为 true，astro dev 为 false。
- * 这是「生产绝不产出草稿、开发可预览草稿」这条规则的唯一落点 ——
- * 列表页、文章页的 getStaticPaths、RSS、标签页全都调用 getPosts()，
- * 因此规则只需实现一次。
+ * 首页、标签、文章生成与 RSS 都经过 getPosts()；归档另走 getPostsByDate()
+ * 保留纯时间序。草稿与定时发布的可见性规则只在 post-select.ts 实现一次。
  */
 async function allPosts(): Promise<Post[]> {
   return await getCollection('posts');
 }
 
-/** 该语言的全部已发布文章，按发布日期倒序。 */
+/** 该语言的全部可见文章：精选优先，其余按发布日期倒序。 */
 export async function getPosts(lang: 'zh' | 'en'): Promise<Post[]> {
   const entries = await allPosts();
-  return selectPosts(entries, lang, import.meta.env.PROD);
+  return selectPosts(entries, lang, import.meta.env.PROD, new Date());
+}
+
+/** 纯时间倒序（忽略 featured）：归档页、RSS 与上下篇使用，保持原有语义。 */
+export async function getPostsByDate(lang: 'zh' | 'en'): Promise<Post[]> {
+  const entries = await allPosts();
+  return selectPosts(entries, lang, import.meta.env.PROD, new Date()).sort(compareByDateDesc);
 }
 
 /** 该语言的标签及文章数，按数量倒序。 */

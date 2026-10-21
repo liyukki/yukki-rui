@@ -1,0 +1,57 @@
+name: 定时发布检查
+
+# 静态站不会在 publishAt 到点时自己变化，因此由这里定期触发一次部署。
+# 只判断日期（与后台字段一致，统一按 UTC），部署粒度约为 30 分钟。
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: publish-scheduled
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 找出已到点且尚未进入成功部署的文章
+        id: due
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          today=$(date -u +%Y-%m-%d)
+          # 用最近一次成功部署日期做水位线；没有成功记录时视为全部需要检查。
+          last_success=$(gh run list --workflow=deploy.yml --status success --limit 1 \
+            --json createdAt --jq '.[0].createdAt // ""')
+          last_date=${last_success:+$(date -u -d "$last_success" +%Y-%m-%d)}
+
+          found=0
+          for file in src/content/posts/*.md; do
+            [ -e "$file" ] || continue
+            draft=$(grep -m1 '^draft:' "$file" | sed 's/^draft:[[:space:]]*//' | tr -d '"' | tr -d "'" || true)
+            pub=$(grep -m1 '^publishAt:' "$file" | sed 's/^publishAt:[[:space:]]*//' | tr -d '"' | tr -d "'" || true)
+            [ -z "$pub" ] && continue
+            [ "$draft" = "true" ] && continue
+            [ "$pub" \> "$today" ] && continue
+            if [ -z "$last_date" ] || [ "$pub" \> "$last_date" ]; then
+              found=1
+              break
+            fi
+          done
+          echo "due=$found" >> "$GITHUB_OUTPUT"
+
+      - name: 触发一次重建
+        if: steps.due.outputs.due == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref master

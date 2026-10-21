@@ -1,6 +1,6 @@
 import type { APIContext } from 'astro';
-import { createFeed } from '../lib/feed';
+import { createChronologicalFeed } from './rss.xml';
 
 export function GET(context: APIContext): Promise<Response> {
-  return createFeed('en', context.site?.href);
+  return createChronologicalFeed('en', context.site?.href);
 }

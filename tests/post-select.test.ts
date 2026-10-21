@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   collectTags,
+  compareByDateDesc,
   findTranslation,
   selectPosts,
   type PostLike,
@@ -17,6 +18,7 @@ function post(overrides: Partial<PostLike['data']> & { id: string }): PostLike {
       lang: 'zh',
       tags: [],
       draft: false,
+      featured: false,
       ...data,
     },
   };
@@ -49,6 +51,61 @@ describe('selectPosts', () => {
   it('开发模式保留草稿以便预览', () => {
     const ids = selectPosts(entries, 'zh', false).map((p) => p.id);
     expect(ids).toContain('zh-draft');
+  });
+
+  it('生产模式隐藏未到点的定时文章', () => {
+    const now = new Date('2026-05-10T00:00:00Z');
+    const future = post({ id: 'future', pubDate: new Date('2026-05-01'), publishAt: new Date('2026-06-01T00:00:00Z') });
+    const ids = selectPosts([...entries, future], 'zh', true, now).map((p) => p.id);
+    expect(ids).not.toContain('future');
+  });
+
+  it('到点后定时文章可见', () => {
+    const now = new Date('2026-06-02T00:00:00Z');
+    const due = post({ id: 'due', pubDate: new Date('2026-05-01'), publishAt: new Date('2026-06-01T00:00:00Z') });
+    const ids = selectPosts([...entries, due], 'zh', true, now).map((p) => p.id);
+    expect(ids).toContain('due');
+  });
+
+  it('draft 压过 publishAt', () => {
+    const now = new Date('2026-06-02T00:00:00Z');
+    const blocked = post({ id: 'blocked', draft: true, publishAt: new Date('2026-06-01T00:00:00Z') });
+    const ids = selectPosts([...entries, blocked], 'zh', true, now).map((p) => p.id);
+    expect(ids).not.toContain('blocked');
+  });
+
+  it('开发模式保留未到点的定时文章以便本地预览', () => {
+    const future = post({ id: 'future', publishAt: new Date('2030-01-01T00:00:00Z') });
+    const ids = selectPosts([...entries, future], 'zh', false).map((p) => p.id);
+    expect(ids).toContain('future');
+  });
+
+  it('精选文章排在最前，其余仍按日期倒序', () => {
+    const list = [
+      post({ id: 'zh-old', pubDate: new Date('2026-01-01'), featured: true }),
+      post({ id: 'zh-new', pubDate: new Date('2026-05-01') }),
+      post({ id: 'zh-mid', pubDate: new Date('2026-03-01') }),
+    ];
+    expect(selectPosts(list, 'zh', true).map((p) => p.id)).toEqual(['zh-old', 'zh-new', 'zh-mid']);
+  });
+
+  it('同一天且都精选时按 id 升序，结果稳定', () => {
+    const date = new Date('2026-05-01');
+    const list = [
+      post({ id: 'b', pubDate: date, featured: true }),
+      post({ id: 'a', pubDate: date, featured: true }),
+    ];
+    expect(selectPosts(list, 'zh', true).map((p) => p.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('compareByDateDesc', () => {
+  it('纯时间排序忽略 featured', () => {
+    const list = [
+      post({ id: 'old-featured', pubDate: new Date('2026-01-01'), featured: true }),
+      post({ id: 'new-normal', pubDate: new Date('2026-05-01') }),
+    ];
+    expect([...list].sort(compareByDateDesc).map((p) => p.id)).toEqual(['new-normal', 'old-featured']);
   });
 });
 
@@ -96,6 +153,17 @@ describe('findTranslation', () => {
     const zh = post({ id: 'zh', translationKey: 'same' });
     const draft = post({ id: 'en-draft', lang: 'en', translationKey: 'same', draft: true });
     expect(findTranslation([zh, draft], zh, true)).toBeUndefined();
+  });
+
+  it('生产环境不会把未到点的定时译文作为语言切换目标', () => {
+    const zh = post({ id: 'zh', translationKey: 'same' });
+    const scheduled = post({
+      id: 'en-scheduled',
+      lang: 'en',
+      translationKey: 'same',
+      publishAt: new Date('2026-06-01T00:00:00Z'),
+    });
+    expect(findTranslation([zh, scheduled], zh, true, new Date('2026-05-01T00:00:00Z'))).toBeUndefined();
   });
 
   it('开发环境可以预览草稿译文', () => {

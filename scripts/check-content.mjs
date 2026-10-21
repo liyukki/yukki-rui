@@ -22,6 +22,8 @@ const published = `${key}-published`;
 const publishedEn = `${key}-published-en`;
 const draft = `${key}-draft`;
 const draftZh = `${key}-draft-zh`;
+const scheduled = `${key}-scheduled`;
+const featuredOld = `${key}-featured`;
 
 /** 给 RSS 全文断言提供可重复的探针：图片、srcset、作者手写根路径。 */
 function bodyFor(lang, isDraft) {
@@ -72,15 +74,18 @@ try {
     const original = join(originalProject, file);
     if (existsSync(original)) cpSync(original, join(project, file), { recursive: true });
   }
-  for (const [id, lang, isDraft, translationKey] of [
-    [published, 'zh', false, `${key}-published`],
-    [publishedEn, 'en', false, `${key}-published-en`],
-    [draft, 'en', true, `${key}-draft`],
-    [draftZh, 'zh', true, `${key}-draft`],
+  for (const [id, lang, isDraft, translationKey, publishAt, featured, pubDate] of [
+    [published, 'zh', false, `${key}-published`, '', false, '2026-10-10'],
+    [publishedEn, 'en', false, `${key}-published-en`, '', false, '2026-10-10'],
+    [draft, 'en', true, `${key}-draft`, '', false, '2026-10-10'],
+    [draftZh, 'zh', true, `${key}-draft`, '', false, '2026-10-10'],
+    [scheduled, 'zh', false, `${key}-scheduled`, '2099-01-01', false, '2026-10-10'],
+    [featuredOld, 'zh', false, `${key}-featured`, '', true, '2026-09-01'],
   ]) {
     const path = join(contentDirectory, `${id}.md`);
+    const publishAtLine = publishAt ? `\npublishAt: ${publishAt}` : '';
     // 测试文章只存在于临时源码副本；即使进程被强制终止也不会污染原项目。
-    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: 2026-10-10\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${translationKey}\n---\n\n${bodyFor(lang, isDraft)}`, { flag: 'wx' });
+    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: ${pubDate}\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${translationKey}${publishAtLine}\nfeatured: ${featured}\n---\n\n${bodyFor(lang, isDraft)}`, { flag: 'wx' });
   }
   for (const [name, base] of [['root', '/'], ['subpath', '/yukki-rui/']]) {
     const output = join(directory, name);
@@ -92,8 +97,10 @@ try {
     assert.ok(!article.includes('hreflang="en" href'), '无已发布译文时不应声明英文 hreflang');
     assert.ok(!existsSync(join(output, 'en', 'posts', draft, 'index.html')), '英文草稿产出了生产页面');
     assert.ok(!existsSync(join(output, 'zh', 'posts', draftZh, 'index.html')), '中文草稿产出了生产页面');
+    assert.ok(!existsSync(join(output, 'zh', 'posts', scheduled, 'index.html')), '未到点的定时文章产出了生产页面');
     const rss = readFileSync(join(output, 'rss.xml'), 'utf8');
     const englishRss = readFileSync(join(output, 'rss-en.xml'), 'utf8');
+    assert.ok(!rss.includes(scheduled), '未到点的定时文章进入了 RSS');
     assert.ok(rss.includes(new URL(`${base}zh/posts/${published}/`, site).href), 'RSS 文章地址缺少部署路径');
     assert.ok(englishRss.includes(new URL(`${base}en/posts/${publishedEn}/`, site).href), '英文 RSS 文章地址缺少部署路径');
     assert.ok(!rss.includes(draftZh) && !englishRss.includes(draft), '草稿进入了 RSS');
@@ -103,6 +110,18 @@ try {
     assert.ok(englishRss.includes(new URL(`${base}en/posts/${publishedEn}/`, site).href), '英文 RSS 缺少英文探针文章');
     assert.ok(!rss.includes(new URL(`${base}en/posts/${publishedEn}/`, site).href), '英文探针文章混进了中文 RSS');
     assert.ok(!englishRss.includes(new URL(`${base}zh/posts/${published}/`, site).href), '中文探针文章混进了英文 RSS');
+    // 精选只影响首页排序；归档与 RSS 必须继续按纯时间倒序。
+    const hrefFor = (id) => `${base}zh/posts/${id}/`;
+    const homeHtml = readFileSync(join(output, 'zh', 'index.html'), 'utf8');
+    const archiveHtml = readFileSync(join(output, 'zh', 'archive', 'index.html'), 'utf8');
+    const rssPublished = rss.indexOf(new URL(hrefFor(published), site).href);
+    const rssFeatured = rss.indexOf(new URL(hrefFor(featuredOld), site).href);
+    assert.ok(homeHtml.includes(hrefFor(featuredOld)) && homeHtml.includes(hrefFor(published)), '首页缺少精选或普通探针文章');
+    assert.ok(homeHtml.indexOf(hrefFor(featuredOld)) < homeHtml.indexOf(hrefFor(published)), '首页没有把精选文章排在较新的普通文章之前');
+    assert.ok(archiveHtml.includes(hrefFor(featuredOld)) && archiveHtml.includes(hrefFor(published)), '归档缺少精选或普通探针文章');
+    assert.ok(archiveHtml.indexOf(hrefFor(published)) < archiveHtml.indexOf(hrefFor(featuredOld)), '精选文章改变了归档的时间顺序');
+    assert.ok(rssPublished >= 0 && rssFeatured >= 0, 'RSS 缺少精选或普通探针文章');
+    assert.ok(rssPublished < rssFeatured, '精选文章改变了 RSS 的时间顺序');
     // 个人资料集合（/admin 后台编辑的数据源）：以数据文件为准断言渲染。
     // 文案会随站点主人的编辑变化，所以不能写死具体句子 —— 改为读取 JSON，
     // 断言其中的值确实出现在对应语言的页面上。

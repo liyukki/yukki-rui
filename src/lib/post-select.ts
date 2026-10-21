@@ -15,6 +15,8 @@ export interface PostData {
   updatedDate?: Date;
   draft: boolean;
   translationKey?: string;
+  publishAt?: Date;
+  featured: boolean;
 }
 
 /** 集合条目的最小形状。Astro 7 的条目有 id/data/body/... 这里只取需要的两个。 */
@@ -24,20 +26,43 @@ export interface PostLike {
 }
 
 /**
- * 该语言的全部已发布文章，按发布日期倒序。
+ * 生产环境的可见性：草稿永远不可见，定时文章到点才可见。
+ * now 由调用方传入，确保同一轮构建使用同一个时间快照，也便于测试。
+ */
+export function isVisibleOn(data: PostData, isProd: boolean, now: Date): boolean {
+  if (!isProd) return true;
+  if (data.draft) return false;
+  return !data.publishAt || data.publishAt.getTime() <= now.getTime();
+}
+
+/** 首页列表排序：精选优先，其次发布日期倒序，最后 id 升序保证确定性。 */
+export function byFeaturedThenDate(a: PostLike, b: PostLike): number {
+  if (a.data.featured !== b.data.featured) return a.data.featured ? -1 : 1;
+  return compareByDateDesc(a, b);
+}
+
+/** 时间倒序；时间相同时按 id 升序。归档、RSS、上下篇统一用它。 */
+export function compareByDateDesc(a: PostLike, b: PostLike): number {
+  const diff = b.data.pubDate.getTime() - a.data.pubDate.getTime();
+  return diff !== 0 ? diff : a.id.localeCompare(b.id);
+}
+
+/**
+ * 该语言的全部可见文章：首页与标签列表使用，精选优先、其余按发布日期倒序。
  *
- * @param isProd 生产模式下隐藏草稿；开发模式保留草稿便于写作预览。
- *               必须显式传入而不是内部读取环境，否则测试无法覆盖两种模式。
+ * @param isProd 生产模式应用草稿与定时规则；开发模式全部保留便于预览。
+ * @param now 构建时的时间快照，保证同一次筛选使用一致的时间基准。
  */
 export function selectPosts<T extends PostLike>(
   entries: readonly T[],
   lang: 'zh' | 'en',
   isProd: boolean,
+  now: Date = new Date(),
 ): T[] {
   return entries
     .filter((entry) => entry.data.lang === lang)
-    .filter((entry) => !(isProd && entry.data.draft))
-    .sort((a, b) => b.data.pubDate.getTime() - a.data.pubDate.getTime());
+    .filter((entry) => isVisibleOn(entry.data, isProd, now))
+    .sort(byFeaturedThenDate);
 }
 
 /** 标签及各自文章数，按数量倒序；数量相同时按名称升序，保证结果稳定可测。 */
@@ -63,11 +88,12 @@ export function findTranslation<T extends PostLike>(
   entries: readonly T[],
   post: T,
   isProd = false,
+  now: Date = new Date(),
 ): T | undefined {
   const key = post.data.translationKey;
   if (!key) return undefined;
   return entries.find(
     (entry) => entry.data.translationKey === key && entry.data.lang !== post.data.lang
-      && !(isProd && entry.data.draft),
+      && isVisibleOn(entry.data, isProd, now),
   );
 }

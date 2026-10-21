@@ -54,6 +54,8 @@ collections:
       - { label: 中文, field: lang, pattern: zh }
       - { label: 英文, field: lang, pattern: en }
       - { label: 草稿, field: draft, pattern: true }
+      - { label: 精选, field: featured, pattern: true }
+      - { label: 定时, field: publishAt, pattern: '.+' }
     fields:
       - { label: 标题, name: title, widget: string }
       - { label: 语言, name: lang, widget: select, options: [{ label: 中文, value: zh }, { label: English, value: en }], default: zh, hint: 同一篇文章的中英版本各存一个文件，用下面的「中英配对 Key」关联 }
@@ -66,6 +68,8 @@ collections:
         name: translationKey
         widget: string
         required: false
+      - { label: 定时发布（可空；到点才出现在线上，留空=立即）, name: publishAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false, hint: 用 UTC 判断；draft 打开时此字段被忽略。需等下一次定时重建才会生效 }
+      - { label: 精选置顶（仅影响首页列表顺序，归档与 RSS 不变）, name: featured, widget: boolean, default: false }
       - { label: 正文, name: body, widget: markdown, hint: '代码块：先把正文写完，再把光标放到要变代码的那段、用样式下拉转成「代码块」（块后面有段落时按 ↓ 才能接着写）。卡在块里时点「以 Markdown 编辑」手写围栏即可' }
 
   - name: site

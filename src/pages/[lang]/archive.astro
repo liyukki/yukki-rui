@@ -4,7 +4,7 @@ import PixelSprite from '../../components/PixelSprite.astro';
 import { SITE, UI, type Lang } from '../../consts';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { groupPostsByYear } from '../../lib/archive';
-import { getPosts } from '../../lib/posts';
+import { getPostsByDate } from '../../lib/posts';
 import { postHref } from '../../lib/url';
 
 export function getStaticPaths() {
@@ -12,7 +12,7 @@ export function getStaticPaths() {
 }
 
 const lang = Astro.params.lang as Lang;
-const posts = await getPosts(lang);
+const posts = await getPostsByDate(lang);
 const years = groupPostsByYear(posts);
 const total = posts.length;
 const countTemplate = UI[lang].archiveCount;
