@@ -7,6 +7,7 @@ import Comments from '../components/Comments.astro';
 import PostExtras from '../components/PostExtras.astro';
 import PostNav from '../components/PostNav.astro';
 import PostToc from '../components/PostToc.astro';
+import ReadingSettings from '../components/ReadingSettings.astro';
 import TagList from '../components/TagList.astro';
 import { SITE, UI } from '../consts';
 import type { Post } from '../lib/posts';
@@ -29,8 +30,10 @@ interface Props {
   prev?: Post;
   /** 更早的一篇（下一篇）。 */
   next?: Post;
+  /** 与当前文章共享标签的推荐；缺省时不渲染区块。 */
+  related?: Post[];
 }
-const { post, translations, headings, prev, next } = Astro.props;
+const { post, translations, headings, prev, next, related = [] } = Astro.props;
 const lang = post.data.lang;
 const alternate = translations
   ? postHref(translations.data.lang, translations.id)
@@ -101,12 +104,27 @@ const jsonLd = {
       <TagList lang={lang} tags={post.data.tags} />
     </header>
     <PostToc headings={tocHeadings} lang={lang} variant="inline" label={UI[lang].toc} />
+    <ReadingSettings t={UI[lang]} />
     <div class="post-layout">
       <div class="post-body">
         <slot />
       </div>
       <PostToc headings={tocHeadings} lang={lang} variant="aside" label={UI[lang].toc} />
     </div>
+    {related.length > 0 && (
+      <section class="post-related" data-pagefind-ignore aria-labelledby="related-title">
+        <h2 id="related-title">{UI[lang].relatedPosts}</h2>
+        <ul>
+          {related.map((item) => (
+            <li>
+              <a href={postHref(item.data.lang, item.id)}>{item.data.title}</a>
+              <p>{item.data.description}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
     <PostNav
       prev={toNav(prev)}
       next={toNav(next)}
@@ -132,10 +150,54 @@ const jsonLd = {
     color: var(--text-dim);
   }
 
+  /* 相关文章推荐沿用卡片样式，只在至少有同标签文章时渲染。 */
+  .post-related {
+    margin-top: var(--space-5);
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .post-related h2 {
+    margin: 0 0 var(--space-3);
+  }
+
+  .post-related ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .post-related li {
+    padding: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+  }
+
+  .post-related a {
+    color: var(--link);
+    font-weight: 700;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
+  }
+
+  .post-related p {
+    margin: var(--space-2) 0 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+    line-height: 1.6;
+  }
+
   /* 目录组件在子组件里，需要 :global 才能从父组件命中。 */
   @media (min-width: 1024px) {
     .post-layout {
-      grid-template-columns: minmax(0, 72ch) 200px;
+      grid-template-columns: minmax(0, var(--reading-width)) 200px;
       justify-content: center;
       align-items: start;
     }
@@ -148,6 +210,12 @@ const jsonLd = {
   @media (max-width: 1023px) {
     :global(.post-toc--aside) {
       display: none;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .post-related ul {
+      grid-template-columns: 1fr;
     }
   }
 </style>

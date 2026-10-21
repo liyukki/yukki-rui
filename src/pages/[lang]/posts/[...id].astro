@@ -3,6 +3,7 @@ import { render } from 'astro:content';
 import { SITE } from '../../../consts';
 import PostLayout from '../../../layouts/PostLayout.astro';
 import { getPosts, getTranslations, type Post } from '../../../lib/posts';
+import { selectRelatedPosts } from '../../../lib/related';
 
 export async function getStaticPaths() {
   const byLanguage = await Promise.all(SITE.langs.map(async (lang) =>
@@ -21,7 +22,8 @@ const siblings = await getPosts(post.data.lang);
 const index = siblings.findIndex((entry) => entry.id === post.id);
 const newer = index > 0 ? siblings[index - 1] : undefined;
 const older = index >= 0 ? siblings[index + 1] : undefined;
+const related = selectRelatedPosts(post, siblings);
 ---
-<PostLayout post={post} translations={translation} headings={headings} prev={older} next={newer}>
+<PostLayout post={post} translations={translation} headings={headings} prev={older} next={newer} related={related}>
   <Content />
 </PostLayout>

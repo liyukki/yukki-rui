@@ -1,0 +1,199 @@
+---
+/**
+ * 阅读设置：字号、行高、正文宽度三组按钮。
+ * 状态写入 <html data-reading-*> 与 localStorage；文案由调用方传入，组件不判断语言。
+ */
+import { READING_DEFAULTS, type ReadingSettings } from '../lib/reading-settings';
+
+interface Props {
+  /** 当前语言的界面文案（UI[lang]），避免组件内写死语言。 */
+  t: Record<string, string>;
+}
+
+type SettingKey = keyof ReadingSettings;
+interface Option { value: string; label: string }
+interface Group { key: SettingKey; label: string; options: Option[] }
+
+const { t } = Astro.props;
+const initial = READING_DEFAULTS;
+
+const groups: Group[] = [
+  {
+    key: 'size',
+    label: t.readingSize,
+    options: [
+      { value: 'sm', label: t.readingSizeSm },
+      { value: 'md', label: t.readingSizeMd },
+      { value: 'lg', label: t.readingSizeLg },
+    ],
+  },
+  {
+    key: 'line',
+    label: t.readingLine,
+    options: [
+      { value: 'tight', label: t.readingLineTight },
+      { value: 'normal', label: t.readingLineNormal },
+      { value: 'loose', label: t.readingLineLoose },
+    ],
+  },
+  {
+    key: 'width',
+    label: t.readingWidth,
+    options: [
+      { value: 'narrow', label: t.readingWidthNarrow },
+      { value: 'normal', label: t.readingWidthNormal },
+      { value: 'wide', label: t.readingWidthWide },
+    ],
+  },
+];
+---
+<section class="reading-settings" data-pagefind-ignore aria-labelledby="reading-settings-title">
+  <h2 id="reading-settings-title" class="reading-settings__title">{t.readingSettings}</h2>
+  <div class="reading-settings__groups">
+    {groups.map((group) => (
+      <fieldset class="reading-settings__group">
+        <legend class="reading-settings__legend">{group.label}</legend>
+        <div class="reading-settings__options">
+          {group.options.map((option) => (
+            <button
+              type="button"
+              class="reading-settings__option"
+              data-reading-key={group.key}
+              data-reading-value={option.value}
+              aria-pressed={initial[group.key] === option.value ? 'true' : 'false'}
+            >{option.label}</button>
+          ))}
+        </div>
+      </fieldset>
+    ))}
+  </div>
+</section>
+
+<script>
+  import {
+    applyReadingSettings,
+    normalizeReadingSettings,
+    readReadingSettings,
+    READING_DEFAULTS,
+    READING_STORAGE_KEY,
+    type ReadingSettings,
+  } from '../lib/reading-settings';
+
+  /** 隐私模式下 localStorage 可能整体不可用，读失败就用默认值。 */
+  const currentSettings = () => {
+    try {
+      return readReadingSettings(window.localStorage);
+    } catch {
+      return { ...READING_DEFAULTS };
+    }
+  };
+
+  const syncButtons = () => {
+    const settings = currentSettings();
+    applyReadingSettings(document.documentElement, settings);
+    document.querySelectorAll<HTMLButtonElement>('[data-reading-key]').forEach((button) => {
+      const key = button.dataset.readingKey as keyof typeof settings | undefined;
+      const value = button.dataset.readingValue;
+      if (!key || !value) return;
+      button.setAttribute('aria-pressed', String(settings[key] === value));
+    });
+  };
+
+  const init = () => {
+    syncButtons();
+    document.querySelectorAll<HTMLButtonElement>('[data-reading-key]').forEach((button) => {
+      if (button.dataset.bound === '1') return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', () => {
+        const key = button.dataset.readingKey as keyof ReadingSettings | undefined;
+        const value = button.dataset.readingValue;
+        if (!key || !value) return;
+        // 先经 normalize 校验，确保写进存储的始终是合法档位。
+        const next = normalizeReadingSettings({ ...currentSettings(), [key]: value });
+        applyReadingSettings(document.documentElement, next);
+        try {
+          window.localStorage.setItem(READING_STORAGE_KEY, JSON.stringify(next));
+        } catch { /* 隐私模式忽略 */ }
+        syncButtons();
+      });
+    });
+  };
+
+  init();
+  // 页面转场后按钮是新的 DOM 节点，需要重新同步状态并绑定。
+  document.addEventListener('astro:page-load', init);
+</script>
+
+<style>
+  .reading-settings {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-2) var(--space-3) var(--space-3);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .reading-settings__title {
+    margin: var(--space-2) 0 var(--space-2);
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    letter-spacing: 0.04em;
+  }
+
+  .reading-settings__groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  /* fieldset 默认 min-inline-size:min-content 会撑破窄屏，这里显式收住。 */
+  .reading-settings__group {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .reading-settings__legend {
+    margin-bottom: 0.3em;
+    padding: 0;
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.08em;
+  }
+
+  .reading-settings__options {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .reading-settings__option {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 0.6em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color var(--dur), border-color var(--dur), background var(--dur), transform var(--dur) var(--ease-pop);
+  }
+
+  .reading-settings__option:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .reading-settings__option[aria-pressed='true'] {
+    color: var(--text);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  }
+</style>

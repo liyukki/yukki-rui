@@ -72,7 +72,7 @@ img { max-width: 100%; height: auto; }
   width: min(100% - 2 * var(--space-3), var(--maxw-wide));
   margin-inline: auto;
 }
-.prose { max-width: var(--maxw); margin-inline: auto; }
+.prose { max-width: var(--reading-width); margin-inline: auto; }
 
 /* 头部 */
 .site-header {
@@ -204,7 +204,7 @@ img { max-width: 100%; height: auto; }
 .tag:hover::before { background: var(--accent); }
 
 /* 文章正文 */
-.post-body { font-size: 1.02rem; }
+.post-body { font-size: var(--reading-size); line-height: var(--reading-line); max-width: var(--reading-width); margin-inline: auto; }
 .post-body h1, .post-body h2, .post-body h3 { margin-top: var(--space-5); }
 .post-body h2 {
   font-family: var(--font-pixel);

@@ -216,7 +216,49 @@ try {
   check('深色主题在转场后保持', darkAtLoad === 'dark' && darkAfterSwap === 'dark', `${darkAtLoad} → ${darkAfterSwap}`);
   await page.evaluate(() => localStorage.removeItem('theme'));
 
-  // 11. 移动端布局
+  // 11. 阅读设置：字号切换、持久化、转场后仍生效
+  await page.goto(ORIGIN + POST, { waitUntil: 'load' });
+  const readingPanel = page.locator('.reading-settings');
+  const panelVisible = await readingPanel.isVisible().catch(() => false);
+  await page.locator('[data-reading-key="size"][data-reading-value="lg"]').click();
+  await page.waitForTimeout(200);
+  const sizeAfterClick = await page.evaluate(() => document.documentElement.dataset.readingSize);
+  const storedReading = await page.evaluate(() => localStorage.getItem('reading-settings'));
+  check('阅读设置面板可见且能切到大字号', panelVisible && sizeAfterClick === 'lg', `visible=${panelVisible} size=${sizeAfterClick}`);
+  check('阅读设置写入 localStorage', !!storedReading && storedReading.includes('lg'), storedReading ?? '');
+  await page.reload({ waitUntil: 'load' });
+  const sizeAfterReload = await page.evaluate(() => document.documentElement.dataset.readingSize);
+  check('刷新后阅读设置保留', sizeAfterReload === 'lg', sizeAfterReload ?? '');
+  const readingBeforeNav = await page.evaluate(() => document.documentElement.dataset.readingSize);
+  const readingNav = page.locator('.post-nav__card[href]').first();
+  if (await readingNav.count()) {
+    await readingNav.click();
+    await page.waitForTimeout(500);
+    const readingAfterNav = await page.evaluate(() => document.documentElement.dataset.readingSize);
+    check('转场后阅读设置保留', readingBeforeNav === readingAfterNav, `${readingBeforeNav} → ${readingAfterNav}`);
+  }
+  await page.evaluate(() => localStorage.removeItem('reading-settings'));
+  await page.reload({ waitUntil: 'load' });
+  const sizeAfterReset = await page.evaluate(() => document.documentElement.dataset.readingSize);
+  check('清空存储后回到默认中字号', sizeAfterReset === 'md', sizeAfterReset ?? '');
+
+  // 12. 相关文章：只在有推荐时出现，排除自身且不进入搜索索引
+  await page.goto(ORIGIN + POST, { waitUntil: 'load' });
+  const related = page.locator('.post-related');
+  const relatedCount = await related.count();
+  if (relatedCount > 0) {
+    const ownHref = new URL(page.url()).pathname;
+    const relatedHrefs = await related.locator('a[href]').evaluateAll((els) => els.map((el) => el.getAttribute('href') ?? ''));
+    const relatedTitle = (await related.locator('h2').innerText().catch(() => '')).trim();
+    const ignored = await related.getAttribute('data-pagefind-ignore');
+    check('相关文章区块有标题', relatedTitle.length > 0, relatedTitle);
+    check('相关文章不推荐文章自身', !relatedHrefs.some((href) => href.endsWith(ownHref)), ownHref);
+    check('相关文章不进入搜索索引', ignored !== null);
+  } else {
+    check('相关文章区块(本文暂无同标签文章,跳过)', true, 'skipped');
+  }
+
+  // 13. 移动端布局
   const mobile = await context.newPage();
   await mobile.setViewportSize({ width: 390, height: 844 });
   await mobile.goto(ORIGIN + POST, { waitUntil: 'load' });

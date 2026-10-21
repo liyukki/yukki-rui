@@ -27,6 +27,11 @@
   --maxw: 72ch;
   --maxw-wide: 1080px;
 
+  /* 阅读设置：正文排版变量，由 <html data-reading-*> 覆盖；标题像素字体变量不动。 */
+  --reading-size: var(--fs-body);
+  --reading-line: 1.8;
+  --reading-width: var(--maxw);
+
   /* 镜音双子强调色 */
   --rin: #f5a623;
   --len: #3ba7ff;
@@ -39,6 +44,14 @@
   --dur-long: 0.5s;
   --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+/* 阅读设置：仅在读者显式选择非默认档位时覆盖，缺省即 md / normal / normal。 */
+:root[data-reading-size='sm'] { --reading-size: 0.9375rem; }
+:root[data-reading-size='lg'] { --reading-size: 1.125rem; }
+:root[data-reading-line='tight'] { --reading-line: 1.6; }
+:root[data-reading-line='loose'] { --reading-line: 2; }
+:root[data-reading-width='narrow'] { --reading-width: 60ch; }
+:root[data-reading-width='wide'] { --reading-width: 88ch; }
 
 :root[data-theme='light'] {
   color-scheme: light;

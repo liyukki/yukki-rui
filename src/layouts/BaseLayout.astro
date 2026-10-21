@@ -42,6 +42,23 @@ const { title, description, lang, ogType, ogImage, jsonLd, alternate } = Astro.p
         document.addEventListener('astro:after-swap', applyTheme);
       })();
     </script>
+    <script is:inline>
+      (() => {
+        // 阅读设置先在 <head> 内联恢复，避免首屏按默认字号闪一下再跳变。
+        const applyReading = () => {
+          let saved;
+          try { saved = JSON.parse(localStorage.getItem('reading-settings') || 'null') || {}; } catch { saved = {}; }
+          const pick = (value, allowed, fallback) => (allowed.includes(value) ? value : fallback);
+          const root = document.documentElement;
+          root.dataset.readingSize = pick(saved.size, ['sm', 'md', 'lg'], 'md');
+          root.dataset.readingLine = pick(saved.line, ['tight', 'normal', 'loose'], 'normal');
+          root.dataset.readingWidth = pick(saved.width, ['narrow', 'normal', 'wide'], 'normal');
+        };
+        applyReading();
+        // View Transitions 会替换 <html> 的属性，转场后必须重新贴上阅读设置，否则会闪回默认字号。
+        document.addEventListener('astro:after-swap', applyReading);
+      })();
+    </script>
   </head>
   <body>
     <div class="bg-orbs" aria-hidden="true"></div>
