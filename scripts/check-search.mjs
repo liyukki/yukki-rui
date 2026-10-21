@@ -91,10 +91,10 @@ async function searchFor(term, expectResults = true) {
 }
 
 try {
-  // 1. 导航入口（中英各 5 项，含归档与搜索）
+  // 1. 导航入口（中英各 9 项，含归档与搜索）
   await page.goto(ORIGIN + BASE, { waitUntil: 'load' });
   const zhNav = await page.locator('.nav-link').evaluateAll((els) => els.map((el) => el.textContent.trim()));
-  check('中文导航 8 项且含归档与搜索', zhNav.length === 8 && zhNav.includes('归档') && zhNav.includes('搜索'), zhNav.join('/'));
+  check('中文导航 9 项且含归档与搜索', zhNav.length === 9 && zhNav.includes('归档') && zhNav.includes('搜索'), zhNav.join('/'));
   const zhNavHrefs = await page.locator('.nav-link').evaluateAll((els) => els.map((el) => el.getAttribute('href')));
   check(
     '导航链接指向带 base 的归档与搜索页',

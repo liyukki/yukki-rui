@@ -1,0 +1,14 @@
+{
+  "page": "friends",
+  "lang": "zh",
+  "intro": "这里放一些我会常去看看的站点。第一位是道宽的博客。",
+  "items": [
+    {
+      "title": "Boring Thoughts",
+      "meta": "Software, AI & Technology",
+      "text": "记录软件开发、AI、技术，以及值得留下的思考。",
+      "linkLabel": "访问博客",
+      "linkUrl": "https://blog.daokuan.dev"
+    }
+  ]
+}

@@ -295,6 +295,46 @@ collections:
                 widget: select
                 options: [{ label: WIP, value: WIP }, { label: LIVE, value: LIVE }, { label: PAUSED, value: PAUSED }]
                 required: false
+      - name: page-zh-friends
+        label: 友链(中文)
+        file: src/content/site/pages/friends.zh.json
+        format: json
+        fields:
+          - { label: 页面标识(勿改), name: page, widget: hidden, default: friends }
+          - { label: Lang, name: lang, widget: hidden, default: zh }
+          - { label: 更新日期(可空,页面显示「更新于 …」), name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: 引言(留空就用代码里的兜底文案), name: intro, widget: text, required: false }
+          - label: 友链条目(标题必填;没填标题的条目不会显示)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: 站点名称, name: title, widget: string }
+              - { label: 副标题(技术栈 / 一句话定位), name: meta, widget: string, required: false }
+              - { label: 站点简介, name: text, widget: text, required: false }
+              - { label: 链接文字(可空), name: linkLabel, widget: string, required: false }
+              - { label: 链接地址(可空;文字与地址都填了才显示链接), name: linkUrl, widget: string, required: false }
+      - name: page-en-friends
+        label: Friends (English)
+        file: src/content/site/pages/friends.en.json
+        format: json
+        fields:
+          - { label: Page key (do not change), name: page, widget: hidden, default: friends }
+          - { label: Lang, name: lang, widget: hidden, default: en }
+          - { label: 'Updated on (optional)', name: updatedAt, widget: datetime, date_format: 'YYYY-MM-DD', time_format: false, format: 'YYYY-MM-DD', required: false }
+          - { label: Intro (falls back to built-in copy when empty), name: intro, widget: text, required: false }
+          - label: Friend links (a title is required; entries without one are skipped)
+            name: items
+            widget: list
+            required: false
+            default: []
+            fields:
+              - { label: Site name, name: title, widget: string }
+              - { label: Meta (tech stack / short positioning), name: meta, widget: string, required: false }
+              - { label: Description, name: text, widget: text, required: false }
+              - { label: Link label (optional), name: linkLabel, widget: string, required: false }
+              - { label: Link URL (optional; shown only when both label and URL are set), name: linkUrl, widget: string, required: false }
       - name: page-zh-listening
         label: 最近在听(中文)
         file: src/content/site/pages/listening.zh.json

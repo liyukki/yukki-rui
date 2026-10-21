@@ -1,0 +1,14 @@
+{
+  "page": "friends",
+  "lang": "en",
+  "intro": "Sites I like to check in on. First up: Daokuan's blog.",
+  "items": [
+    {
+      "title": "Boring Thoughts",
+      "meta": "Software, AI & Technology",
+      "text": "Notes on software development, AI, technology, and the thoughts worth keeping.",
+      "linkLabel": "Visit blog",
+      "linkUrl": "https://blog.daokuan.dev"
+    }
+  ]
+}

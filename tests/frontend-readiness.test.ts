@@ -44,6 +44,8 @@ const REQUIRED = [
   'en/works/index.html',
   'zh/listening/index.html',
   'en/listening/index.html',
+  'zh/friends/index.html',
+  'en/friends/index.html',
   '404.html',
   'og-default.png',
   'pagefind/pagefind-entry.json',
@@ -66,6 +68,12 @@ it('缺少现在/作品/最近在听页面时仍然失败', () => {
   const result = run(REQUIRED.filter((file) => !/(now|works|listening)/.test(file)));
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('zh/now/index.html');
+});
+
+it('缺少友链页面时仍然失败', () => {
+  const result = run(REQUIRED.filter((file) => !file.includes('friends')));
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('zh/friends/index.html');
 });
 
 it('必需路由、搜索索引和默认分享图齐全后通过结构验收', () => {

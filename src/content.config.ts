@@ -95,7 +95,7 @@ const site = defineCollection({
 });
 
 /**
- * 独立页面的内容(现在 / 作品 / 最近在听),按「页面 + 语言」一个文件。
+ * 独立页面的内容(现在 / 作品 / 最近在听 / 友链),按「页面 + 语言」一个文件。
  *
  * 为什么不并进 site 集合:那个集合的 id 就是语言(getEntry('site', 'zh') 这样取值),
  * 一个语言只能有一个文件;这里 id 用 <page>.<lang>,同一个语言可以有很多页。
@@ -108,7 +108,7 @@ const pages = defineCollection({
     generateId: ({ data }) => `${data.page}.${data.lang}`,
   }),
   schema: z.object({
-    page: z.enum(['now', 'works', 'listening']),
+    page: z.enum(['now', 'works', 'listening', 'friends']),
     lang: z.enum(['zh', 'en']),
     updatedAt: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
     intro: z.string().optional(),

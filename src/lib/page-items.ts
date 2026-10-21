@@ -1,5 +1,5 @@
 /**
- * 独立页面(现在 / 作品 / 最近在听)的条目清洗规则。
+ * 独立页面(现在 / 作品 / 最近在听 / 友链)的条目清洗规则。
  *
  * 为什么单独一个文件:CMS 里点一下「添加条目」但没填标题、或者只填了链接文字没填地址,
  * 这些半成品都会原样写进 JSON。渲染规则(该丢掉哪些、链接不成对怎么办)放这里就是纯函数,
@@ -7,7 +7,7 @@
  * 留在 page-content.ts,规则本身不依赖框架。
  */
 
-export type PageKey = 'now' | 'works' | 'listening';
+export type PageKey = 'now' | 'works' | 'listening' | 'friends';
 export type PageStatus = 'WIP' | 'LIVE' | 'PAUSED';
 
 export interface PageItem {

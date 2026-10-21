@@ -1,4 +1,4 @@
-// 现在 / 作品 / 最近在听三页的端到端自检:默认起静态服务跑 dist,也可用 LIVE_ORIGIN / LIVE_BASE 跑线上。
+// 现在 / 作品 / 最近在听 / 友链四页的端到端自检:默认起静态服务跑 dist,也可用 LIVE_ORIGIN / LIVE_BASE 跑线上。
 // 覆盖导航入口、内容渲染(标题/条目/状态/外链)、双语对应页、description 与窄屏布局。
 import http from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -64,15 +64,15 @@ const heading = () => page.locator('.subpage-heading h1').innerText().then((text
 const origin = ORIGIN.replace(/\/$/, '');
 
 try {
-  // 1. 中文导航:8 项,含三张新页面且链接带 base
+  // 1. 中文导航:9 项,含四张独立页面且链接带 base
   await page.goto(`${origin}${BASE}zh/now/`, { waitUntil: 'load' });
   const zhNav = await page.locator('.nav-link').evaluateAll((els) => els.map((el) => el.textContent.trim()));
-  check('中文导航含现在/作品/在听', zhNav.length === 8 && ['现在', '作品', '在听'].every((label) => zhNav.includes(label)), zhNav.join('/'));
+  check('中文导航含现在/作品/在听/友链', zhNav.length === 9 && ['现在', '作品', '在听', '友链'].every((label) => zhNav.includes(label)), zhNav.join('/'));
   const zhHrefs = await page.locator('.nav-link').evaluateAll((els) => els.map((el) => el.getAttribute('href')));
   check(
     '导航链接指向带 base 的新页面',
-    ['now', 'works', 'listening'].every((slug) => zhHrefs.some((href) => href === `${BASE}zh/${slug}/`)),
-    zhHrefs.filter((href) => /now|works|listening/.test(href ?? '')).join(' '),
+    ['now', 'works', 'listening', 'friends'].every((slug) => zhHrefs.some((href) => href === `${BASE}zh/${slug}/`)),
+    zhHrefs.filter((href) => /now|works|listening|friends/.test(href ?? '')).join(' '),
   );
 
   // 2. 现在页:标题、前言、更新于、条目
@@ -117,23 +117,42 @@ try {
   const artistChips = await page.locator('.info-item .tech-chip').allInnerTexts();
   check('听歌页标注艺人', artistChips.some((text) => text.trim() === 'hitorie'), artistChips.join(','));
 
-  // 5. 英文三页标题
-  for (const [slug, title] of [['now', 'Now'], ['works', 'Works'], ['listening', 'Listening']]) {
+  // 5. 友链页:站点卡片与外部链接
+  await page.goto(`${origin}${BASE}zh/friends/`, { waitUntil: 'load' });
+  check('友链页标题正确', (await heading()) === '友链', await heading());
+  const friendTitles = await page.locator('.info-item h2').allInnerTexts();
+  const friendLinks = await page.locator('.info-item .text-link').evaluateAll((els) => els.map((el) => ({ href: el.getAttribute('href'), target: el.getAttribute('target'), text: el.textContent.trim() })));
+  check(
+    '友链页显示 Boring Thoughts 与博客外链',
+    friendTitles.length === 1 &&
+      friendTitles[0].trim() === 'Boring Thoughts' &&
+      friendLinks.length === 1 &&
+      friendLinks[0].text.includes('访问博客') &&
+      friendLinks[0].href === 'https://blog.daokuan.dev' &&
+      friendLinks[0].target === '_blank',
+    JSON.stringify({ friendTitles, friendLinks }),
+  );
+  const friendAlternate = await page.locator('link[rel="alternate"][hreflang="en"]').getAttribute('href').catch(() => '');
+  const friendDescription = await page.locator('meta[name="description"]').getAttribute('content');
+  check('友链页有英文对应页与 description', (friendAlternate ?? '').endsWith('/en/friends/') && (friendDescription ?? '').trim().length > 10, `${friendAlternate} / ${friendDescription}`);
+
+  // 6. 英文四页标题
+  for (const [slug, title] of [['now', 'Now'], ['works', 'Works'], ['listening', 'Listening'], ['friends', 'Friends']]) {
     await page.goto(`${origin}${BASE}en/${slug}/`, { waitUntil: 'load' });
     check(`英文 ${slug} 页标题正确`, (await heading()) === title, await heading());
   }
 
-  // 6. 双语对应页(hreflang)与 description
+  // 7. 双语对应页(hreflang)与 description
   await page.goto(`${origin}${BASE}zh/now/`, { waitUntil: 'load' });
   const alternate = await page.locator('link[rel="alternate"][hreflang="en"]').getAttribute('href').catch(() => '');
   check('现在页有英文对应页', (alternate ?? '').endsWith('/en/now/'), String(alternate));
   const description = await page.locator('meta[name="description"]').getAttribute('content');
   check('新页面有 description', (description ?? '').trim().length > 10, String(description).slice(0, 40));
 
-  // 7. 窄屏:三页都不横向溢出
+  // 8. 窄屏:四页都不横向溢出
   const mobile = await context.newPage();
   // 每个页面最少几条:作品页目前只有 2 条(本站 + 源码),所以按页面给下限。
-  for (const [slug, minimum] of [['now', 3], ['works', 2], ['listening', 3]]) {
+  for (const [slug, minimum] of [['now', 3], ['works', 2], ['listening', 3], ['friends', 1]]) {
     await mobile.setViewportSize({ width: 390, height: 844 });
     await mobile.goto(`${origin}${BASE}zh/${slug}/`, { waitUntil: 'load' });
     const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -142,7 +161,7 @@ try {
   }
   await mobile.close();
 
-  // 8. 资源与脚本异常
+  // 9. 资源与脚本异常
   const failures = failedResponses.filter((item) => !item.includes('favicon'));
   check('新页面没有加载失败的资源', failures.length === 0, failures.join(' | ').slice(0, 300));
   check('无页面脚本异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300));
