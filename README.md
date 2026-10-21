@@ -23,7 +23,7 @@
 
 两个平台都连着同一个 GitHub 仓库：**推送即自动构建部署**。后台保存内容 = 往仓库提交 commit，两个平台随后各自重新部署。
 
-日常操作看 [网站使用说明](docs/usage-guide.md)；历次审核与实测记录见 [验证报告](docs/verification-report.md)。
+日常操作看 [快速使用说明](docs/user-manual.md);完整配置与开发细节见 [完整使用说明](docs/usage-guide.md),历次审核与实测记录见 [验证报告](docs/verification-report.md)。
 
 ## 本地使用
 
