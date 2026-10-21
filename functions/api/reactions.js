@@ -10,6 +10,7 @@
  * 反应不接入 GitHub Issue 通知,避免每点一次都产生运营噪音。
  */
 import {
+  commentHashSalt,
   corsHeaders,
   ensureSchema as ensureCommentsSchema,
   isAllowedOrigin,
@@ -70,8 +71,12 @@ function clientIp(request) {
 }
 
 function parseCommentId(raw) {
+  if (typeof raw === 'number') {
+    return Number.isSafeInteger(raw) && raw > 0 ? raw : null;
+  }
+  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return null;
   const value = Number(raw);
-  return Number.isInteger(value) && value > 0 ? value : null;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 function emptyCounts() {
@@ -125,6 +130,9 @@ export async function onRequestGet(context) {
   const raw = url.searchParams.get('ids') ?? '';
   const ids = [...new Set(raw.split(',').map(parseCommentId).filter((id) => id !== null))].slice(0, MAX_IDS);
 
+  const salt = commentHashSalt(env);
+  if (!salt) return errorResponse(request, 503, 'salt-missing', '评论服务还没配置好');
+
   await ensureCommentsSchema(env.DB);
   await ensureReactionsSchema(env.DB);
 
@@ -144,7 +152,7 @@ export async function onRequestGet(context) {
       if (counts[key] && reaction in counts[key]) counts[key][reaction] = Number(row.n ?? 0);
     }
 
-    const ipHash = await sha256Hex(`${clientIp(request)}:${env.COMMENTS_SALT || 'yukki-rui'}`);
+    const ipHash = await sha256Hex(`${clientIp(request)}:${salt}`);
     const mineRows = await env.DB
       .prepare(`SELECT comment_id, reaction FROM comment_reactions
         WHERE ip_hash = ? AND comment_id IN (${placeholders})`)
@@ -177,8 +185,13 @@ export async function onRequestPost(context) {
 
   const commentId = parseCommentId(payload?.commentId);
   if (commentId === null) return errorResponse(request, 400, 'invalid-comment', '评论编号不合法');
-  const reaction = String(payload?.reaction ?? '');
-  if (!REACTIONS.includes(reaction)) return errorResponse(request, 400, 'invalid-reaction', '反应类型不合法');
+  const reaction = payload?.reaction;
+  if (typeof reaction !== 'string' || !REACTIONS.includes(reaction)) {
+    return errorResponse(request, 400, 'invalid-reaction', '反应类型不合法');
+  }
+  if (payload.active !== undefined && typeof payload.active !== 'boolean') {
+    return errorResponse(request, 400, 'invalid-active', '反应状态不合法');
+  }
 
   await ensureCommentsSchema(env.DB);
   await ensureReactionsSchema(env.DB);
@@ -189,7 +202,9 @@ export async function onRequestPost(context) {
     .first();
   if (!comment) return errorResponse(request, 404, 'comment-not-found', '评论不存在');
 
-  const ipHash = await sha256Hex(`${clientIp(request)}:${env.COMMENTS_SALT || 'yukki-rui'}`);
+  const salt = commentHashSalt(env);
+  if (!salt) return errorResponse(request, 503, 'salt-missing', '评论服务还没配置好');
+  const ipHash = await sha256Hex(`${clientIp(request)}:${salt}`);
   if (payload?.active === false) {
     await env.DB
       .prepare('DELETE FROM comment_reactions WHERE comment_id = ? AND reaction = ? AND ip_hash = ?')

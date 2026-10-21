@@ -72,7 +72,7 @@ img { max-width: 100%; height: auto; }
   width: min(100% - 2 * var(--space-3), var(--maxw-wide));
   margin-inline: auto;
 }
-.prose { max-width: var(--reading-width); margin-inline: auto; }
+.prose { max-width: var(--maxw); margin-inline: auto; }
 
 /* 头部 */
 .site-header {

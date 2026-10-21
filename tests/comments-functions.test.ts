@@ -52,7 +52,7 @@ const BASE = 'https://yukki-rui.pages.dev';
 const THREAD = '/zh/posts/hello-world/';
 
 function withDb(): TestEnv {
-  return { DB: createFakeD1() };
+  return { DB: createFakeD1(), COMMENTS_SALT: 'vitest-salt' };
 }
 
 function request(url: string, init: RequestInit = {}): Request {
@@ -78,6 +78,7 @@ function newComment(overrides: Record<string, unknown> = {}) {
     author: '路人',
     body: '写得好',
     website: '',
+    trap: '',
     elapsed: 5000,
     ...overrides,
   };
@@ -145,6 +146,16 @@ describe('validateNewComment：服务端说了算', () => {
     expect(validateNewComment({ author: 'a', body: 'b' }).error).toBe('invalid-thread');
     expect(validateNewComment(null).error).toBe('invalid-body');
   });
+
+  it('恶意 JSON 类型不会触发 String()/Number() 500', () => {
+    const hostile = { toString: null, valueOf: null };
+    expect(validateNewComment({ thread: THREAD, author: hostile, body: 'b' }).error).toBe('invalid-author');
+    expect(validateNewComment({ thread: THREAD, author: 'a', body: hostile }).error).toBe('invalid-body');
+    expect(validateNewComment({ thread: THREAD, author: 'a', body: 'b', website: hostile }).error).toBe('invalid-website');
+    expect(validateNewComment({ thread: THREAD, author: 'a', body: 'b', parentId: hostile }).error).toBe('invalid-parent');
+    expect(validateNewComment({ thread: THREAD, author: 'a', body: 'b', parentId: '1e2' }).error).toBe('invalid-parent');
+    expect(validateNewComment({ thread: THREAD, author: 'a', body: 'b', parentId: true }).error).toBe('invalid-parent');
+  });
 });
 
 describe('小助手', () => {
@@ -199,6 +210,15 @@ describe('GET /api/comments', () => {
       env: withDb(),
     });
     expect(response.status).toBe(400);
+  });
+
+  it('非法分页游标 → 400 而不是静默回到第一页', async () => {
+    const response = await listComments({
+      request: request(`${BASE}/api/comments?thread=${THREAD}&before=abc`),
+      env: withDb(),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toBe('invalid-before');
   });
 
   it('空列表返回 0 条且禁止缓存', async () => {
@@ -337,10 +357,55 @@ describe('POST /api/comments', () => {
     expect(list.total).toBe(0);
   });
 
+  it('蜜罐缺失或类型错误也拒绝', async () => {
+    const missing = newComment();
+    delete (missing as { trap?: string }).trap;
+    for (const trap of [undefined, 1, { value: '' }, '   ']) {
+      const payload = trap === undefined ? missing : newComment({ trap });
+      const response = await createComment({ request: postRequest(payload), env: withDb() });
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toBe('spam-detected');
+    }
+  });
+
   it('提交过快 → 400 too-fast', async () => {
     const response = await createComment({ request: postRequest(newComment({ elapsed: 10 })), env: withDb() });
     expect(response.status).toBe(400);
     expect(((await response.json()) as { error: string }).error).toBe('too-fast');
+  });
+
+  it('elapsed 缺失或非数字 → 400 invalid-elapsed', async () => {
+    for (const elapsed of [undefined, '5000', Number.NaN]) {
+      const response = await createComment({ request: postRequest(newComment({ elapsed })), env: withDb() });
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: string }).error).toBe('invalid-elapsed');
+    }
+  });
+
+  it('页面打开超过一小时后仍可提交合法评论', async () => {
+    const response = await createComment({
+      request: postRequest(newComment({ elapsed: 24 * 60 * 60 * 1000 })),
+      env: withDb(),
+    });
+    expect(response.status).toBe(201);
+  });
+
+  it('恶意字段类型 → 400 而不是 500', async () => {
+    const response = await createComment({
+      request: postRequest(newComment({ author: { toString: null }, body: { valueOf: null } })),
+      env: withDb(),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toBe('invalid-author');
+  });
+
+  it('未配置 COMMENTS_SALT 时即使有管理令牌也 → 503 salt-missing', async () => {
+    const response = await createComment({
+      request: postRequest(newComment()),
+      env: { DB: createFakeD1(), COMMENTS_ADMIN_TOKEN: 'must-not-be-reused' },
+    });
+    expect(response.status).toBe(503);
+    expect(((await response.json()) as { error: string }).error).toBe('salt-missing');
   });
 
   it('同一 IP 60 秒内第二条 → 429', async () => {
@@ -502,7 +567,7 @@ describe('POST /api/comments', () => {
 describe('管理 API', () => {
   const ADMIN_URL = `${BASE}/api/comments-admin`;
   function adminEnv(): TestEnv {
-    return { DB: createFakeD1(), COMMENTS_ADMIN_TOKEN: 'test-token' };
+    return { DB: createFakeD1(), COMMENTS_ADMIN_TOKEN: 'test-token', COMMENTS_SALT: 'vitest-salt' };
   }
   function authHeaders(token = 'test-token'): Record<string, string> {
     return { Authorization: `Bearer ${token}` };
@@ -537,6 +602,36 @@ describe('管理 API', () => {
     expect(body.items[0].thread).toBe(THREAD);
   });
 
+  it('管理列表游标分页且 total 是真实总数', async () => {
+    const env = adminEnv();
+    const ids = await seed(env, 3);
+    const first = (await (
+      await adminListComments({ request: request(`${ADMIN_URL}?limit=2`, { headers: authHeaders() }), env })
+    ).json()) as { items: CommentItem[]; total: number; nextBefore: number | null };
+    expect(first.items.map((item) => item.id)).toEqual([ids[2], ids[1]]);
+    expect(first.total).toBe(3);
+    expect(first.nextBefore).toBe(ids[1]);
+
+    const second = (await (
+      await adminListComments({
+        request: request(`${ADMIN_URL}?limit=2&before=${first.nextBefore}`, { headers: authHeaders() }),
+        env,
+      })
+    ).json()) as { items: CommentItem[]; total: number; nextBefore: number | null };
+    expect(second.items.map((item) => item.id)).toEqual([ids[0]]);
+    expect(second.total).toBe(3);
+    expect(second.nextBefore).toBeNull();
+  });
+
+  it('管理列表非法分页游标 → 400', async () => {
+    const response = await adminListComments({
+      request: request(`${ADMIN_URL}?before=abc`, { headers: authHeaders() }),
+      env: adminEnv(),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toBe('invalid-before');
+  });
+
   it('删除后公开列表里不再出现', async () => {
     const env = adminEnv();
     const ids = await seed(env, 2);
@@ -553,6 +648,34 @@ describe('管理 API', () => {
     ).json()) as ListBody;
     expect(list.total).toBe(1);
     expect(list.items[0].id).toBe(ids[1]);
+  });
+
+  it('删除 100 条回复时不受 D1 参数上限影响，并在同一批处理中清理反应', async () => {
+    const env = adminEnv();
+    const [rootId] = await seed(env, 1);
+    const insertReply = env.DB!.raw.prepare(
+      "INSERT INTO comments (thread, author, body, website, created_at, ip_hash, user_agent, parent_id, hidden) VALUES (?, ?, ?, '', ?, ?, '', ?, 0)",
+    );
+    for (let index = 0; index < 100; index += 1) {
+      insertReply.run(THREAD, `回复者${index}`, `回复 ${index}`, '2026-10-21T00:00:00.000Z', `hash-${index}`, rootId);
+    }
+    env.DB!.raw.exec(
+      'CREATE TABLE comment_reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, comment_id INTEGER NOT NULL, reaction TEXT NOT NULL, ip_hash TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(comment_id, reaction, ip_hash))',
+    );
+    env.DB!.raw.prepare(
+      "INSERT INTO comment_reactions (comment_id, reaction, ip_hash, created_at) VALUES (?, 'like', 'ip', '2026-10-21T00:00:00.000Z')",
+    ).run(rootId);
+
+    const removed = await deleteComment({
+      request: request(`${ADMIN_URL}?id=${rootId}`, { method: 'DELETE', headers: authHeaders() }),
+      env,
+    });
+    expect(removed.status).toBe(200);
+    expect(((await removed.json()) as { deleted: number }).deleted).toBe(1);
+    const hidden = env.DB!.raw.prepare('SELECT COUNT(*) AS n FROM comments WHERE hidden = 1').get() as { n: number };
+    const reactions = env.DB!.raw.prepare('SELECT COUNT(*) AS n FROM comment_reactions').get() as { n: number };
+    expect(hidden.n).toBe(101);
+    expect(reactions.n).toBe(0);
   });
 
   it('删除不存在的编号 → deleted 0；编号非法 → 400', async () => {

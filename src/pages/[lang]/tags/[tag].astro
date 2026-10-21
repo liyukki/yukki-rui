@@ -5,7 +5,7 @@ import PixelSprite from '../../../components/PixelSprite.astro';
 import { withBase } from '../../../lib/url';
 import { SITE, UI, type Lang } from '../../../consts';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
-import { getPosts, getTagNames } from '../../../lib/posts';
+import { getPostsByDate, getTagNames } from '../../../lib/posts';
 
 export async function getStaticPaths() {
   const byLanguage = await Promise.all(
@@ -19,7 +19,7 @@ export async function getStaticPaths() {
 interface Props { tag: string }
 const { tag } = Astro.props;
 const lang = Astro.params.lang as Lang;
-const posts = (await getPosts(lang)).filter((post) => post.data.tags.includes(tag));
+const posts = (await getPostsByDate(lang)).filter((post) => post.data.tags.includes(tag));
 ---
 <BaseLayout title={`#${tag} · ${SITE.title}`} description={`${UI[lang].allTags}: ${tag}`} lang={lang}>
   <article class="rise subpage">

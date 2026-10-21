@@ -2,7 +2,7 @@
 
 这份说明面向站点主人,用于日常写文章、改资料、发布、管理评论和处理常见故障。
 
-当前站点已经上线,不需要自己维护服务器。内容改动会自动触发 GitHub Pages 和 Cloudflare Pages 重新部署。
+当前站点已经上线,不需要自己维护服务器。普通内容保存后会触发 GitHub Pages 和 Cloudflare Pages 重新部署;定时文章由 GitHub Actions 检查 `publishAt` 后触发两平台重建。
 
 - Cloudflare Pages:<https://yukki-rui.pages.dev/>
 - GitHub Pages:<https://liyukki.github.io/yukki-rui/>
@@ -36,6 +36,8 @@
 - 新建文章:点「新建文章」,填写字段后保存。
 - 保存草稿:打开「草稿」开关再保存。
 - 正式发布:关闭「草稿」开关后保存。
+- 定时发布:填写「定时发布」字段;到点后等待定时工作流触发重建。
+- 首页精选:打开「精选置顶」;它只改变首页列表顺序。
 
 文章字段:
 
@@ -47,11 +49,13 @@
 | 语言 | 是 | `zh` 或 `en` |
 | 标签 | 否 | 文章标签 |
 | 更新日期 | 否 | 填了会显示「更新于」 |
-| 草稿 | 否 | 开启后本地可见,正式站点和 RSS 不输出 |
+| 草稿 | 否 | 开启后本地可见,正式站点和 RSS 不输出;优先级高于定时发布 |
+| 定时发布 | 否 | `publishAt`,按 UTC 判断;留空表示立即发布;日期表示当天 UTC 00:00 |
+| 精选置顶 | 否 | `featured`,只影响首页列表;标签页、归档、RSS 和上下篇仍是纯时间序 |
 | 中英配对 Key | 否 | 中英文版本填同一个值才会互相链接 |
 | 正文 | 是 | 支持标题、列表、引用、代码块、表格和图片 |
 
-保存后,平台通常几分钟内完成部署。部署完成后可以刷新线上页面确认。
+保存后,普通文章通常几分钟内完成部署。定时文章要等下一次约 30 分钟一次的检查;GitHub 定时任务本身可能再延迟几分钟到几十分钟,不保证准点。部署完成后刷新线上页面确认。
 
 ### 2.3 中英文配对
 
@@ -168,6 +172,8 @@ npm run check:links
 - Cloudflare Pages 由仓库连接自动构建。
 - 两个平台使用同一份内容,但分别使用自己的 `SITE_BASE` 和 `SITE_URL`。
 
+定时发布同样走这条链路:`.github/workflows/publish-scheduled.yml` 每 30 分钟检查一次,到点后推一个空提交触发 Cloudflare Pages,再显式调度 `deploy.yml` 并等待 GitHub Pages 部署完成。默认 `GITHUB_TOKEN` 产生的 push 不会递归触发其他 workflow,所以显式调度不能删。GitHub 连续 60 天没有活动时,定时任务可能被暂停,需要到仓库 Actions 页手动恢复。
+
 ### 4.2 通过本地 Git 发布
 
 ```powershell
@@ -219,13 +225,16 @@ git push
 
 站长打开 <https://yukki-rui.pages.dev/admin/comments/>:
 
-1. 第一次输入 `COMMENTS_ADMIN_TOKEN`。
-2. 点「保存并加载」。
-3. 查看、筛选或删除评论。
+1. 第一次输入 `COMMENTS_ADMIN_TOKEN`,点「保存并加载」。令牌只保存在当前浏览器本地,不会上传。
+2. 列表每页 50 条,点「加载更多」用游标继续读取更早评论;200 只是单次 API 上限,不是管理页总量上限。
+3. 路径、昵称、正文筛选只作用于已经加载的评论;要找更早内容,先加载更多。
+4. 删除根评论会连同它的直接回复一起隐藏;删除单条回复只隐藏那一条。
 
-令牌只保存在当前浏览器本地,不会上传。评论数据存储在 Cloudflare D1,不在 Git 仓库中,所以 Sveltia CMS 的文章列表里看不到评论。
+读者可以回复评论,形成单层回复;每条评论支持赞、喜欢、有用三种 reactions,同一 IP 对同一种反应只计一次,再次点击取消。反应不会触发新评论通知。
 
-评论区默认开启。需要整体关闭时,修改 `src/consts.ts` 中 `COMMENTS.enabled`,然后重新部署。
+评论和 reactions 的公开接口依赖 D1 binding `DB` 与独立的 Cloudflare Secret `COMMENTS_SALT`;缺少盐时发布会返回 503。不能把管理令牌当盐使用。`COMMENTS_ADMIN_TOKEN` 只用于管理页。
+
+评论数据存储在 Cloudflare D1,不在 Git 仓库中,所以 Sveltia CMS 的文章列表里看不到评论。评论区默认开启;需要整体关闭时,修改 `src/consts.ts` 中 `COMMENTS.enabled`,然后重新部署。
 
 ## 6. RSS 订阅
 
@@ -241,8 +250,9 @@ RSS 会自动:
 - 把图片和站内链接转换为带部署前缀的绝对地址。
 - 排除 `draft: true` 的文章。
 - 区分中文和英文内容。
+- 按发布时间纯时间倒序;`featured` 不会改变 RSS 顺序。
 
-修改文章后无需维护 RSS 文件,重新部署即可。阅读器有缓存时,手动刷新订阅。
+修改文章后无需维护 RSS 文件,重新部署即可。定时文章要等 `publishAt` 到点并完成重建后才会进入 RSS。阅读器有缓存时,手动刷新订阅。
 
 ## 7. 常改配置
 
@@ -257,12 +267,14 @@ RSS 会自动:
 | 后台集合与字段 | `public/admin/config.yml` | Sveltia CMS 表单 |
 | GitHub Pages 部署 | `.github/workflows/deploy.yml` | 子路径构建和发布 |
 | 新评论、草稿提醒 | `.github/workflows/ops-reminders.yml` | 定时运营提醒 |
+| 定时发布 | `.github/workflows/publish-scheduled.yml` | 检查 `publishAt` 并触发两平台重建 |
 
 Cloudflare 中的敏感配置:
 
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
 - `COMMENTS_ADMIN_TOKEN`
+- `COMMENTS_SALT`(必填,且不能与管理令牌共用)
 - D1 binding 变量 `DB`
 
 这些密钥不要写进仓库。修改 Cloudflare 环境变量或 D1 binding 后,需要重新部署一次才会生效。
@@ -286,9 +298,11 @@ Cloudflare 中的敏感配置:
 | 后台点登录没有反应 | 确认使用的是 `https://yukki-rui.pages.dev/admin/`,不要从 GitHub Pages 后台登录 |
 | 登录提示 `GITHUB_CLIENT_ID 未配置` | 检查 Cloudflare 的 `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`,修改后重新部署 |
 | 保存后线上没有变化 | 检查草稿开关、部署状态和浏览器缓存 |
-| 文章本地能看到、线上没有 | 文章仍是 `draft: true` |
+| 文章本地能看到、线上没有 | 文章仍是 `draft: true`,或 `publishAt` 还没到点 |
+| 到了 `publishAt` 仍未上线 | 检查 Actions 的 `publish-scheduled` 与 `deploy` 是否成功;GitHub 定时任务可能延迟,60 天无活动还可能被暂停 |
+| 评论或 reactions 提示服务未配置 | 确认 D1 binding 为 `DB`,并配置独立的 `COMMENTS_SALT`;管理页还需要 `COMMENTS_ADMIN_TOKEN` |
 | `check:base` 报路径错误 | 文章中有根路径链接或图片,改成相对路径 |
-| 评论加载失败 | 检查 Cloudflare D1 binding 是否为 `DB`,以及最近部署是否成功 |
+| 评论加载失败 | 检查 Cloudflare D1 binding 是否为 `DB`、D1 是否正常,以及最近部署是否成功 |
 | RSS 图片打不开 | 运行 `npm run verify:frontend`,检查 RSS 地址补全 |
 | 后台只提示 CMS 配置错误 | 运行 `npm run check:cms-config`,检查 `public/admin/config.yml` |
 | 搜索在本地不可用 | 搜索依赖构建索引,先运行 `npm run build` |
@@ -297,7 +311,7 @@ Cloudflare 中的敏感配置:
 ## 10. 不要做的事情
 
 - 不手工编辑 `dist/`。
-- 不提交 `GITHUB_CLIENT_SECRET`、`COMMENTS_ADMIN_TOKEN` 等密钥。
+- 不提交 `GITHUB_CLIENT_SECRET`、`COMMENTS_ADMIN_TOKEN`、`COMMENTS_SALT` 等密钥。
 - 不手写 `/zh/...` 或 `/images/...` 这类站点根路径。
 - 不在页面代码里硬编码域名。
 - 不再创建 `public/robots.txt`,站点会自动生成。
@@ -316,6 +330,7 @@ Cloudflare 中的敏感配置:
 | `npm run check:links` | 检查当前 `dist/` 的站内死链 |
 | `npm run check:base` | 检查两种部署路径 |
 | `npm run check:content` | 检查内容规则、草稿和 RSS |
+| `npm run check:comments` | 用本地 Pages + D1 检查评论端到端,需要 Playwright |
 | `npm run check:comments-live` | 只读检查线上评论区 |
 | `npm run check:reading` | 检查阅读工具,需要 Playwright |
 | `npm run check:search` | 检查搜索和归档,需要 Playwright |

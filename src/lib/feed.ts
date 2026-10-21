@@ -3,7 +3,7 @@ import { render } from 'astro:content';
 import { experimental_AstroContainer as AstroContainer } from 'astro/container';
 import { SITE, type Lang } from '../consts';
 import { absolutizeFeedHtml } from './feed-html';
-import { getPosts, type Post } from './posts';
+import { getPostsByDate, type Post } from './posts';
 import { absoluteHref, postHref } from './url';
 
 type Container = Awaited<ReturnType<typeof AstroContainer.create>>;
@@ -34,7 +34,7 @@ async function feedItem(post: Post, site: string, container: Container) {
  * site 必须带部署 base，否则订阅器里的文章地址会丢掉 `/yukki-rui/` 前缀。
  */
 export async function createFeed(lang: Lang, site: string = SITE.url): Promise<Response> {
-  const posts = await getPosts(lang);
+  const posts = await getPostsByDate(lang);
   // 一个容器复用给所有文章：每篇都 new 一次会重复初始化渲染环境。
   const container = await AstroContainer.create();
   const items = await Promise.all(posts.map((post) => feedItem(post, site, container)));

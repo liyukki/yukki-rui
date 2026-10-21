@@ -256,7 +256,6 @@
         const TOKEN_KEY = 'comments-admin-token';
         const API = '/api/comments-admin';
         const PAGE = 50;
-        const MAX = 200;
 
         const authForm = document.getElementById('auth-form');
         const tokenInput = document.getElementById('token');
@@ -268,8 +267,9 @@
         const listEl = document.getElementById('list');
         const emptyEl = document.getElementById('empty');
 
-        let limit = PAGE;
         let comments = [];
+        let nextBefore = null;
+        let total = 0;
         let filter = '';
 
         const setStatus = (text) => {
@@ -362,42 +362,54 @@
           }
         };
 
-        async function load() {
+        async function load(append = false) {
           const token = getToken();
           if (!token) {
             setStatus('先填写并保存管理令牌。');
             comments = [];
+            nextBefore = null;
+            total = 0;
             render();
-            return;
+            return false;
           }
+          if (append && nextBefore === null) return true;
 
-          setStatus('加载中…');
+          setStatus(append ? '加载更早的评论…' : '加载中…');
           refreshButton.disabled = true;
+          moreButton.disabled = true;
           try {
-            const response = await fetch(`${API}?limit=${limit}`, {
+            const params = new URLSearchParams({ limit: String(PAGE) });
+            if (append && nextBefore !== null) params.set('before', String(nextBefore));
+            const response = await fetch(`${API}?${params}`, {
               headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
             });
             const data = await response.json().catch(() => ({}));
             if (response.status === 401) {
               setStatus('管理令牌不正确。');
-              return;
+              return false;
             }
             if (response.status === 503) {
               setStatus('服务器还没配置 COMMENTS_ADMIN_TOKEN（Cloudflare 环境变量）。');
-              return;
+              return false;
             }
             if (!response.ok) {
               setStatus(`加载失败（HTTP ${response.status}）。`);
-              return;
+              return false;
             }
-            comments = Array.isArray(data.items) ? data.items : [];
+            const items = Array.isArray(data.items) ? data.items : [];
+            comments = append ? [...comments, ...items] : items;
+            nextBefore = Number.isSafeInteger(data.nextBefore) ? data.nextBefore : null;
+            total = Number.isFinite(Number(data.total)) ? Number(data.total) : comments.length;
             render();
-            moreButton.disabled = comments.length < limit || limit >= MAX;
-            setStatus(`共显示 ${comments.length} 条${limit < MAX ? '（可继续加载更早的评论）' : ''}。`);
+            moreButton.disabled = nextBefore === null;
+            setStatus(`已显示 ${comments.length} / ${total} 条${nextBefore === null ? '' : '（可继续加载更早的评论）'}。`);
+            return true;
           } catch {
             setStatus('网络错误，加载失败。');
+            return false;
           } finally {
             refreshButton.disabled = false;
+            if (nextBefore !== null) moreButton.disabled = false;
           }
         }
 
@@ -421,9 +433,8 @@
               setStatus(`删除失败（HTTP ${response.status}）。`);
               return;
             }
-            // 删除根评论会在服务端级联隐藏其回复；重新拉取才能让管理列表同步。
-            await load();
-            setStatus(`已删除 #${item.id}（${Number(data.deleted) || 0} 行）。`);
+            // 删除根评论会在服务端级联隐藏其回复；只有刷新成功才显示删除成功。
+            if (await load()) setStatus(`已删除 #${item.id}（${Number(data.deleted) || 0} 行）。`);
           } catch {
             setStatus('网络错误，删除失败。');
           }
@@ -438,7 +449,6 @@
           }
           setToken(value);
           tokenInput.value = value;
-          limit = PAGE;
           void load();
         });
 
@@ -456,13 +466,11 @@
         });
 
         refreshButton.addEventListener('click', () => {
-          limit = PAGE;
           void load();
         });
 
         moreButton.addEventListener('click', () => {
-          limit = Math.min(limit + PAGE, MAX);
-          void load();
+          void load(true);
         });
 
         const saved = getToken();

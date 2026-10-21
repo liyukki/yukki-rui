@@ -27,7 +27,7 @@
 | 404 | 自动 |
 | RSS 订阅 | `/rss.xml`（中）`/rss-en.xml`（英），**全文输出** |
 
-**本次全面检查结果**：全部检查通过。类型检查 0 错误 0 警告 0 提示、174 项单元测试通过、两种部署路径各 33 个页面 1452 条站内引用无死链、RSS 全文输出在两种部署路径下实测通过、分享图与结构化数据 17 个页面自洽、三个新页面端到端自检 24 项通过、后台产物与个人资料集合集成检查通过、评论区端到端自检 28 项通过、阅读体验端到端自检 23 项通过、搜索与归档端到端自检 19 项通过。
+**检查结果不写死在文档里**：发布或结构性改动前运行 `npm run verify:frontend`，以当次命令的真实输出为准。该门禁覆盖类型检查、单元测试、两种部署路径、站内链接、内容规则与 RSS、分享图和必需页面；阅读设置、评论区等浏览器功能还要补跑对应端到端检查。
 
 **站点已上线**：https://liyukki.github.io/yukki-rui/ （GitHub Pages）与 https://yukki-rui.pages.dev/ （Cloudflare Pages，中英双语、照片、RSS、sitemap 均实测正常）。
 
@@ -93,6 +93,8 @@ tags: [随笔, 旅行]
 | `tags` | 否 | 标签数组，没写就是空 |
 | `updatedDate` | 否 | 更新日期，会在文章页显示"更新于" |
 | `draft` | 否 | 写 `true` 就是草稿（见 2.4）|
+| `publishAt` | 否 | 定时发布时间，按 UTC 判断（见 2.7）|
+| `featured` | 否 | 首页精选置顶，只影响首页（见 2.8）|
 | `translationKey` | 否 | 中英配对用（见 3.1）|
 
 写错字段时构建会明确告诉你哪个文件、哪个字段有问题，例如：
@@ -168,20 +170,23 @@ draft: true
 **建议**：用英文小写加连字符命名，不要用点号，不要用中文，不要用空格。这样网址最好看也最保险。已有的 `hello-world.en.md` 是历史遗留，别学它。
 ### 2.7 定时发布（到点才上线）
 
-frontmatter 加 `publishAt`（日期，按 **UTC** 判断）：
+frontmatter 加 `publishAt`（日期或完整时间戳，GitHub Actions 按 **UTC** 判断）：
 
 ```markdown
 ---
 title: 下周一才发的文章
 pubDate: 2026-10-21
-publishAt: 2026-10-27
+publishAt: 2026-10-27T09:30:00Z
 ---
 ```
 
 规则：
 
 - `publishAt` 留空 = 和以前一样，构建时就发布。
-- 到了 `publishAt` 当天，下一次定时检查（约每 30 分钟一次）会触发一次重新构建，文章才会出现在列表、标签、RSS、搜索和文章页里。
+- `YYYY-MM-DD` 表示当天 UTC 00:00；需要精确到分钟时，用带 `Z` 或时区偏移的完整时间戳。
+- 到点后的下一次定时检查（约每 30 分钟一次）才会触发重新构建，文章随后出现在列表、标签、RSS、搜索和文章页里。
+- 检查器使用 **Git 提交时间**，不是 Actions checkout 生成的文件修改时间；同一篇文章之后又有提交时，会重新判断是否需要部署。
+- 到点后工作流先推送一个空提交触发 Cloudflare Pages，再显式调度 `deploy.yml` 触发 GitHub Pages。默认 `GITHUB_TOKEN` 的推送不会自动触发其他 workflow，因此显式调度这一步不能省。
 - **`draft: true` 永远优先**：草稿不会因为到了 `publishAt` 被放出来，必须先关掉草稿。
 - 本地 `npm run dev` 不做时间过滤，未来的文章也能预览。
 - 静态站没有服务端，所以“到点自动出现”依赖 `.github/workflows/publish-scheduled.yml`；如果 GitHub 连续 60 天没有活动，定时任务会被暂停，需要去仓库 Actions 里手动恢复。
@@ -191,14 +196,14 @@ publishAt: 2026-10-27
 
 frontmatter 加 `featured: true`，这篇文章会排在**首页列表最前**（同语言内）。规则：
 
-- 只影响首页列表顺序；归档、RSS、上下篇仍然按发布日期排，不会乱。
-- 精选文章之间仍按发布日期倒序。
+- 只影响首页列表顺序；标签页、归档、RSS、上下篇仍然按发布日期排，不会乱。
+- 精选文章之间仍按发布日期倒序；同一发布时间再按文章 id 升序保证顺序稳定。
 - 中英两个版本是两份文件，想两边都置顶就分别加 `featured: true`。
 - 后台「文章」列表里有「精选」筛选器，可以直接筛出来。
 
 ### 2.9 为什么 RSS 不受精选影响
 
-RSS 的排序契约是**纯时间倒序**：订阅者看到的顺序应该只由发布时间决定。精选只是站内展示优先级，因此 RSS 路由会在生成后按 `pubDate` 重新排一次 item，归档页也走 `getPostsByDate()`。
+RSS 的排序契约是**纯时间倒序**：订阅者看到的顺序应该只由发布时间决定。精选只是站内展示优先级，因此 `createFeed()` 直接使用 `getPostsByDate()`；标签页、归档页和上下篇也走同一套日期排序，不再依赖生成后的正则重排。
 
 ---
 
@@ -490,7 +495,7 @@ npm run dev
 
 | 集合 | 内容 | 改完影响 |
 |---|---|---|
-| 文章 | 全部 `.md` 文章：标题、摘要、日期、语言、标签、草稿开关、正文、插图 | 首页列表、标签页、RSS |
+| 文章 | 全部 `.md` 文章：标题、摘要、日期、语言、标签、草稿、定时发布、精选、正文、插图 | 首页列表、标签页、归档、RSS、文章页 |
 | 个人资料 → 中文资料 | 首页一句话介绍/副文案/页尾签名、**形象照片**、联系方式文字+链接列表、第二件作品（标题/介绍/链接/状态）、关于页自我介绍 | `/zh/` 各页 |
 | 个人资料 → English Profile | 同上，英文版 | `/en/` 各页 |
 
@@ -593,13 +598,14 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 ### 11.2 Cloudflare 侧配置（已完成，改动时参考）
 
-2026-10-18 已经配好并线上验收通过，平时不用再动。若要迁到别的账号或重建，照这三步做：
+平时不用再动；迁到别的账号、重建项目或本次代码更新后，部署前必须确认下面四项齐全：
 
 1. **建 D1 数据库**：Cloudflare 控制台 → Workers & Pages → **D1** → Create database，名字填 `yukki-rui-comments`。
 2. **给 Pages 项目绑定**：Workers & Pages → `yukki-rui` → Settings → **Functions** → D1 database bindings → Add binding，**Variable name 必须是 `DB`**，再选刚建的库。
-3. **加管理令牌**：同页 Settings → Variables and secrets → Add，name `COMMENTS_ADMIN_TOKEN`，值随便一串长随机字符（Type 选 Secret）。加完点 **Retry deployment** 重新部署一次（绑定和变量都要新部署才生效）。
+3. **加管理令牌**：同页 Settings → Variables and secrets → Add，name `COMMENTS_ADMIN_TOKEN`，值随便一串长随机字符（Type 选 Secret）。
+4. **加评论哈希盐（必填）**：同页再加 `COMMENTS_SALT`（Type 选 Secret），同样使用一段独立的长随机值。它用于给 IP 哈希加盐；缺失时评论和 reactions 接口会返回 `503 salt-missing`，不会退回复用管理令牌或无盐哈希。
 
-可选：再加 `COMMENTS_SALT`（Secret）给 IP 哈希加盐，不配就用默认值。
+上述绑定和变量加完后，点 **Retry deployment** 重新部署一次。修改 `COMMENTS_SALT` 只会改变之后的 IP 限流哈希，不会删除已有评论；但更换后旧的限流记录不再对应新哈希。
 
 令牌只在配置时出现一次，请自己存到密码管理器里；丢了不要紧，在 Cloudflare 里重新生成一个、再把管理页里存的旧值换掉即可（评论数据不受影响）。
 
@@ -610,16 +616,18 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 打开 <https://yukki-rui.pages.dev/admin/comments/>（网页后台右下角也有「💬 评论管理」入口）：
 
 1. 第一次填 `COMMENTS_ADMIN_TOKEN` 的值，点「保存并加载」——令牌只存在这台设备的浏览器里，不会上传。
-2. 列表显示最近 50 条评论（可「加载更多」到 200 条）：文章路径、昵称、时间、正文都能看到，可按路径/昵称/正文筛选。
-3. 点「删除 #编号」确认即可，前台刷新后消失。
+2. 列表先显示最近 50 条评论，点「加载更多」可继续按游标读取更早的评论，不再有 200 条硬上限；文章路径、昵称、时间、正文都能看到，可按路径/昵称/正文筛选。
+3. 筛选只作用于**当前已经加载**的评论；要找更早的评论，先点「加载更多」。
+4. 点「删除 #编号」确认即可；删除根评论会连同其直接回复一起隐藏。只有删除后重新加载列表成功，页面才显示“已删除”，前台刷新后消失。
 
 ### 11.4 常见问题
 
 - **「评论加载失败，稍后再试」**：多半是 D1 还没绑定（11.2 第 2 步）或那次部署没成功；点重试。
 - **「发得太快了，歇一分钟再来」**：60 秒限流，正常现象。
-- **「评论服务还没配置好」**：Cloudflare 的绑定/变量缺失（服务端返回 503），按 11.2 再检查一遍。
+- **「评论服务还没配置好」**：公开评论和 reactions 依赖 D1 binding `DB` 与 `COMMENTS_SALT`；缺任意一项，发布评论和读取 reactions 会返回 `503 salt-missing` / `503 db-missing`。`COMMENTS_ADMIN_TOKEN` 只影响管理页，不应拿来当盐。
 - **想整体关掉评论区**：把 `src/consts.ts` 里 `COMMENTS.enabled` 改成 `false` 再推送，页面就不再渲染评论区、也不发请求。
 - **想换成别的评论系统**：改 `src/components/Comments.astro` 和 `src/lib/comments.ts` 两个文件就行，别处不依赖具体实现。
+
 **回复与互动**：
 
 - 读者可以点任意一条评论下的「回复」，形成**单层回复**（回复不能再被回复），回复平铺在原评论下面，不单独占用分页名额。
@@ -662,7 +670,7 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 | 行高 | 紧凑 / 标准 / 宽松 | 长文阅读舒适度 |
 | 正文宽度 | 窄 / 标准 / 宽 | 宽屏时控制每行字数 |
 
-选择保存在浏览器 `localStorage`（键名 `reading-settings`），刷新和站内跳转后仍然生效；换设备或清空浏览器数据会回到默认。隐私模式下存不进去时自动用默认值，不报错。
+选择保存在浏览器 `localStorage`（键名 `reading-settings`），刷新和站内跳转后仍然生效；换设备或清空浏览器数据会回到默认。隐私模式或存储配额不足导致写入失败时，本次页面会话仍会保留刚选的档位，不会静默回滚；刷新后无法持久化时才回到默认，也不报错。
 
 ### 12.2 相关文章
 
@@ -726,7 +734,7 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 - **已读位置**记在 Issue 正文的 HTML 注释里(`<!-- lastId: N -->`),不需要额外的数据库;第一次运行只看最近 45 分钟,不会把历史评论一次性刷出来。
 - **想在手机上收**:仓库 Settings → Secrets → 新增 `NTFY_TOPIC`(随便取一个 32 位随机串当密码),手机装 [ntfy](https://ntfy.sh/) App 订阅同一个名字。不配就只在 Issue 里提醒。
-- **必需密钥**:`COMMENTS_ADMIN_TOKEN`(已于 2026-10-19 配好)。
+- **必需密钥**:`COMMENTS_ADMIN_TOKEN`(已于 2026-10-19 配好);评论区还需要 Cloudflare Pages 上的 `COMMENTS_SALT` Secret。
 - **想立刻跑一次**:`gh workflow run ops-reminders.yml -f job=comments`(也可以 `job=drafts` 或 `job=auto`)。
 - **想改频率 / 想关掉**:改工作流里的 `cron`,或在 GitHub 的 Actions 页面禁用这个工作流。
 - **两个注意点**:公开仓库的 Issue 也是公开的(评论本来就公开在页面上);仓库连续 60 天没有活动时 GitHub 会自动暂停定时任务,有新提交后恢复。
@@ -762,6 +770,8 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 | 正文生成 | `src/lib/feed.ts` | 用 Astro 自己的渲染管线(Container API)渲染每篇文章,所以代码高亮、优化后的图片、扩展语法都和网页端一模一样 |
 | 地址补全 | `src/lib/feed-html.ts` | 订阅器没有「当前页面」概念,正文里的图片和站内链接必须补成绝对地址(含部署前缀),否则阅读器里图片会 404;作者手写的 `/zh/about/` 根路径会补上部署 base,已经带前缀的地址不会重复加,`srcset` 里的 `data:` 地址也不会被逗号拆坏 |
 | 摘要 | 文章 `description` 字段 | 阅读器列表里显示的那句话;正文单独放在 `content:encoded` |
+
+**排序**:RSS 与归档、标签页、上下篇一样使用纯时间倒序;精选置顶只影响首页。同一发布时间按文章 id 升序,顺序稳定。
 
 **发布前自查**:`npm run verify:frontend`(其中的 `check:content` 会在两种部署路径下分别断言中英 RSS:正文是渲染后的 HTML、根路径链接与图片带站点前缀、`srcset` 保持完整、没有残留的站内相对地址)。
 

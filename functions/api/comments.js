@@ -47,6 +47,7 @@ const SCHEMA = [
   // 旧库升级:parent_id / hidden 用幂等 ALTER 补上,已存在的列在 ensureSchema 里静默跳过。
   'ALTER TABLE comments ADD COLUMN parent_id INTEGER',
   'ALTER TABLE comments ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0',
+  'CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments (parent_id, hidden, id)',
 ];
 
 /** 每个 D1 绑定只建一次表；用 WeakMap 让单测里的多个库互不影响。 */
@@ -80,10 +81,19 @@ export function normalizeThread(raw) {
 }
 
 function cleanText(raw) {
-  return String(raw ?? '')
+  return raw
     .replace(/\r\n?/g, '\n')
     .replace(/\u0000/g, '')
     .trim();
+}
+
+/**
+ * IP 哈希盐只能来自 COMMENTS_SALT。管理令牌用途不同，不能兼作盐；
+ * 缺失时由调用方 fail closed，避免不同部署共用无盐哈希。
+ */
+export function commentHashSalt(env) {
+  const salt = typeof env?.COMMENTS_SALT === 'string' ? env.COMMENTS_SALT.trim() : '';
+  return salt || null;
 }
 
 /** 校验一条新评论；通过时返回规整后的值。 */
@@ -94,19 +104,28 @@ export function validateNewComment(input) {
   const thread = normalizeThread(input.thread);
   if (!thread) return { ok: false, error: 'invalid-thread', message: '评论对象不合法' };
 
+  if (typeof input.author !== 'string') {
+    return { ok: false, error: 'invalid-author', message: '昵称不合法' };
+  }
   const author = cleanText(input.author);
   if (author === '') return { ok: false, error: 'invalid-author', message: '昵称不能为空' };
   if ([...author].length > LIMITS.authorMax) {
     return { ok: false, error: 'invalid-author', message: `昵称最多 ${LIMITS.authorMax} 个字` };
   }
 
+  if (typeof input.body !== 'string') {
+    return { ok: false, error: 'invalid-body', message: '评论内容不合法' };
+  }
   const body = cleanText(input.body);
   if (body === '') return { ok: false, error: 'invalid-body', message: '评论内容不能为空' };
   if ([...body].length > LIMITS.bodyMax) {
     return { ok: false, error: 'invalid-body', message: `评论最多 ${LIMITS.bodyMax} 个字` };
   }
 
-  const website = cleanText(input.website);
+  if (input.website != null && typeof input.website !== 'string') {
+    return { ok: false, error: 'invalid-website', message: '网址不合法' };
+  }
+  const website = cleanText(input.website ?? '');
   if (website !== '' && !WEBSITE_RE.test(website)) {
     return { ok: false, error: 'invalid-website', message: '网址要以 http:// 或 https:// 开头' };
   }
@@ -123,8 +142,12 @@ export function validateNewComment(input) {
 /** 父评论编号:空 / 缺省 = 根评论;填错(非正整数)返回 NaN,由调用方给出 invalid-parent。 */
 export function normalizeParentId(raw) {
   if (raw === undefined || raw === null || raw === '') return null;
+  if (typeof raw === 'number') {
+    return Number.isSafeInteger(raw) && raw > 0 ? raw : NaN;
+  }
+  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return NaN;
   const value = Number(raw);
-  return Number.isInteger(value) && value > 0 ? value : NaN;
+  return Number.isSafeInteger(value) && value > 0 ? value : NaN;
 }
 
 export function clampLimit(raw, fallback = LIMITS.pageSize) {
@@ -134,9 +157,12 @@ export function clampLimit(raw, fallback = LIMITS.pageSize) {
 }
 
 export function parseId(raw) {
+  if (typeof raw === 'number') {
+    return Number.isSafeInteger(raw) && raw > 0 ? raw : null;
+  }
+  if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw)) return null;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) return null;
-  return value;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 /** 数据库行 → 公开字段（不泄漏 ip_hash / user_agent）。 */
@@ -231,7 +257,11 @@ export async function onRequestGet(context) {
 
   await ensureSchema(env.DB);
   const limit = clampLimit(url.searchParams.get('limit'));
-  const before = parseId(url.searchParams.get('before'));
+  const rawBefore = url.searchParams.get('before');
+  const before = rawBefore === null ? null : parseId(rawBefore);
+  if (rawBefore !== null && before === null) {
+    return errorResponse(request, 400, 'invalid-before', '分页游标不合法');
+  }
 
   // 分页只数根评论;回复跟着所属根评论一起返回,不占分页名额。
   const totalRow = await env.DB
@@ -323,19 +353,25 @@ export async function onRequestPost(context) {
   if (!checked.ok) return errorResponse(request, 400, checked.error, checked.message);
   const { value } = checked;
 
-  // 蜜罐：真人看不到这个字段，填了就是脚本。
-  if (typeof payload.trap === 'string' && payload.trap.trim() !== '') {
+  // 蜜罐：真人看不到这个字段，它必须是严格空字符串，不能拿空格绕过。
+  if (typeof payload.trap !== 'string' || payload.trap !== '') {
     return errorResponse(request, 400, 'spam-detected', '提交被拒绝');
   }
-  // 最小填写时间：从聚焦表单到点提交，太快的是脚本。
-  const elapsed = Number(payload.elapsed);
-  if (Number.isFinite(elapsed) && elapsed < LIMITS.minElapsed) {
+  // 最小填写时间：缺失或类型错误都拒绝，避免省略字段绕过。
+  // 不设上限：用户可能长时间停留、切到后台或开着回复框，合法评论不能因此丢失。
+  if (typeof payload.elapsed !== 'number' || !Number.isFinite(payload.elapsed)) {
+    return errorResponse(request, 400, 'invalid-elapsed', '提交时间不合法，刷新页面后再试');
+  }
+  if (payload.elapsed < LIMITS.minElapsed) {
     return errorResponse(request, 400, 'too-fast', '提交太快了，刷新页面后再试');
   }
 
+  const salt = commentHashSalt(env);
+  if (!salt) return errorResponse(request, 503, 'salt-missing', '评论服务还没配置好');
+
   await ensureSchema(env.DB);
   const now = Date.now();
-  const ipHash = await sha256Hex(`${clientIp(request)}:${env.COMMENTS_SALT || 'yukki-rui'}`);
+  const ipHash = await sha256Hex(`${clientIp(request)}:${salt}`);
   if (await isRateLimited(env.DB, ipHash, now, { isReply: value.parentId !== null })) {
     return errorResponse(request, 429, 'rate-limited', '发得太快了，稍后再试');
   }

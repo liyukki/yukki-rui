@@ -24,6 +24,8 @@ const draft = `${key}-draft`;
 const draftZh = `${key}-draft-zh`;
 const scheduled = `${key}-scheduled`;
 const featuredOld = `${key}-featured`;
+const sameDayA = `${key}-same-a`;
+const sameDayB = `${key}-same-b`;
 
 /** 给 RSS 全文断言提供可重复的探针：图片、srcset、作者手写根路径。 */
 function bodyFor(lang, isDraft) {
@@ -75,12 +77,14 @@ try {
     if (existsSync(original)) cpSync(original, join(project, file), { recursive: true });
   }
   for (const [id, lang, isDraft, translationKey, publishAt, featured, pubDate] of [
-    [published, 'zh', false, `${key}-published`, '', false, '2026-10-10'],
-    [publishedEn, 'en', false, `${key}-published-en`, '', false, '2026-10-10'],
-    [draft, 'en', true, `${key}-draft`, '', false, '2026-10-10'],
-    [draftZh, 'zh', true, `${key}-draft`, '', false, '2026-10-10'],
-    [scheduled, 'zh', false, `${key}-scheduled`, '2099-01-01', false, '2026-10-10'],
-    [featuredOld, 'zh', false, `${key}-featured`, '', true, '2026-09-01'],
+    [published, 'zh', false, `${key}-published`, '', false, '2099-12-31'],
+    [publishedEn, 'en', false, `${key}-published-en`, '', false, '2099-12-31'],
+    [draft, 'en', true, `${key}-draft`, '', false, '2099-12-30'],
+    [draftZh, 'zh', true, `${key}-draft`, '', false, '2099-12-30'],
+    [scheduled, 'zh', false, `${key}-scheduled`, '2099-12-29', false, '2099-12-29'],
+    [featuredOld, 'zh', false, `${key}-featured`, '', true, '2099-11-01'],
+    [sameDayA, 'zh', false, `${key}-same-a`, '', false, '2099-12-30'],
+    [sameDayB, 'zh', false, `${key}-same-b`, '', true, '2099-12-30'],
   ]) {
     const path = join(contentDirectory, `${id}.md`);
     const publishAtLine = publishAt ? `\npublishAt: ${publishAt}` : '';
@@ -122,6 +126,17 @@ try {
     assert.ok(archiveHtml.indexOf(hrefFor(published)) < archiveHtml.indexOf(hrefFor(featuredOld)), '精选文章改变了归档的时间顺序');
     assert.ok(rssPublished >= 0 && rssFeatured >= 0, 'RSS 缺少精选或普通探针文章');
     assert.ok(rssPublished < rssFeatured, '精选文章改变了 RSS 的时间顺序');
+    const rssSameA = rss.indexOf(new URL(hrefFor(sameDayA), site).href);
+    const rssSameB = rss.indexOf(new URL(hrefFor(sameDayB), site).href);
+    assert.ok(rssSameA >= 0 && rssSameB >= 0, 'RSS 缺少同日探针文章');
+    assert.ok(rssSameA < rssSameB, 'RSS 同日文章没有按 id 升序稳定排序');
+    const tagHtml = readFileSync(join(output, 'zh', 'tags', 'verification', 'index.html'), 'utf8');
+    assert.ok(tagHtml.includes(hrefFor(featuredOld)) && tagHtml.includes(hrefFor(published)), '标签页缺少精选或普通探针文章');
+    assert.ok(tagHtml.indexOf(hrefFor(published)) < tagHtml.indexOf(hrefFor(featuredOld)), '精选文章改变了标签页的时间顺序');
+    const prevCard = article.match(/<a[^>]*class="post-nav__card post-nav__card--prev"[^>]*href="([^"]+)"/);
+    if (prevCard) {
+      assert.ok(!prevCard[1].includes(featuredOld), '旧精选文章污染了新普通文章的上一篇');
+    }
     // 个人资料集合（/admin 后台编辑的数据源）：以数据文件为准断言渲染。
     // 文案会随站点主人的编辑变化，所以不能写死具体句子 —— 改为读取 JSON，
     // 断言其中的值确实出现在对应语言的页面上。

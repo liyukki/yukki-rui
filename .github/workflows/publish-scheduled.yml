@@ -1,15 +1,16 @@
 name: 定时发布检查
 
-# 静态站不会在 publishAt 到点时自己变化，因此由这里定期触发一次部署。
-# 只判断日期（与后台字段一致，统一按 UTC），部署粒度约为 30 分钟。
+# 静态站不会在 publishAt 到点时自己变化。到点后 push 一个空提交触发
+# Cloudflare Pages，再显式调度 deploy.yml 触发 GitHub Pages。GITHUB_TOKEN
+# 推送不会自动触发其他 workflow，因此必须保留这步 workflow_dispatch。
 on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
+  contents: write
   actions: write
-  contents: read
 
 concurrency:
   group: publish-scheduled
@@ -17,41 +18,55 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
 
-      - name: 找出已到点且尚未进入成功部署的文章
+      - name: 找出到点后尚未部署的文章
         id: due
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # push 和 workflow_dispatch 都算数；只查 push 会把显式调度的部署漏掉。
+          last_success=$(gh run list --workflow=deploy.yml --branch master --status success --limit 1             --json createdAt --jq '.[0].createdAt // ""')
+          last_ts=0
+          if [ -n "$last_success" ]; then
+            last_ts=$(date -u -d "$last_success" +%s)
+          fi
+          echo "最近成功部署：${last_success:-无}"
+          LAST_SUCCESS_TS="$last_ts" node scripts/check-scheduled-posts.mjs
 
-          today=$(date -u +%Y-%m-%d)
-          # 用最近一次成功部署日期做水位线；没有成功记录时视为全部需要检查。
-          last_success=$(gh run list --workflow=deploy.yml --status success --limit 1 \
-            --json createdAt --jq '.[0].createdAt // ""')
-          last_date=${last_success:+$(date -u -d "$last_success" +%Y-%m-%d)}
-
-          found=0
-          for file in src/content/posts/*.md; do
-            [ -e "$file" ] || continue
-            draft=$(grep -m1 '^draft:' "$file" | sed 's/^draft:[[:space:]]*//' | tr -d '"' | tr -d "'" || true)
-            pub=$(grep -m1 '^publishAt:' "$file" | sed 's/^publishAt:[[:space:]]*//' | tr -d '"' | tr -d "'" || true)
-            [ -z "$pub" ] && continue
-            [ "$draft" = "true" ] && continue
-            [ "$pub" \> "$today" ] && continue
-            if [ -z "$last_date" ] || [ "$pub" \> "$last_date" ]; then
-              found=1
-              break
-            fi
-          done
-          echo "due=$found" >> "$GITHUB_OUTPUT"
-
-      - name: 触发一次重建
+      - name: 推空提交并调度两个平台重建
         if: steps.due.outputs.due == '1'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run deploy.yml --ref master
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore(deploy): 定时发布 $(date -u +'%Y-%m-%dT%H:%MZ')"
+          git push origin HEAD:master
+          # 默认 GITHUB_TOKEN 的 push 不会触发 deploy.yml，必须显式 dispatch。
+          previous_id=$(gh run list --workflow=deploy.yml --branch master --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId // ""')
+          gh workflow run deploy.yml --ref master
+          run_id=""
+          for attempt in $(seq 1 30); do
+            latest_id=$(gh run list --workflow=deploy.yml --branch master --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId // ""')
+            if [ -n "$latest_id" ] && [ "$latest_id" != "$previous_id" ]; then
+              run_id="$latest_id"
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::没有找到本次 deploy.yml 调度运行"
+            exit 1
+          fi
+          gh run watch "$run_id" --exit-status

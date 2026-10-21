@@ -2,7 +2,7 @@
 import { render } from 'astro:content';
 import { SITE } from '../../../consts';
 import PostLayout from '../../../layouts/PostLayout.astro';
-import { getPosts, getTranslations, type Post } from '../../../lib/posts';
+import { getPosts, getPostsByDate, getTranslations, type Post } from '../../../lib/posts';
 import { selectRelatedPosts } from '../../../lib/related';
 
 export async function getStaticPaths() {
@@ -18,7 +18,7 @@ const translation = await getTranslations(post);
 const { Content, headings } = await render(post);
 
 /** 同语言文章按发布日期倒序：index-1 是更新的，index+1 是更早的。 */
-const siblings = await getPosts(post.data.lang);
+const siblings = await getPostsByDate(post.data.lang);
 const index = siblings.findIndex((entry) => entry.id === post.id);
 const newer = index > 0 ? siblings[index - 1] : undefined;
 const older = index >= 0 ? siblings[index + 1] : undefined;

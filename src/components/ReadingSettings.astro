@@ -79,14 +79,22 @@ const groups: Group[] = [
     type ReadingSettings,
   } from '../lib/reading-settings';
 
-  /** 隐私模式下 localStorage 可能整体不可用，读失败就用默认值。 */
-  const currentSettings = () => {
+  /**
+   * 隐私模式下 localStorage 可能整体不可用，读失败就用默认值。
+   * memorySettings 保存本次页面会话内的最新值：写存储失败时仍以用户刚点的档位为准，
+   * 避免 syncButtons() 重新读旧存储把页面状态静默回滚。
+   */
+  let memorySettings: ReadingSettings | null = null;
+
+  const storedSettings = (): ReadingSettings => {
     try {
       return readReadingSettings(window.localStorage);
     } catch {
       return { ...READING_DEFAULTS };
     }
   };
+
+  const currentSettings = (): ReadingSettings => memorySettings ?? storedSettings();
 
   const syncButtons = () => {
     const settings = currentSettings();
@@ -110,10 +118,11 @@ const groups: Group[] = [
         if (!key || !value) return;
         // 先经 normalize 校验，确保写进存储的始终是合法档位。
         const next = normalizeReadingSettings({ ...currentSettings(), [key]: value });
+        memorySettings = next;
         applyReadingSettings(document.documentElement, next);
         try {
           window.localStorage.setItem(READING_STORAGE_KEY, JSON.stringify(next));
-        } catch { /* 隐私模式忽略 */ }
+        } catch { /* 隐私模式忽略；memorySettings 保证本次会话仍然生效 */ }
         syncButtons();
       });
     });

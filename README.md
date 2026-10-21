@@ -9,7 +9,7 @@
 文章页还有**阅读小工具**：自动目录、阅读时长、顶部阅读进度、代码块一键复制、图片放大、上一篇/下一篇（见[使用说明第 12 节](docs/usage-guide.md)）。
 文章页现在还有**阅读设置与相关文章**：读者可以调字号、行高、正文宽度（保存在本地，刷新不丢），文章底部按标签重合度推荐最多 3 篇同语言旧文（见[使用说明第 12 节](docs/usage-guide.md)）。
 
-写作侧支持**定时发布与精选置顶**：`publishAt` 到点后由 GitHub Actions 每 30 分钟检查并触发重建；`featured: true` 只影响首页列表顺序，归档与 RSS 保持纯时间序（见[使用说明第 2.7–2.9 节](docs/usage-guide.md)）。
+写作侧支持**定时发布与精选置顶**：`publishAt` 到点后由 GitHub Actions 每 30 分钟检查，推空提交触发 Cloudflare Pages，再显式调度并等待 GitHub Pages 部署；`featured: true` 只影响首页列表顺序，标签页、归档、RSS 与上下篇保持纯时间序（见[使用说明第 2.7–2.9 节](docs/usage-guide.md)）。
 
 评论区支持**单层回复与三种表情反应**（赞 / 喜欢 / 有用）。回复仍免登录；删除根评论会级联隐藏其回复；反应不触发通知（见[使用说明第 11 节](docs/usage-guide.md)）。
 
@@ -95,6 +95,8 @@ tags: [随笔]
 | `updatedDate` | 更新日期 |
 | `draft: true` | 开发可预览；生产页面、列表、标签、RSS、译文目标均排除 |
 | `translationKey` | 同一篇文章中英版本填相同的值 |
+| `publishAt` | 定时发布时间，按 UTC 判断；到点后由定时工作流触发重建 |
+| `featured: true` | 只把文章排到首页列表前面，不改变标签页、归档、RSS 或上下篇顺序 |
 
 没有译文时，语言导航可跳目标语言首页，但 SEO 的 `hreflang` 不把首页声明成文章译文。
 
@@ -118,12 +120,13 @@ tags: [随笔]
 | 部分 | 位置 |
 |---|---|
 | 前端 | `src/components/Comments.astro`、`src/lib/comments.ts`（文章页底部自动出现）|
-| 公开接口 | `functions/api/comments.js`（GET 分页 / POST 写入：蜜罐、1.5 秒最小耗时、同 IP 60 秒 1 条与 24 小时 20 条限流、CORS 白名单）|
-| 管理接口 | `functions/api/comments-admin.js`（Bearer `COMMENTS_ADMIN_TOKEN`，列表与删除）|
+| 公开接口 | `functions/api/comments.js`（GET cursor 分页 / POST 严格类型校验、蜜罐、1.5 秒最小耗时、同 IP 限流、CORS 白名单）|
+| 表情接口 | `functions/api/reactions.js`（固定 like / love / useful 枚举，缺失 `COMMENTS_SALT` 时 fail closed）|
+| 管理接口 | `functions/api/comments-admin.js`（Bearer `COMMENTS_ADMIN_TOKEN`，cursor 列表、筛选与级联隐藏）|
 | 管理页 | `public/admin/comments/index.html`（令牌存本机 localStorage）|
 | 站点配置 | `src/consts.ts` 的 `COMMENTS`（enabled / origin / pageSize）|
 
-Cloudflare 侧一次性配置（**已于 2026-10-18 配好**）：建 D1 库 `yukki-rui-comments` → Pages 项目 Settings → Functions 加 D1 binding（**变量名必须是 `DB`**）→ Variables and secrets 加 `COMMENTS_ADMIN_TOKEN`（Secret）→ Retry deployment。步骤与排错见[使用说明第 11 节](docs/usage-guide.md)。
+Cloudflare 侧配置：建 D1 库 `yukki-rui-comments` → Pages 项目 Settings → Functions 加 D1 binding（**变量名必须是 `DB`**）→ Variables and secrets 增加 `COMMENTS_ADMIN_TOKEN` 与独立的 `COMMENTS_SALT`（两者都选 Secret）→ Retry deployment。`COMMENTS_SALT` 缺失时评论写入和 reactions 读取会返回 503，不能与管理令牌共用。步骤与排错见[使用说明第 11 节](docs/usage-guide.md)。
 
 本地端到端自检：`npm run build && npm run check:comments`（脚本自己起 `wrangler pages dev`，在 `.tmp-comments-check/` 里建本地 D1，跑完自动关掉）。上线后可用 `npm run check:comments-live` 做线上只读检查（带 `-- --write` 时会真的发一条再删掉，需要 `COMMENTS_ADMIN_TOKEN`）。
 
@@ -206,7 +209,7 @@ Remove-Item Env:\SITE_URL
 2. ✅ GitHub 公开仓库 <https://github.com/liyukki/yukki-rui>，主分支 `master`。
 3. ✅ GitHub 仓库 Settings → Pages → Source 选 GitHub Actions；工作流按仓库名自动配置 base 与地址。
 4. ✅ Cloudflare Pages 连接同一仓库：构建命令 `npm run verify:frontend`、输出 `dist`、环境变量 `SITE_BASE=/`、`SITE_URL=https://yukki-rui.pages.dev/`、`NODE_VERSION=24`。
-5. ✅ Cloudflare 项目另加两个密钥（`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`，来自 GitHub OAuth App），后台登录靠它们换令牌，见 [使用说明第 10 节](docs/usage-guide.md)。
+5. ✅ Cloudflare 项目另加 OAuth 与评论配置：`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`、`COMMENTS_ADMIN_TOKEN`、独立的 `COMMENTS_SALT`，以及 D1 binding `DB`；后台登录、评论和 reactions 分别依赖这些配置，见 [使用说明第 10、11 节](docs/usage-guide.md)。
 6. ✅ 两个地址实测：首页、文章、RSS、后台登录与写入。
 
 GitHub 发布前会检查前端必需产物（关于页、标签页、归档页、搜索页、Pagefind 索引、404 与分享图），缺失会阻止发布。`npm run check:frontend` 是结构检查；视觉与可用性要在浏览器核验。此外 `npm run check:og` 会解码每篇的分享图(确认不是空白卡片,尺寸 1200×630)并核对 JSON-LD 字段。

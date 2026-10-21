@@ -22,16 +22,20 @@ async function allPosts(): Promise<Post[]> {
   return await getCollection('posts');
 }
 
+/** 同一次构建固定一个时间基准，避免页面跨过 publishAt 时彼此不一致。 */
+const BUILD_NOW = import.meta.env.PROD ? new Date() : null;
+const buildNow = (): Date => BUILD_NOW ?? new Date();
+
 /** 该语言的全部可见文章：精选优先，其余按发布日期倒序。 */
 export async function getPosts(lang: 'zh' | 'en'): Promise<Post[]> {
   const entries = await allPosts();
-  return selectPosts(entries, lang, import.meta.env.PROD, new Date());
+  return selectPosts(entries, lang, import.meta.env.PROD, buildNow());
 }
 
 /** 纯时间倒序（忽略 featured）：归档页、RSS 与上下篇使用，保持原有语义。 */
 export async function getPostsByDate(lang: 'zh' | 'en'): Promise<Post[]> {
   const entries = await allPosts();
-  return selectPosts(entries, lang, import.meta.env.PROD, new Date()).sort(compareByDateDesc);
+  return selectPosts(entries, lang, import.meta.env.PROD, buildNow()).sort(compareByDateDesc);
 }
 
 /** 该语言的标签及文章数，按数量倒序。 */
@@ -44,7 +48,7 @@ export async function getTags(
 /** 通过 translationKey 找另一语言版本；没有译文时返回 undefined（正常状态）。 */
 export async function getTranslations(post: Post): Promise<Post | undefined> {
   const entries = await allPosts();
-  return findTranslation(entries, post, import.meta.env.PROD);
+  return findTranslation(entries, post, import.meta.env.PROD, buildNow());
 }
 
 /** 该语言出现过的全部标签名（去重，用于 getStaticPaths）。 */

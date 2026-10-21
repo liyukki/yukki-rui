@@ -4,6 +4,7 @@
  *
  * 只覆盖约定用法：
  *   db.prepare(sql).bind(...).first() / .all() / .run()
+ *   db.batch(statements)（用 BEGIN/COMMIT 模拟 D1 的事务批处理）
  *   db.exec(multiStatementSql)
  */
 import { DatabaseSync } from 'node:sqlite';
@@ -19,6 +20,7 @@ export interface FakeD1Statement {
 
 export interface FakeD1 {
   prepare(sql: string): FakeD1Statement;
+  batch(statements: FakeD1Statement[]): Promise<Array<Awaited<ReturnType<FakeD1Statement['run']>>>>;
   exec(sql: string): Promise<{ count: number; duration: number }>;
   /** 直接查库用（断言落库结果），不暴露给业务代码。 */
   raw: DatabaseSync;
@@ -53,6 +55,18 @@ export function createFakeD1(): FakeD1 {
     raw,
     prepare(sql: string) {
       return statement(raw, sql, []);
+    },
+    async batch(statements) {
+      raw.exec('BEGIN');
+      try {
+        const results = [];
+        for (const item of statements) results.push(await item.run());
+        raw.exec('COMMIT');
+        return results;
+      } catch (error) {
+        raw.exec('ROLLBACK');
+        throw error;
+      }
     },
     async exec(sql: string) {
       raw.exec(sql);

@@ -115,4 +115,46 @@ describe('评论表情反应', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it('恶意 ID / 反应 / active 类型返回 400 而不是 500', async () => {
+    const db = createFakeD1();
+    await seedComment(db);
+    const env = { DB: db, COMMENTS_SALT: 'salt' };
+    for (const payload of [
+      { commentId: { valueOf: null }, reaction: 'like' },
+      { commentId: '1e2', reaction: 'like' },
+      { commentId: 1, reaction: { toString: null } },
+      { commentId: 1, reaction: 'like', active: 'false' },
+    ]) {
+      const res = await onRequestPost({
+        request: req(`${BASE}/api/reactions`, { method: 'POST', body: JSON.stringify(payload) }),
+        env,
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it('未配置盐时即使 ids 为空，读取也返回 503', async () => {
+    const db = createFakeD1();
+    const env = { DB: db };
+    const read = await onRequestGet({ request: req(`${BASE}/api/reactions`), env });
+    expect(read.status).toBe(503);
+    expect(((await read.json()) as { error: string }).error).toBe('salt-missing');
+  });
+
+  it('没有盐且没有管理令牌兜底 → 503', async () => {
+    const db = createFakeD1();
+    await seedComment(db);
+    const env = { DB: db };
+    const read = await onRequestGet({ request: req(`${BASE}/api/reactions?ids=1`), env });
+    const write = await onRequestPost({
+      request: req(`${BASE}/api/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ commentId: 1, reaction: 'like' }),
+      }),
+      env,
+    });
+    expect(read.status).toBe(503);
+    expect(write.status).toBe(503);
+  });
 });

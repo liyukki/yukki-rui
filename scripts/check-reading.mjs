@@ -242,7 +242,37 @@ try {
   const sizeAfterReset = await page.evaluate(() => document.documentElement.dataset.readingSize);
   check('清空存储后回到默认中字号', sizeAfterReset === 'md', sizeAfterReset ?? '');
 
-  // 12. 相关文章：只在有推荐时出现，排除自身且不进入搜索索引
+  // 12. localStorage 写失败时，本次页面会话仍保留用户选择，不能静默回滚。
+  await page.evaluate(() => {
+    window.__readingOriginalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      throw new Error('quota exceeded');
+    };
+  });
+  try {
+    await page.locator('[data-reading-key="size"][data-reading-value="lg"]').click();
+    await page.waitForTimeout(200);
+    const sizeAfterStorageFailure = await page.evaluate(() => document.documentElement.dataset.readingSize);
+    const pressedAfterStorageFailure = await page
+      .locator('[data-reading-key="size"][data-reading-value="lg"]')
+      .getAttribute('aria-pressed');
+    const storedAfterStorageFailure = await page.evaluate(() => localStorage.getItem('reading-settings'));
+    check(
+      'localStorage 写入失败时本次会话仍应用大字号',
+      sizeAfterStorageFailure === 'lg'
+        && pressedAfterStorageFailure === 'true'
+        && storedAfterStorageFailure === null,
+      `size=${sizeAfterStorageFailure} pressed=${pressedAfterStorageFailure} stored=${storedAfterStorageFailure}`,
+    );
+  } finally {
+    await page.evaluate(() => {
+      Storage.prototype.setItem = window.__readingOriginalSetItem;
+      delete window.__readingOriginalSetItem;
+      localStorage.removeItem('reading-settings');
+    });
+  }
+
+  // 13. 相关文章：只在有推荐时出现，排除自身且不进入搜索索引
   await page.goto(ORIGIN + POST, { waitUntil: 'load' });
   const related = page.locator('.post-related');
   const relatedCount = await related.count();
@@ -258,7 +288,7 @@ try {
     check('相关文章区块(本文暂无同标签文章,跳过)', true, 'skipped');
   }
 
-  // 13. 移动端布局
+  // 14. 移动端布局
   const mobile = await context.newPage();
   await mobile.setViewportSize({ width: 390, height: 844 });
   await mobile.goto(ORIGIN + POST, { waitUntil: 'load' });

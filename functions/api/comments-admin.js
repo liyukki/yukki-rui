@@ -1,12 +1,13 @@
 /**
  * 评论管理 API（Cloudflare Pages Functions）。
  *
- *   GET    /api/comments-admin?limit=50     最近评论（新→旧）
- *   DELETE /api/comments-admin?id=12        删除一条
+ *   GET    /api/comments-admin?limit=50&before=12  最近评论（新→旧，游标分页）
+ *   DELETE /api/comments-admin?id=12                删除一条
  *
  * 鉴权：Authorization: Bearer <COMMENTS_ADMIN_TOKEN>（Cloudflare Secret）。
  * 管理页是 /admin/comments/，与本站同源，因此不需要 CORS。
  */
+import { parseId } from './comments.js';
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS comments (
@@ -24,6 +25,7 @@ const SCHEMA = [
   // 旧库升级:parent_id / hidden 用幂等 ALTER 补上,已存在的列在 ensureSchema 里静默跳过。
   'ALTER TABLE comments ADD COLUMN parent_id INTEGER',
   'ALTER TABLE comments ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0',
+  'CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments (parent_id, hidden, id)',
 ];
 
 const schemaReady = new WeakMap();
@@ -108,17 +110,29 @@ export async function onRequestGet(context) {
   if (denied) return denied;
 
   const { request, env } = context;
+  if (!env?.DB) return errorResponse(503, 'db-missing', '评论服务还没配置好');
   const url = new URL(request.url);
   const limit = clampAdminLimit(url.searchParams.get('limit'));
+  const rawBefore = url.searchParams.get('before');
+  const before = rawBefore === null ? null : parseId(rawBefore);
+  if (rawBefore !== null && before === null) {
+    return errorResponse(400, 'invalid-before', '分页游标不合法');
+  }
 
   await ensureSchema(env.DB);
-  const rows = await env.DB.prepare(
-    'SELECT id, thread, author, body, website, created_at FROM comments WHERE hidden = 0 ORDER BY id DESC LIMIT ?',
-  )
-    .bind(limit)
-    .all();
+  const totalRow = await env.DB
+    .prepare('SELECT COUNT(*) AS n FROM comments WHERE hidden = 0')
+    .first();
+  const baseSql = 'SELECT id, thread, author, body, website, created_at FROM comments WHERE hidden = 0';
+  const rows = before
+    ? await env.DB
+        .prepare(`${baseSql} AND id < ? ORDER BY id DESC LIMIT ?`)
+        .bind(before, limit + 1)
+        .all()
+    : await env.DB.prepare(`${baseSql} ORDER BY id DESC LIMIT ?`).bind(limit + 1).all();
 
-  const items = (Array.isArray(rows?.results) ? rows.results : []).map((row) => ({
+  const pageRows = Array.isArray(rows?.results) ? rows.results.slice(0, limit) : [];
+  const items = pageRows.map((row) => ({
     id: Number(row.id ?? 0),
     thread: String(row.thread ?? ''),
     author: String(row.author ?? ''),
@@ -126,7 +140,10 @@ export async function onRequestGet(context) {
     website: String(row.website ?? ''),
     createdAt: String(row.created_at ?? ''),
   }));
-  return jsonResponse({ items, total: items.length }, 200);
+  const nextBefore = (Array.isArray(rows?.results) ? rows.results.length : 0) > limit && items.length
+    ? items[items.length - 1].id
+    : null;
+  return jsonResponse({ items, total: Number(totalRow?.n ?? 0), nextBefore }, 200);
 }
 
 export async function onRequestDelete(context) {
@@ -134,33 +151,30 @@ export async function onRequestDelete(context) {
   if (denied) return denied;
 
   const { request, env } = context;
+  if (!env?.DB) return errorResponse(503, 'db-missing', '评论服务还没配置好');
   const url = new URL(request.url);
-  const id = Number(url.searchParams.get('id'));
-  if (!Number.isInteger(id) || id <= 0) return errorResponse(400, 'invalid-id', '缺少要删除的评论编号');
+  const id = parseId(url.searchParams.get('id'));
+  if (id === null) return errorResponse(400, 'invalid-id', '缺少要删除的评论编号');
 
   await ensureSchema(env.DB);
 
-  // 回复采用单层结构:先找出直接子回复,再把根评论与回复一起标记为隐藏。
-  // 这里不做物理删除,保留数据便于日后审计/恢复;公开查询统一过滤 hidden = 0。
-  const replyRows = await env.DB.prepare('SELECT id FROM comments WHERE parent_id = ?').bind(id).all();
-  const replyIds = (Array.isArray(replyRows?.results) ? replyRows.results : []).map((row) => Number(row.id));
-  const reactionIds = [id, ...replyIds];
-
-  await env.DB.prepare('UPDATE comments SET hidden = 1 WHERE parent_id = ?').bind(id).run();
-  const result = await env.DB.prepare('UPDATE comments SET hidden = 1 WHERE id = ?').bind(id).run();
-
-  // reactions 表可能从未创建过(评论功能刚上线);这种情况直接忽略。
-  if (reactionIds.length > 0) {
-    const placeholders = reactionIds.map(() => '?').join(',');
-    try {
-      await env.DB
-        .prepare(`DELETE FROM comment_reactions WHERE comment_id IN (${placeholders})`)
-        .bind(...reactionIds)
-        .run();
-    } catch (error) {
-      if (!/no such table/i.test(String(error?.message ?? error))) throw error;
-    }
+  // 回复采用单层结构:把根评论与直接回复在同一事务里隐藏，并清理两者反应。
+  // 用子查询而不是拼接 id 列表，避免热门评论超过 D1 单查询 100 个绑定参数。
+  const reactionTable = await env.DB
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'comment_reactions'")
+    .first();
+  const statements = [
+    env.DB.prepare('UPDATE comments SET hidden = 1 WHERE parent_id = ?').bind(id),
+    env.DB.prepare('UPDATE comments SET hidden = 1 WHERE id = ?').bind(id),
+  ];
+  if (reactionTable) {
+    statements.push(
+      env.DB
+        .prepare(`DELETE FROM comment_reactions
+          WHERE comment_id IN (SELECT id FROM comments WHERE id = ? OR parent_id = ?)`)
+        .bind(id, id),
+    );
   }
-
-  return jsonResponse({ deleted: Number(result?.meta?.changes ?? 0) }, 200);
+  const results = await env.DB.batch(statements);
+  return jsonResponse({ deleted: Number(results?.[1]?.meta?.changes ?? 0) }, 200);
 }
