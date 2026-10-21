@@ -21,6 +21,9 @@ const SCHEMA = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_comments_thread ON comments (thread, id)',
   'CREATE INDEX IF NOT EXISTS idx_comments_ip ON comments (ip_hash, created_at)',
+  // 旧库升级:parent_id / hidden 用幂等 ALTER 补上,已存在的列在 ensureSchema 里静默跳过。
+  'ALTER TABLE comments ADD COLUMN parent_id INTEGER',
+  'ALTER TABLE comments ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0',
 ];
 
 const schemaReady = new WeakMap();
@@ -29,7 +32,14 @@ async function ensureSchema(db) {
   const pending = schemaReady.get(db);
   if (pending) return pending;
   const task = (async () => {
-    for (const sql of SCHEMA) await db.prepare(sql).run();
+    for (const sql of SCHEMA) {
+      try {
+        await db.prepare(sql).run();
+      } catch (error) {
+        // CREATE TABLE IF NOT EXISTS 之后的 ALTER 在升级过的库上会报 duplicate column,直接跳过。
+        if (!/duplicate column name/i.test(String(error?.message ?? error))) throw error;
+      }
+    }
   })().catch((error) => {
     schemaReady.delete(db);
     throw error;
@@ -103,7 +113,7 @@ export async function onRequestGet(context) {
 
   await ensureSchema(env.DB);
   const rows = await env.DB.prepare(
-    'SELECT id, thread, author, body, website, created_at FROM comments ORDER BY id DESC LIMIT ?',
+    'SELECT id, thread, author, body, website, created_at FROM comments WHERE hidden = 0 ORDER BY id DESC LIMIT ?',
   )
     .bind(limit)
     .all();
@@ -129,6 +139,28 @@ export async function onRequestDelete(context) {
   if (!Number.isInteger(id) || id <= 0) return errorResponse(400, 'invalid-id', '缺少要删除的评论编号');
 
   await ensureSchema(env.DB);
-  const result = await env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(id).run();
+
+  // 回复采用单层结构:先找出直接子回复,再把根评论与回复一起标记为隐藏。
+  // 这里不做物理删除,保留数据便于日后审计/恢复;公开查询统一过滤 hidden = 0。
+  const replyRows = await env.DB.prepare('SELECT id FROM comments WHERE parent_id = ?').bind(id).all();
+  const replyIds = (Array.isArray(replyRows?.results) ? replyRows.results : []).map((row) => Number(row.id));
+  const reactionIds = [id, ...replyIds];
+
+  await env.DB.prepare('UPDATE comments SET hidden = 1 WHERE parent_id = ?').bind(id).run();
+  const result = await env.DB.prepare('UPDATE comments SET hidden = 1 WHERE id = ?').bind(id).run();
+
+  // reactions 表可能从未创建过(评论功能刚上线);这种情况直接忽略。
+  if (reactionIds.length > 0) {
+    const placeholders = reactionIds.map(() => '?').join(',');
+    try {
+      await env.DB
+        .prepare(`DELETE FROM comment_reactions WHERE comment_id IN (${placeholders})`)
+        .bind(...reactionIds)
+        .run();
+    } catch (error) {
+      if (!/no such table/i.test(String(error?.message ?? error))) throw error;
+    }
+  }
+
   return jsonResponse({ deleted: Number(result?.meta?.changes ?? 0) }, 200);
 }

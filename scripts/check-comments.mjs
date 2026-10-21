@@ -30,6 +30,7 @@ const POST_PATH = '/zh/posts/hello-world/';
 const ADMIN_PATH = '/admin/comments/';
 const AUTHOR = '自动验收';
 const XSS_BODY = '第一行\n<img src=x onerror="window.__xss=1">\n最后一行';
+const REPLY_BODY = '这是一条回复';
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -144,7 +145,7 @@ try {
   );
 
   await page.waitForFunction(
-    () => (document.querySelector('[data-comments-status]')?.textContent ?? '').trim().length > 0,
+    () => /还没有评论|No comments yet/.test(document.querySelector('[data-comments-status]')?.textContent ?? ''),
     { timeout: 15000 },
   ).catch(() => {});
   check(
@@ -192,6 +193,64 @@ try {
   );
   check('限流期间没有多出一条评论', (await page.locator('[data-comments-list] li').count()) === 1);
 
+  // 回复：点根评论的「回复」按钮，提交后回复应挂在根评论下面。
+  const rootItem = page.locator('[data-comments-list] > li.comment').first();
+  await rootItem.locator('.comment-reply-button').click();
+  const replyForm = rootItem.locator('.comment-reply-form');
+  await replyForm.locator('input[name="author"]').fill(AUTHOR);
+  await replyForm.locator('textarea[name="body"]').fill(REPLY_BODY);
+  await page.waitForTimeout(1700);
+  await replyForm.locator('button[type="submit"]').click();
+  await rootItem.locator('.comment-replies > li.comment').first().waitFor({ timeout: 20000 }).catch(() => {});
+  check(
+    '回复出现在根评论下方',
+    (await rootItem.locator('.comment-replies > li.comment').count()) === 1,
+  );
+  check(
+    '回复按钮显示回复数量',
+    /\(1\)/.test(await rootItem.locator('.comment-reply-button').innerText()),
+    await rootItem.locator('.comment-reply-button').innerText(),
+  );
+
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.locator('[data-comments-list] > li.comment').first().waitFor({ timeout: 20000 });
+  check(
+    '刷新后回复仍在根评论下（已写入 D1）',
+    (await page.locator('[data-comments-list] > li.comment').first().locator('.comment-replies > li.comment').count()) === 1,
+  );
+
+  // 反应：点赞一次 → 计数 1；刷新后仍为 1（按 IP 哈希去重）。
+  const likeButton = page
+    .locator('[data-comments-list] > li.comment')
+    .first()
+    .locator(':scope > .comment-main > .comment-actions-row .comment-reaction[data-reaction="like"]');
+  await likeButton.click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector('[data-comments-list] > li.comment .comment-reaction[data-reaction="like"]');
+    return button?.getAttribute('aria-pressed') === 'true' && button.querySelector('.reaction-count')?.textContent === '1';
+  }, { timeout: 20000 }).catch(() => {});
+  check(
+    '点赞后计数为 1 且按钮选中',
+    (await likeButton.getAttribute('aria-pressed')) === 'true' &&
+      (await likeButton.locator('.reaction-count').innerText()) === '1',
+  );
+
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.locator('[data-comments-list] > li.comment').first().waitFor({ timeout: 20000 });
+  const likeAfterReload = page
+    .locator('[data-comments-list] > li.comment')
+    .first()
+    .locator(':scope > .comment-main > .comment-actions-row .comment-reaction[data-reaction="like"]');
+  await page.waitForFunction(() => {
+    const button = document.querySelector('[data-comments-list] > li.comment .comment-reaction[data-reaction="like"]');
+    return button?.querySelector('.reaction-count')?.textContent === '1';
+  }, { timeout: 20000 }).catch(() => {});
+  check(
+    '刷新后点赞计数仍为 1',
+    (await likeAfterReload.locator('.reaction-count').innerText()) === '1',
+    await likeAfterReload.locator('.reaction-count').innerText(),
+  );
+
   // 管理页：未填令牌 → 令牌错误 → 正确令牌 → 删除。
   const admin = await context.newPage();
   const adminErrors = [];
@@ -217,7 +276,7 @@ try {
   await admin.locator('#token').fill(TOKEN);
   await admin.locator('#auth-form button[type="submit"]').click();
   await admin.locator('.comment').first().waitFor({ timeout: 20000 });
-  check('管理页用正确令牌列出评论', (await admin.locator('.comment').count()) === 1);
+  check('管理页用正确令牌列出根评论与回复', (await admin.locator('.comment').count()) === 2, String(await admin.locator('.comment').count()));
   check(
     '管理页显示评论所在路径',
     (await admin.locator('.comment-thread').first().innerText()) === POST_PATH,
@@ -225,13 +284,27 @@ try {
   );
   check('管理页把正文当纯文本渲染', (await admin.locator('.comment img').count()) === 0);
 
+  // 删除前记下根评论与回复 id，稍后验证反应也被清理。
+  const beforeDelete = (await (
+    await fetch(`${ORIGIN}/api/comments?thread=${encodeURIComponent(POST_PATH)}&limit=20`)
+  ).json());
+  const rootComment = beforeDelete.items?.[0];
+  const replyIds = (rootComment?.replies ?? []).map((reply) => reply.id);
+
   admin.on('dialog', (dialog) => dialog.accept());
-  await admin.locator('.comment-actions button').first().click();
+  // 管理列表新→旧：第一条是回复，第二条才是根评论；删根评论才能验证级联隐藏。
+  const deleteResponse = admin.waitForResponse(
+    (response) => response.url().includes('/api/comments-admin?id=') && response.request().method() === 'DELETE',
+  );
+  await admin.locator('.comment').nth(1).locator('.comment-actions button').first().click();
+  await deleteResponse;
+  // 当前管理页只移除被点的单行,不会同步移除级联隐藏的回复;刷新后以服务端为准。
+  await admin.locator('#refresh').click();
   await admin.waitForFunction(
     () => document.querySelectorAll('.comment').length === 0,
     { timeout: 20000 },
   ).catch(() => {});
-  check('删除后管理页列表为空', (await admin.locator('.comment').count()) === 0);
+  check('删除根评论后管理页列表为空（回复已级联隐藏）', (await admin.locator('.comment').count()) === 0);
 
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(
@@ -239,6 +312,15 @@ try {
     { timeout: 20000 },
   ).catch(() => {});
   check('删除后前台回到空状态', (await page.locator('[data-comments-list] li').count()) === 0);
+
+  const reactionIds = [rootComment?.id, ...replyIds].filter((id) => Number.isInteger(id));
+  const afterDeleteReactions = reactionIds.length
+    ? await (await fetch(`${ORIGIN}/api/reactions?ids=${reactionIds.join(',')}`)).json()
+    : { counts: {} };
+  const allZero = Object.values(afterDeleteReactions.counts ?? {}).every((counts) =>
+    Object.values(counts).every((value) => value === 0),
+  );
+  check('删除根评论后回复与反应一并消失', allZero, JSON.stringify(afterDeleteReactions.counts ?? {}));
 
   // 接口级断言：CORS 白名单、拒绝未知来源、管理接口鉴权。
   const getAllowed = await fetch(`${ORIGIN}/api/comments?thread=${encodeURIComponent(POST_PATH)}&limit=20`, {

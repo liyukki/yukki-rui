@@ -44,6 +44,9 @@ const SCHEMA = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_comments_thread ON comments (thread, id)',
   'CREATE INDEX IF NOT EXISTS idx_comments_ip ON comments (ip_hash, created_at)',
+  // 旧库升级:parent_id / hidden 用幂等 ALTER 补上,已存在的列在 ensureSchema 里静默跳过。
+  'ALTER TABLE comments ADD COLUMN parent_id INTEGER',
+  'ALTER TABLE comments ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0',
 ];
 
 /** 每个 D1 绑定只建一次表；用 WeakMap 让单测里的多个库互不影响。 */
@@ -53,7 +56,14 @@ export async function ensureSchema(db) {
   const pending = schemaReady.get(db);
   if (pending) return pending;
   const task = (async () => {
-    for (const sql of SCHEMA) await db.prepare(sql).run();
+    for (const sql of SCHEMA) {
+      try {
+        await db.prepare(sql).run();
+      } catch (error) {
+        // CREATE TABLE IF NOT EXISTS 之后的 ALTER 在升级过的库上会报 duplicate column,直接跳过。
+        if (!/duplicate column name/i.test(String(error?.message ?? error))) throw error;
+      }
+    }
   })().catch((error) => {
     schemaReady.delete(db);
     throw error;
@@ -104,7 +114,17 @@ export function validateNewComment(input) {
     return { ok: false, error: 'invalid-website', message: '网址太长了' };
   }
 
-  return { ok: true, value: { thread, author, body, website } };
+  const parentId = normalizeParentId(input.parentId);
+  if (Number.isNaN(parentId)) return { ok: false, error: 'invalid-parent', message: '回复对象不合法' };
+
+  return { ok: true, value: { thread, author, body, website, parentId } };
+}
+
+/** 父评论编号:空 / 缺省 = 根评论;填错(非正整数)返回 NaN,由调用方给出 invalid-parent。 */
+export function normalizeParentId(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : NaN;
 }
 
 export function clampLimit(raw, fallback = LIMITS.pageSize) {
@@ -124,6 +144,7 @@ export function toView(row) {
   const record = row ?? {};
   return {
     id: Number(record.id ?? 0),
+    parentId: record.parent_id == null ? null : Number(record.parent_id),
     author: String(record.author ?? ''),
     body: String(record.body ?? ''),
     website: String(record.website ?? ''),
@@ -212,32 +233,60 @@ export async function onRequestGet(context) {
   const limit = clampLimit(url.searchParams.get('limit'));
   const before = parseId(url.searchParams.get('before'));
 
-  const totalRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM comments WHERE thread = ?').bind(thread).first();
-  const rows = before
-    ? await env.DB.prepare(
-        'SELECT id, author, body, website, created_at FROM comments WHERE thread = ? AND id < ? ORDER BY id DESC LIMIT ?',
-      )
+  // 分页只数根评论;回复跟着所属根评论一起返回,不占分页名额。
+  const totalRow = await env.DB
+    .prepare('SELECT COUNT(*) AS n FROM comments WHERE thread = ? AND parent_id IS NULL AND hidden = 0')
+    .bind(thread)
+    .first();
+
+  const rootSql = `SELECT id, parent_id, author, body, website, created_at, hidden
+    FROM comments WHERE thread = ? AND parent_id IS NULL AND hidden = 0`;
+  const roots = before
+    ? await env.DB
+        .prepare(`${rootSql} AND id < ? ORDER BY id DESC LIMIT ?`)
         .bind(thread, before, limit + 1)
         .all()
-    : await env.DB.prepare(
-        'SELECT id, author, body, website, created_at FROM comments WHERE thread = ? ORDER BY id DESC LIMIT ?',
-      )
-        .bind(thread, limit + 1)
-        .all();
+    : await env.DB.prepare(`${rootSql} ORDER BY id DESC LIMIT ?`).bind(thread, limit + 1).all();
 
-  const list = Array.isArray(rows?.results) ? rows.results : [];
-  const items = list.slice(0, limit).map(toView);
-  const nextBefore = list.length > limit && items.length > 0 ? items[items.length - 1].id : null;
+  const rootRows = Array.isArray(roots?.results) ? roots.results : [];
+  const visibleRoots = rootRows.slice(0, limit);
+  const repliesByParent = new Map();
+
+  if (visibleRoots.length > 0) {
+    const placeholders = visibleRoots.map(() => '?').join(',');
+    const replyRows = await env.DB
+      .prepare(`SELECT id, parent_id, author, body, website, created_at
+        FROM comments WHERE hidden = 0 AND parent_id IN (${placeholders}) ORDER BY id ASC`)
+      .bind(...visibleRoots.map((row) => Number(row.id)))
+      .all();
+    for (const row of Array.isArray(replyRows?.results) ? replyRows.results : []) {
+      const view = toView(row);
+      const replies = repliesByParent.get(view.parentId) ?? [];
+      replies.push(view);
+      repliesByParent.set(view.parentId, replies);
+    }
+  }
+
+  const items = visibleRoots.map((row) => {
+    const view = toView(row);
+    const replies = repliesByParent.get(view.id) ?? [];
+    return { ...view, replies, replyCount: replies.length };
+  });
+  const nextBefore = rootRows.length > limit && items.length > 0 ? items[items.length - 1].id : null;
   return jsonResponse(request, { items, total: Number(totalRow?.n ?? 0), nextBefore }, 200);
 }
 
-async function isRateLimited(db, ipHash, now) {
-  const windowStart = new Date(now - LIMITS.rateWindowMs).toISOString();
-  const recent = await db
-    .prepare('SELECT id FROM comments WHERE ip_hash = ? AND created_at > ? LIMIT 1')
-    .bind(ipHash, windowStart)
-    .first();
-  if (recent) return true;
+async function isRateLimited(db, ipHash, now, options = {}) {
+  // 回复不占用根评论的 60 秒窗口:否则刚发完根评论就无法在楼下回复自己人。
+  // 24 小时总量仍然共用,防止用回复绕过总配额。
+  if (!options.isReply) {
+    const windowStart = new Date(now - LIMITS.rateWindowMs).toISOString();
+    const recent = await db
+      .prepare('SELECT id FROM comments WHERE ip_hash = ? AND created_at > ? LIMIT 1')
+      .bind(ipHash, windowStart)
+      .first();
+    if (recent) return true;
+  }
 
   const dayStart = new Date(now - LIMITS.rateDayMs).toISOString();
   const dayRow = await db
@@ -287,21 +336,34 @@ export async function onRequestPost(context) {
   await ensureSchema(env.DB);
   const now = Date.now();
   const ipHash = await sha256Hex(`${clientIp(request)}:${env.COMMENTS_SALT || 'yukki-rui'}`);
-  if (await isRateLimited(env.DB, ipHash, now)) {
+  if (await isRateLimited(env.DB, ipHash, now, { isReply: value.parentId !== null })) {
     return errorResponse(request, 429, 'rate-limited', '发得太快了，稍后再试');
+  }
+
+  let parentId = value.parentId;
+  if (parentId !== null) {
+    const parent = await env.DB.prepare('SELECT id, thread, parent_id, hidden FROM comments WHERE id = ?')
+      .bind(parentId)
+      .first();
+    if (!parent || parent.thread !== value.thread || parent.hidden === 1 || parent.parent_id !== null) {
+      return errorResponse(request, 400, 'invalid-parent', '回复对象不合法');
+    }
   }
 
   const createdAt = new Date(now).toISOString();
   const userAgent = (request.headers.get('User-Agent') || '').slice(0, 200);
   const inserted = await env.DB.prepare(
-    'INSERT INTO comments (thread, author, body, website, created_at, ip_hash, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO comments (thread, author, body, website, created_at, ip_hash, user_agent, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   )
-    .bind(value.thread, value.author, value.body, value.website, createdAt, ipHash, userAgent)
+    .bind(value.thread, value.author, value.body, value.website, createdAt, ipHash, userAgent, parentId)
     .run();
 
   const id = Number(inserted?.meta?.last_row_id ?? 0);
   const row = id
-    ? await env.DB.prepare('SELECT id, author, body, website, created_at FROM comments WHERE id = ?').bind(id).first()
+    ? await env.DB
+        .prepare('SELECT id, parent_id, author, body, website, created_at FROM comments WHERE id = ?')
+        .bind(id)
+        .first()
     : null;
 
   return jsonResponse(request, { item: row ? toView(row) : { ...value, createdAt, id: 0 } }, 201);

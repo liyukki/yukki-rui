@@ -421,8 +421,8 @@
               setStatus(`删除失败（HTTP ${response.status}）。`);
               return;
             }
-            comments = comments.filter((entry) => entry.id !== item.id);
-            render();
+            // 删除根评论会在服务端级联隐藏其回复；重新拉取才能让管理列表同步。
+            await load();
             setStatus(`已删除 #${item.id}（${Number(data.deleted) || 0} 行）。`);
           } catch {
             setStatus('网络错误，删除失败。');

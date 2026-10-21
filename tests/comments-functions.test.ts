@@ -29,10 +29,13 @@ interface TestEnv {
 
 interface CommentItem {
   id: number;
+  parentId: number | null;
   author: string;
   body: string;
   website: string;
   createdAt: string;
+  replies?: CommentItem[];
+  replyCount?: number;
 }
 
 interface ListBody {
@@ -116,7 +119,7 @@ describe('validateNewComment：服务端说了算', () => {
   it('规整昵称与正文（去首尾空白、保留换行）', () => {
     const result = validateNewComment({ thread: THREAD, author: ' 路人 ', body: ' 写得好\n谢谢 ' });
     expect(result.ok).toBe(true);
-    expect(result.value).toEqual({ thread: THREAD, author: '路人', body: '写得好\n谢谢', website: '' });
+    expect(result.value).toEqual({ thread: THREAD, author: '路人', body: '写得好\n谢谢', website: '', parentId: null });
   });
 
   it('昵称不能为空或超长', () => {
@@ -162,7 +165,7 @@ describe('小助手', () => {
       ip_hash: 'secret',
       user_agent: 'ua',
     });
-    expect(view).toEqual({ id: 1, author: 'a', body: 'b', website: '', createdAt: '2026-10-18T00:00:00.000Z' });
+    expect(view).toEqual({ id: 1, parentId: null, author: 'a', body: 'b', website: '', createdAt: '2026-10-18T00:00:00.000Z' });
   });
 
   it('CORS 只回显白名单来源', () => {
@@ -229,6 +232,73 @@ describe('GET /api/comments', () => {
     expect(second.nextBefore).toBeNull();
   });
 
+  it('读取时根评论按分页返回,回复平铺在自己下面', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+    await createComment({
+      request: postRequest(newComment({ author: 'b', body: 'r1', parentId: rootId }), {
+        'CF-Connecting-IP': '198.51.100.41',
+      }),
+      env,
+    });
+    const list = await listComments({ request: request(`${BASE}/api/comments?thread=${encodeURIComponent(THREAD)}`), env });
+    const body = (await list.json()) as ListBody;
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].replies?.map((reply) => reply.body)).toEqual(['r1']);
+    expect(body.items[0].replyCount).toBe(1);
+  });
+
+  it('回复不单独占用根评论分页名额', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+    await createComment({
+      request: postRequest(newComment({ author: 'b', body: 'r1', parentId: rootId }), {
+        'CF-Connecting-IP': '198.51.100.42',
+      }),
+      env,
+    });
+    const list = await listComments({ request: request(`${BASE}/api/comments?thread=${encodeURIComponent(THREAD)}&limit=1`), env });
+    const body = (await list.json()) as ListBody;
+    expect(body.total).toBe(1);
+    expect(body.nextBefore).toBeNull();
+  });
+
+  it('删除根评论会级联隐藏其回复', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+    await createComment({
+      request: postRequest(newComment({ author: 'b', body: 'r1', parentId: rootId }), {
+        'CF-Connecting-IP': '198.51.100.43',
+      }),
+      env,
+    });
+    const del = await deleteComment({
+      request: request(`${BASE}/api/comments-admin?id=${rootId}`, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer test-token' },
+      }),
+      env: { ...env, COMMENTS_ADMIN_TOKEN: 'test-token' },
+    });
+    expect(del.status).toBe(200);
+    const list = await listComments({ request: request(`${BASE}/api/comments?thread=${encodeURIComponent(THREAD)}`), env });
+    const body = (await list.json()) as ListBody;
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it('隐藏的评论不出现在公开列表', async () => {
+    const env = withDb();
+    await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    env.DB!.raw.prepare('UPDATE comments SET hidden = 1').run();
+    const list = await listComments({ request: request(`${BASE}/api/comments?thread=${encodeURIComponent(THREAD)}`), env });
+    const body = (await list.json()) as ListBody;
+    expect(body.items).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
   it('不同 thread 的评论互不串台', async () => {
     const env = withDb();
     await seed(env, 1, THREAD);
@@ -282,6 +352,24 @@ describe('POST /api/comments', () => {
     expect(((await second.json()) as { error: string }).error).toBe('rate-limited');
   });
 
+  it('同一 IP 发完根评论后可以立即回复,但仍不能再发根评论', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+
+    const reply = await createComment({
+      request: postRequest(newComment({ author: 'a', body: 'reply', parentId: rootId })),
+      env,
+    });
+    expect(reply.status).toBe(201);
+
+    const secondRoot = await createComment({
+      request: postRequest(newComment({ author: 'a', body: 'another root' })),
+      env,
+    });
+    expect(secondRoot.status).toBe(429);
+  });
+
   it('换一个 IP 就能继续发', async () => {
     const env = withDb();
     const first = await createComment({ request: postRequest(newComment()), env });
@@ -320,6 +408,68 @@ describe('POST /api/comments', () => {
     });
     expect(response.status).toBe(201);
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://liyukki.github.io');
+  });
+
+  it('回复指向同 thread 的根评论时写入成功', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+    const reply = await createComment({
+      request: postRequest(newComment({ author: 'b', body: 'reply', parentId: rootId }), {
+        'CF-Connecting-IP': '198.51.100.31',
+      }),
+      env,
+    });
+    expect(reply.status).toBe(201);
+    const body = (await reply.json()) as CreateBody;
+    expect(body.item.parentId).toBe(rootId);
+  });
+
+  it('回复不存在的父评论被拒绝', async () => {
+    const env = withDb();
+    const reply = await createComment({
+      request: postRequest(newComment({ author: 'b', body: 'reply', parentId: 9999 }), {
+        'CF-Connecting-IP': '198.51.100.32',
+      }),
+      env,
+    });
+    expect(reply.status).toBe(400);
+    expect(((await reply.json()) as { error: string }).error).toBe('invalid-parent');
+  });
+
+  it('回复属于其他 thread 的评论被拒绝', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+    const reply = await createComment({
+      request: postRequest(newComment({ thread: '/en/posts/other/', author: 'b', body: 'reply', parentId: rootId }), {
+        'CF-Connecting-IP': '198.51.100.33',
+      }),
+      env,
+    });
+    expect(reply.status).toBe(400);
+    expect(((await reply.json()) as { error: string }).error).toBe('invalid-parent');
+  });
+
+  it('不能回复一条回复（只允许单层）', async () => {
+    const env = withDb();
+    const root = await createComment({ request: postRequest(newComment({ author: 'a', body: 'root' })), env });
+    const rootId = ((await root.json()) as CreateBody).item.id;
+    const first = await createComment({
+      request: postRequest(newComment({ author: 'b', body: 'r1', parentId: rootId }), {
+        'CF-Connecting-IP': '198.51.100.34',
+      }),
+      env,
+    });
+    const firstId = ((await first.json()) as CreateBody).item.id;
+    const second = await createComment({
+      request: postRequest(newComment({ author: 'c', body: 'r2', parentId: firstId }), {
+        'CF-Connecting-IP': '198.51.100.35',
+      }),
+      env,
+    });
+    expect(second.status).toBe(400);
+    expect(((await second.json()) as { error: string }).error).toBe('invalid-parent');
   });
 
   it('坏 JSON → 400', async () => {

@@ -17,6 +17,26 @@ interface Props {
 
 const { lang } = Astro.props;
 const t = UI[lang];
+// 这些文案键由主代理统一补进 src/consts.ts；在补齐前用本地兜底，保证组件可独立构建。
+const rawT = t as unknown as Record<string, string | undefined>;
+const extraFallback =
+  lang === 'en'
+    ? {
+        reply: 'Reply',
+        replyTo: 'Reply to',
+        reactionLike: 'Like',
+        reactionLove: 'Love',
+        reactionUseful: 'Useful',
+        replyPosted: 'Reply posted.',
+      }
+    : {
+        reply: '回复',
+        replyTo: '回复',
+        reactionLike: '赞',
+        reactionLove: '喜欢',
+        reactionUseful: '有用',
+        replyPosted: '回复成功。',
+      };
 const thread = commentThread(Astro.url.pathname, import.meta.env.BASE_URL);
 const endpoint = commentsEndpoint(SITE.url, COMMENTS.origin);
 const i18n = {
@@ -33,6 +53,16 @@ const i18n = {
   errorRate: t.commentsErrorRate,
   errorUnavailable: t.commentsErrorUnavailable,
   errorFailed: t.commentsErrorFailed,
+  name: t.commentsName,
+  website: t.commentsWebsite,
+  body: t.commentsBody,
+  bodyPlaceholder: t.commentsBodyPlaceholder,
+  reply: rawT.commentsReply ?? extraFallback.reply,
+  replyTo: rawT.commentsReplyTo ?? extraFallback.replyTo,
+  reactionLike: rawT.commentsReactionLike ?? extraFallback.reactionLike,
+  reactionLove: rawT.commentsReactionLove ?? extraFallback.reactionLove,
+  reactionUseful: rawT.commentsReactionUseful ?? extraFallback.reactionUseful,
+  replyPosted: rawT.commentsReplyPosted ?? extraFallback.replyPosted,
 };
 ---
 
@@ -96,16 +126,20 @@ const i18n = {
 )}
 
 <script>
-  import { commentsApiUrl, formatCommentTime } from '../lib/comments';
+  import { commentsApiUrl, formatCommentTime, reactionsEndpoint } from '../lib/comments';
 
   type Lang = 'zh' | 'en';
+  type ReactionType = 'like' | 'love' | 'useful';
 
   interface CommentItem {
     id: number;
+    parentId: number | null;
     author: string;
     body: string;
     website: string;
     createdAt: string;
+    replies?: CommentItem[];
+    replyCount?: number;
   }
 
   interface ListResponse {
@@ -119,7 +153,28 @@ const i18n = {
     error?: string;
   }
 
+  interface ReactionState {
+    counts: Record<string, number>;
+    mine: Set<string>;
+  }
+
+  interface ReactionsGetResponse {
+    counts?: Record<string, Record<string, number>>;
+    mine?: Record<string, string[]>;
+  }
+
+  interface ReactionsPostResponse {
+    counts?: Record<string, number>;
+    mine?: string[];
+    error?: string;
+  }
+
+  const REACTION_TYPES: ReactionType[] = ['like', 'love', 'useful'];
   const NICKNAME_KEY = 'comments-author';
+
+  function emptyReactionCounts(): Record<string, number> {
+    return Object.fromEntries(REACTION_TYPES.map((reaction) => [reaction, 0]));
+  }
 
   /**
    * 初始化评论区。可重复调用：View Transitions 换页后重新按当前 DOM 绑定。
@@ -132,6 +187,7 @@ const i18n = {
     const lang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
     const i18n = JSON.parse(root.dataset.i18n ?? '{}') as Record<string, string>;
     const api = commentsApiUrl(window.location.origin, root.dataset.api ?? '');
+    const reactionsApi = reactionsEndpoint(api);
     const thread = root.dataset.thread ?? '/';
     const pageSize = Number(root.dataset.pageSize) || 20;
     const startedAt = Date.now();
@@ -146,11 +202,21 @@ const i18n = {
     const nameInput = form?.querySelector<HTMLInputElement>('input[name="author"]');
     const bodyInput = form?.querySelector<HTMLTextAreaElement>('textarea[name="body"]');
 
+    const replyLabel = i18n.reply ?? 'Reply';
+    const reactionLabels: Record<ReactionType, string> = {
+      like: i18n.reactionLike ?? 'Like',
+      love: i18n.reactionLove ?? 'Love',
+      useful: i18n.reactionUseful ?? 'Useful',
+    };
+
     let nextBefore: number | null = null;
     let total = 0;
     let childCount = 0;
     let loading = false;
     let posting = false;
+    let openReply: { rootId: number; slot: HTMLElement; form: HTMLFormElement } | null = null;
+
+    const reactionState = new Map<number, ReactionState>();
 
     const setStatus = (text: string) => {
       if (status) status.textContent = text;
@@ -166,9 +232,272 @@ const i18n = {
     };
     const firstChar = (author: string) => [...author.trim()][0] ?? '?';
 
-    function renderItem(item: CommentItem): HTMLLIElement {
+    function ensureReactionState(commentId: number): ReactionState {
+      let state = reactionState.get(commentId);
+      if (!state) {
+        state = { counts: emptyReactionCounts(), mine: new Set<string>() };
+        reactionState.set(commentId, state);
+      }
+      return state;
+    }
+
+    function applyReactionState(commentId: number): void {
+      const state = ensureReactionState(commentId);
+      root!
+        .querySelectorAll<HTMLButtonElement>(`.comment-reaction[data-comment-id="${commentId}"]`)
+        .forEach((button) => {
+          const reaction = button.dataset.reaction as ReactionType | undefined;
+          if (!reaction) return;
+          const active = state.mine.has(reaction);
+          button.setAttribute('aria-pressed', String(active));
+          button.classList.toggle('is-active', active);
+          const countEl = button.querySelector<HTMLElement>('.reaction-count');
+          if (countEl) countEl.textContent = String(state.counts[reaction] ?? 0);
+        });
+    }
+
+    async function toggleReaction(commentId: number, reaction: ReactionType): Promise<void> {
+      const state = ensureReactionState(commentId);
+      const active = !state.mine.has(reaction);
+      const buttons = root!.querySelectorAll<HTMLButtonElement>(
+        `.comment-reaction[data-comment-id="${commentId}"]`,
+      );
+      buttons.forEach((button) => {
+        button.disabled = true;
+      });
+      try {
+        const response = await fetch(new URL(reactionsApi, window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commentId, reaction, active }),
+        });
+        const result = (await response.json().catch(() => ({}))) as ReactionsPostResponse;
+        if (response.ok && result.counts) {
+          reactionState.set(commentId, {
+            counts: { ...emptyReactionCounts(), ...result.counts },
+            mine: new Set(result.mine ?? []),
+          });
+          applyReactionState(commentId);
+        } else {
+          setStatus(messageFor(response.status, result.error));
+        }
+      } catch {
+        setStatus(i18n.errorFailed ?? '');
+      } finally {
+        buttons.forEach((button) => {
+          button.disabled = false;
+        });
+      }
+    }
+
+    async function loadReactionsFor(items: CommentItem[]): Promise<void> {
+      const ids = [...new Set(items.flatMap((item) => [item.id, ...(item.replies ?? []).map((reply) => reply.id)]))];
+      for (let offset = 0; offset < ids.length; offset += 50) {
+        const chunk = ids.slice(offset, offset + 50);
+        try {
+          const url = new URL(reactionsApi, window.location.origin);
+          url.searchParams.set('ids', chunk.join(','));
+          const response = await fetch(url, { headers: { Accept: 'application/json' } });
+          if (!response.ok) continue;
+          const data = (await response.json()) as ReactionsGetResponse;
+          for (const id of chunk) {
+            reactionState.set(id, {
+              counts: { ...emptyReactionCounts(), ...(data.counts?.[String(id)] ?? {}) },
+              mine: new Set(data.mine?.[String(id)] ?? []),
+            });
+            applyReactionState(id);
+          }
+        } catch {
+          /* 反应读取失败不阻塞评论主体显示，按钮仍可点击重试。 */
+        }
+      }
+    }
+
+    function renderReactions(item: CommentItem): HTMLDivElement {
+      const group = document.createElement('div');
+      group.className = 'comment-reactions';
+      const state = ensureReactionState(item.id);
+      for (const reaction of REACTION_TYPES) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'comment-reaction';
+        button.dataset.commentId = String(item.id);
+        button.dataset.reaction = reaction;
+        button.title = reactionLabels[reaction];
+        button.setAttribute('aria-pressed', String(state.mine.has(reaction)));
+
+        const label = document.createElement('span');
+        label.className = 'reaction-label';
+        label.textContent = reactionLabels[reaction];
+        const countEl = document.createElement('span');
+        countEl.className = 'reaction-count';
+        countEl.textContent = String(state.counts[reaction] ?? 0);
+        button.append(label, countEl);
+        button.addEventListener('click', () => void toggleReaction(item.id, reaction));
+        group.append(button);
+      }
+      return group;
+    }
+
+    function updateReplyButton(rootId: number, replyCount: number): void {
+      const button = list?.querySelector<HTMLButtonElement>(
+        `.comment[data-reply="0"][data-comment-id="${rootId}"] .comment-reply-button`,
+      );
+      if (button) button.textContent = `${replyLabel}${replyCount > 0 ? ` (${replyCount})` : ''}`;
+    }
+
+    function closeReplyForm(): void {
+      if (!openReply) return;
+      openReply.slot.replaceChildren();
+      openReply = null;
+    }
+
+    function createField(labelText: string, control: HTMLInputElement | HTMLTextAreaElement): HTMLLabelElement {
+      const label = document.createElement('label');
+      const span = document.createElement('span');
+      span.textContent = labelText;
+      label.append(span, control);
+      return label;
+    }
+
+    function createReplyForm(rootItem: CommentItem, rootLi: HTMLLIElement): HTMLFormElement {
+      const replyForm = document.createElement('form');
+      replyForm.className = 'comment-reply-form';
+      replyForm.noValidate = true;
+
+      const heading = document.createElement('p');
+      heading.className = 'comment-reply-heading';
+      heading.textContent = `${i18n.replyTo ?? 'Reply to'} ${rootItem.author}`;
+
+      const author = document.createElement('input');
+      author.type = 'text';
+      author.name = 'author';
+      author.maxLength = 40;
+      author.required = true;
+      author.setAttribute('autocomplete', 'nickname');
+      author.value = nameInput?.value || '';
+      const website = document.createElement('input');
+      website.type = 'url';
+      website.name = 'website';
+      website.maxLength = 200;
+      website.setAttribute('autocomplete', 'url');
+      const body = document.createElement('textarea');
+      body.name = 'body';
+      body.rows = 3;
+      body.maxLength = 2000;
+      body.required = true;
+      body.placeholder = i18n.bodyPlaceholder ?? '';
+
+      const fields = document.createElement('div');
+      fields.className = 'comment-fields';
+      fields.append(
+        createField(i18n.name ?? '', author),
+        createField(i18n.website ?? '', website),
+      );
+
+      const bodyField = createField(i18n.body ?? '', body);
+      bodyField.className = 'comment-body-field';
+
+      const trap = document.createElement('div');
+      trap.className = 'comment-trap';
+      trap.setAttribute('aria-hidden', 'true');
+      const trapLabel = document.createElement('label');
+      trapLabel.textContent = 'Website';
+      const trapInput = document.createElement('input');
+      trapInput.type = 'text';
+      trapInput.name = 'trap';
+      trapInput.tabIndex = -1;
+      trapInput.setAttribute('autocomplete', 'off');
+      trapLabel.append(trapInput);
+      trap.append(trapLabel);
+
+      const actions = document.createElement('div');
+      actions.className = 'comment-actions';
+      const submitButton = document.createElement('button');
+      submitButton.type = 'submit';
+      submitButton.className = 'btn-primary';
+      submitButton.textContent = i18n.submit ?? 'Post';
+      const replyStatus = document.createElement('p');
+      replyStatus.className = 'comments-status';
+      replyStatus.setAttribute('role', 'status');
+      replyStatus.setAttribute('aria-live', 'polite');
+      actions.append(submitButton, replyStatus);
+
+      const formStartedAt = Date.now();
+      let replyPosting = false;
+
+      replyForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (replyPosting) return;
+        const data = new FormData(replyForm);
+        const payload = {
+          thread,
+          author: String(data.get('author') ?? ''),
+          body: String(data.get('body') ?? ''),
+          website: String(data.get('website') ?? ''),
+          trap: String(data.get('trap') ?? ''),
+          elapsed: Date.now() - formStartedAt,
+          parentId: rootItem.id,
+        };
+
+        replyPosting = true;
+        submitButton.disabled = true;
+        const originalLabel = submitButton.textContent ?? '';
+        submitButton.textContent = i18n.submitting ?? '';
+        replyStatus.textContent = '';
+
+        try {
+          const response = await fetch(new URL(api, window.location.origin), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const result = (await response.json().catch(() => ({}))) as PostResponse;
+          if (response.status === 201 && result.item) {
+            const replies = rootLi.querySelector<HTMLUListElement>('.comment-replies');
+            if (replies) {
+              replies.append(renderItem({ ...result.item, replies: [], replyCount: 0 }, { isReply: true }));
+              updateReplyButton(rootItem.id, replies.querySelectorAll(':scope > .comment').length);
+              void loadReactionsFor([result.item]);
+            }
+            body.value = '';
+            replyStatus.textContent = i18n.replyPosted ?? '';
+          } else {
+            replyStatus.textContent = messageFor(response.status, result.error);
+          }
+        } catch {
+          replyStatus.textContent = i18n.errorFailed ?? '';
+        } finally {
+          replyPosting = false;
+          submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
+        }
+      });
+
+      replyForm.append(heading, fields, bodyField, trap, actions);
+      return replyForm;
+    }
+
+    function openReplyForm(rootItem: CommentItem, rootLi: HTMLLIElement): void {
+      const slot = rootLi.querySelector<HTMLElement>('.comment-reply-slot');
+      if (!slot) return;
+      if (openReply?.rootId === rootItem.id) {
+        closeReplyForm();
+        return;
+      }
+      closeReplyForm();
+      const replyForm = createReplyForm(rootItem, rootLi);
+      openReply = { rootId: rootItem.id, slot, form: replyForm };
+      slot.append(replyForm);
+      replyForm.querySelector<HTMLTextAreaElement>('textarea[name="body"]')?.focus();
+    }
+
+    function renderItem(item: CommentItem, options: { isReply?: boolean } = {}): HTMLLIElement {
+      const isReply = options.isReply === true;
       const itemEl = document.createElement('li');
-      itemEl.className = 'comment';
+      itemEl.className = isReply ? 'comment comment-reply' : 'comment';
+      itemEl.dataset.commentId = String(item.id);
+      itemEl.dataset.reply = isReply ? '1' : '0';
 
       const avatar = document.createElement('span');
       avatar.className = 'comment-avatar';
@@ -205,17 +534,45 @@ const i18n = {
       body.className = 'comment-body';
       body.textContent = item.body;
 
-      main.append(meta, body);
+      const actions = document.createElement('div');
+      actions.className = 'comment-actions-row';
+      if (!isReply) {
+        const replyButton = document.createElement('button');
+        replyButton.type = 'button';
+        replyButton.className = 'comment-reply-button';
+        const replyCount = Array.isArray(item.replies) ? item.replies.length : Number(item.replyCount ?? 0);
+        replyButton.textContent = `${replyLabel}${replyCount > 0 ? ` (${replyCount})` : ''}`;
+        replyButton.addEventListener('click', () => openReplyForm(item, itemEl));
+        actions.append(replyButton);
+      }
+      actions.append(renderReactions(item));
+
+      main.append(meta, body, actions);
+
+      if (!isReply) {
+        const replies = document.createElement('ul');
+        replies.className = 'comment-replies';
+        replies.dataset.repliesFor = String(item.id);
+        for (const reply of item.replies ?? []) {
+          replies.append(renderItem(reply, { isReply: true }));
+        }
+        const slot = document.createElement('div');
+        slot.className = 'comment-reply-slot';
+        main.append(replies, slot);
+      }
+
       itemEl.append(avatar, main);
+      applyReactionState(item.id);
       return itemEl;
     }
 
     function appendItems(items: CommentItem[], atTop: boolean) {
       if (!list) return;
-      const nodes = items.map(renderItem);
+      const nodes = items.map((item) => renderItem(item));
       if (atTop) list.prepend(...nodes);
       else list.append(...nodes);
       childCount += nodes.length;
+      void loadReactionsFor(items);
     }
 
     async function load(before?: number) {
@@ -395,6 +752,10 @@ const i18n = {
     border-bottom: 1px dashed var(--line);
   }
 
+  #comments .comment-main {
+    min-width: 0;
+  }
+
   #comments .comment-avatar {
     display: grid;
     place-items: center;
@@ -446,6 +807,93 @@ const i18n = {
     line-height: 1.7;
   }
 
+  #comments .comment-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  #comments .comment-reply-button,
+  #comments .comment-reaction {
+    padding: 0.2em 0.65em;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: var(--fs-tiny);
+    cursor: pointer;
+    transition: border-color var(--dur), color var(--dur), background var(--dur);
+  }
+
+  #comments .comment-reply-button:hover,
+  #comments .comment-reaction:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  #comments .comment-reaction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+  }
+
+  #comments .comment-reaction.is-active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+
+  #comments .comment-reaction:disabled {
+    opacity: 0.6;
+    cursor: progress;
+  }
+
+  #comments .reaction-count {
+    font-family: var(--font-mono);
+  }
+
+  #comments .comment-replies {
+    list-style: none;
+    margin: var(--space-3) 0 0;
+    padding: 0 0 0 var(--space-3);
+    border-left: 2px solid var(--line);
+  }
+
+  #comments .comment-reply {
+    grid-template-columns: 1.9rem 1fr;
+    padding: var(--space-2) 0;
+    border-bottom: 0;
+  }
+
+  #comments .comment-reply .comment-avatar {
+    width: 1.9rem;
+    height: 1.9rem;
+    font-size: var(--fs-tiny);
+  }
+
+  #comments .comment-reply-slot:empty {
+    display: none;
+  }
+
+  #comments .comment-reply-form {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-3);
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--card) 82%, var(--bg));
+  }
+
+  #comments .comment-reply-heading {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
   #comments .comments-more,
   #comments .comment-retry {
     margin-top: var(--space-3);
@@ -466,10 +914,16 @@ const i18n = {
     transform: translateY(-2px);
   }
 
-  #comments .comment-form {
+  #comments .comment-form,
+  #comments .comment-reply-form {
     display: grid;
     gap: var(--space-3);
     margin-top: var(--space-4);
+  }
+
+  #comments .comment-reply-form {
+    margin-top: var(--space-2);
+    gap: var(--space-2);
   }
 
   #comments .comment-fields {
@@ -478,7 +932,8 @@ const i18n = {
     gap: var(--space-3);
   }
 
-  #comments .comment-form label {
+  #comments .comment-form label,
+  #comments .comment-reply-form label {
     display: grid;
     gap: var(--space-1);
     color: var(--text-dim);
@@ -486,7 +941,9 @@ const i18n = {
   }
 
   #comments .comment-form input,
-  #comments .comment-form textarea {
+  #comments .comment-form textarea,
+  #comments .comment-reply-form input,
+  #comments .comment-reply-form textarea {
     padding: 0.55em 0.7em;
     border: 2px solid var(--line);
     border-radius: var(--radius);
@@ -497,13 +954,16 @@ const i18n = {
   }
 
   #comments .comment-form input:focus,
-  #comments .comment-form textarea:focus {
+  #comments .comment-form textarea:focus,
+  #comments .comment-reply-form input:focus,
+  #comments .comment-reply-form textarea:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
   }
 
-  #comments .comment-form textarea {
+  #comments .comment-form textarea,
+  #comments .comment-reply-form textarea {
     min-height: 6rem;
     resize: vertical;
   }
@@ -563,6 +1023,10 @@ const i18n = {
       width: 1.9rem;
       height: 1.9rem;
       font-size: var(--fs-tiny);
+    }
+
+    #comments .comment-replies {
+      padding-left: var(--space-2);
     }
   }
 </style>

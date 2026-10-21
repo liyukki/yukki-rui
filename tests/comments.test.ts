@@ -4,6 +4,7 @@ import {
   commentsApiUrl,
   commentsEndpoint,
   formatCommentTime,
+  reactionsEndpoint,
 } from '../src/lib/comments';
 
 describe('commentThread：两种部署下的同一篇文章必须得到同一个 thread', () => {
@@ -56,6 +57,18 @@ describe('commentsEndpoint：构建期决定相对还是绝对地址', () => {
   it('主站地址带尾斜杠也不会拼出双斜杠', () => {
     expect(commentsEndpoint('https://liyukki.github.io', 'https://yukki-rui.pages.dev/')).toBe(
       'https://yukki-rui.pages.dev/api/comments',
+    );
+  });
+});
+
+describe('reactionsEndpoint：由评论地址推导同源 reactions 地址', () => {
+  it('同源相对地址与跨域绝对地址都能正确推导', () => {
+    expect(reactionsEndpoint('')).toBe('/api/reactions');
+    expect(reactionsEndpoint('https://yukki-rui.pages.dev/api/comments')).toBe(
+      'https://yukki-rui.pages.dev/api/reactions',
+    );
+    expect(reactionsEndpoint('https://yukki-rui.pages.dev/api/comments/')).toBe(
+      'https://yukki-rui.pages.dev/api/reactions',
     );
   });
 });

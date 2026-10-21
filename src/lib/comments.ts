@@ -69,6 +69,13 @@ export function commentsApiUrl(pageOrigin: string, buildEndpoint: string): strin
   return endpoint;
 }
 
+/** 由评论接口地址推导同源的 reactions 地址。 */
+export function reactionsEndpoint(commentsApiBase: string): string {
+  const base = String(commentsApiBase ?? '').trim();
+  if (!base) return '/api/reactions';
+  return base.replace(/\/api\/comments\/?$/, '/api/reactions');
+}
+
 /** 评论时间文案；非法输入返回空串（UI 会跳过时间不显示）。 */
 export function formatCommentTime(iso: string, lang: Lang): string {
   const date = new Date(String(iso ?? ''));
