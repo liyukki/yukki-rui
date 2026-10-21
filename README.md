@@ -7,6 +7,11 @@
 文章页有**免登录评论区**：读者填昵称即可留言，数据存在 Cloudflare D1，站长在 <https://yukki-rui.pages.dev/admin/comments/> 删除；配置与使用见 [使用说明第 11 节](docs/usage-guide.md)。
 
 文章页还有**阅读小工具**：自动目录、阅读时长、顶部阅读进度、代码块一键复制、图片放大、上一篇/下一篇（见[使用说明第 12 节](docs/usage-guide.md)）。
+文章页现在还有**阅读设置与相关文章**：读者可以调字号、行高、正文宽度（保存在本地，刷新不丢），文章底部按标签重合度推荐最多 3 篇同语言旧文（见[使用说明第 12 节](docs/usage-guide.md)）。
+
+写作侧支持**定时发布与精选置顶**：`publishAt` 到点后由 GitHub Actions 每 30 分钟检查并触发重建；`featured: true` 只影响首页列表顺序，归档与 RSS 保持纯时间序（见[使用说明第 2.7–2.9 节](docs/usage-guide.md)）。
+
+评论区支持**单层回复与三种表情反应**（赞 / 喜欢 / 有用）。回复仍免登录；删除根评论会级联隐藏其回复；反应不触发通知（见[使用说明第 11 节](docs/usage-guide.md)）。
 
 页头还有**归档与站内搜索**：归档按年份翻旧文；搜索用 Pagefind 在构建时生成静态索引，纯浏览器检索、不需要服务器（见[使用说明第 13 节](docs/usage-guide.md)）。
 
@@ -51,7 +56,7 @@ npm run dev
 | `npm run check:cms-oauth` | 可选：用真实 Sveltia 客户端在本地跑一遍后台登录握手（需 playwright；不参与发布检查）|
 | `npm run check:comments` | 可选：用 wrangler 本地 Pages 运行时 + 真实 D1 模拟跑评论区端到端（发评论/XSS/限流/管理删除/CORS；需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run check:comments-live` | 可选：对线上两个站点做评论区只读检查（渲染、接口、CORS、管理页；加 `-- --write` 且设 `COMMENTS_ADMIN_TOKEN` 时再跑一次发→查→删闭环）|
-| `npm run check:reading` | 可选：阅读体验端到端检查（本地跑 `dist/`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可对线上部署跑），覆盖目录、阅读时长、上下篇、进度条、返回顶部、代码复制、灯箱与 View Transitions（需 playwright 与先 `npm run build`；不参与发布检查）|
+| `npm run check:reading` | 可选：阅读体验端到端检查（本地跑 `dist/`；设 `LIVE_ORIGIN`/`LIVE_BASE` 可对线上部署跑），覆盖目录、阅读时长、上下篇、进度条、返回顶部、代码复制、灯箱、阅读设置、相关文章与 View Transitions（需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run check:search` | 可选：搜索与归档端到端检查（归档分组、Pagefind 检索与索引隔离、无结果文案、移动端；需 playwright 与先 `npm run build`；不参与发布检查）|
 | `npm run verify` | 类型、单测、双路径与内容集成检查，适用于当前数据层阶段 |
 | `npm run verify:frontend` | 上述检查加当前构建、链接检查、分享图/结构化数据与前端必需路由检查 |
