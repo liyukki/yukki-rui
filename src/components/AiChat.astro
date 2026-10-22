@@ -473,14 +473,11 @@ const i18n = {
     background: transparent;
     cursor: pointer;
     pointer-events: auto;
-    filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.22));
-    animation: ai-chat-bob 3.2s ease-in-out infinite;
-    transition: transform var(--dur) var(--ease-pop), filter var(--dur);
+    transition: transform var(--dur) var(--ease-pop);
   }
 
   #ai-chat .ai-chat-launcher:hover {
     transform: translateY(-4px) scale(1.03);
-    filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.28));
   }
 
   #ai-chat .ai-chat-launcher:active {
@@ -489,27 +486,42 @@ const i18n = {
 
   #ai-chat .ai-chat-launcher img {
     position: relative;
+    z-index: 1;
     display: block;
     width: 86px;
     height: auto;
+    filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.09));
+    animation: ai-chat-bob 3.2s ease-in-out infinite;
+    transition: filter var(--dur);
   }
 
-  #ai-chat .ai-chat-launcher .ai-chat-static,
-  #ai-chat .ai-chat-launcher .ai-chat-launcher-halo {
+  #ai-chat .ai-chat-launcher:hover img {
+    filter: drop-shadow(0 5px 5px rgba(0, 0, 0, 0.12));
+  }
+
+  #ai-chat .ai-chat-launcher .ai-chat-static {
     display: none;
   }
 
   #ai-chat .ai-chat-launcher-halo {
     position: absolute;
+    z-index: 0;
     left: 50%;
-    bottom: 18%;
-    width: 62px;
-    height: 62px;
+    bottom: 0;
+    width: 44px;
+    height: 9px;
     border-radius: 50%;
-    background: var(--accent-gradient);
-    opacity: 0.2;
-    filter: blur(18px);
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.16) 0%,
+      rgba(0, 0, 0, 0.08) 42%,
+      transparent 74%
+    );
+    opacity: 0.58;
+    filter: blur(2.4px);
     transform: translateX(-50%);
+    transform-origin: center;
+    animation: ai-chat-shadow 3.2s ease-in-out infinite;
   }
 
   #ai-chat .ai-chat-panel {
@@ -831,6 +843,11 @@ const i18n = {
     50% { transform: translateY(-7px); }
   }
 
+  @keyframes ai-chat-shadow {
+    0%, 100% { opacity: 0.58; transform: translateX(-50%) scaleX(1); }
+    50% { opacity: 0.34; transform: translateX(-50%) scaleX(0.82); }
+  }
+
   @keyframes ai-chat-pop {
     from { opacity: 0; transform: translateY(14px) scale(0.97); }
     to { opacity: 1; transform: translateY(0) scale(1); }
@@ -847,7 +864,8 @@ const i18n = {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    #ai-chat .ai-chat-launcher {
+    #ai-chat .ai-chat-launcher img,
+    #ai-chat .ai-chat-launcher-halo {
       animation: none;
     }
 
@@ -873,6 +891,11 @@ const i18n = {
 
     #ai-chat .ai-chat-launcher img {
       width: 76px;
+    }
+
+    #ai-chat .ai-chat-launcher-halo {
+      width: 39px;
+      height: 8px;
     }
 
     #ai-chat .ai-chat-panel {
