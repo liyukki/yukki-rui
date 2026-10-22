@@ -5,11 +5,13 @@
  */
 import Comments from '../components/Comments.astro';
 import PostExtras from '../components/PostExtras.astro';
+import PostLikes from '../components/PostLikes.astro';
 import PostNav from '../components/PostNav.astro';
 import PostToc from '../components/PostToc.astro';
 import ReadingSettings from '../components/ReadingSettings.astro';
 import TagList from '../components/TagList.astro';
 import { SITE, UI } from '../consts';
+import { postLikeKey } from '../lib/post-likes';
 import type { Post } from '../lib/posts';
 import { ogImagePath } from '../lib/og';
 import {
@@ -131,6 +133,7 @@ const jsonLd = {
       prevLabel={UI[lang].prevPost}
       nextLabel={UI[lang].nextPost}
     />
+    <PostLikes lang={lang} postKey={postLikeKey(post)} />
     <Comments lang={lang} />
   </article>
 </BaseLayout>

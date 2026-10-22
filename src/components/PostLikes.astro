@@ -1,0 +1,351 @@
+---
+/**
+ * 文章点赞：免登录、可取消，中英文译文通过共享 postKey 合并计数。
+ *
+ * Cloudflare 部署同源请求；GitHub Pages 镜像沿用评论接口的跨域主站地址。
+ * 所有服务端返回值先经过 parsePostLikeState 校验，再写入 DOM。
+ */
+import { COMMENTS, SITE, UI, type Lang } from '../consts';
+import { commentsEndpoint } from '../lib/comments';
+import { postLikesEndpoint } from '../lib/post-likes';
+
+interface Props {
+  lang: Lang;
+  postKey: string;
+}
+
+const { lang, postKey } = Astro.props;
+const t = UI[lang];
+const endpoint = postLikesEndpoint(commentsEndpoint(SITE.url, COMMENTS.origin));
+const i18n = {
+  like: t.postLike,
+  liked: t.postLiked,
+  loading: t.postLikeLoading,
+  loadError: t.postLikeLoadError,
+  unavailable: t.postLikeUnavailable,
+  failed: t.postLikeFailed,
+};
+---
+
+<section
+  class="post-likes"
+  data-post-likes
+  data-pagefind-ignore
+  data-post={postKey}
+  data-api={endpoint}
+  data-lang={lang}
+  data-i18n={JSON.stringify(i18n)}
+  aria-label={t.postLikes}
+>
+  <button
+    class="post-likes__button"
+    type="button"
+    data-like-button
+    aria-pressed="false"
+    disabled
+  >
+    <svg class="post-likes__heart" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 20.4 4.8 13.7A4.9 4.9 0 0 1 4.8 6.6a4.9 4.9 0 0 1 6.9 0l.3.3.3-.3a4.9 4.9 0 0 1 6.9 0 4.9 4.9 0 0 1 0 7.1Z"></path>
+    </svg>
+    <span data-like-label>{t.postLike}</span>
+    <span class="post-likes__count" data-like-count aria-hidden="true">—</span>
+  </button>
+  <p class="post-likes__status" data-like-status role="status" aria-live="polite"></p>
+</section>
+
+<script>
+  import { commentsApiUrl } from '../lib/comments';
+  import {
+    parsePostLikeState,
+    postLikesEndpoint,
+    togglePostLikeState,
+    type PostLikeState,
+  } from '../lib/post-likes';
+
+  interface LikeI18n {
+    like: string;
+    liked: string;
+    loading: string;
+    loadError: string;
+    unavailable: string;
+    failed: string;
+  }
+
+  function readI18n(root: HTMLElement): LikeI18n {
+    // 文案只从构建期 data-i18n 读取；这里不复制任何用户可见文本。
+    const visibleLabel = root.querySelector<HTMLElement>('[data-like-label]')?.textContent?.trim() ?? '';
+    const fallback: LikeI18n = {
+      like: visibleLabel,
+      liked: visibleLabel,
+      loading: '',
+      loadError: '',
+      unavailable: '',
+      failed: '',
+    };
+
+    try {
+      const parsed = JSON.parse(root.dataset.i18n ?? '{}') as Record<string, unknown>;
+      return {
+        like: typeof parsed.like === 'string' ? parsed.like : fallback.like,
+        liked: typeof parsed.liked === 'string' ? parsed.liked : fallback.liked,
+        loading: typeof parsed.loading === 'string' ? parsed.loading : fallback.loading,
+        loadError: typeof parsed.loadError === 'string' ? parsed.loadError : fallback.loadError,
+        unavailable:
+          typeof parsed.unavailable === 'string' ? parsed.unavailable : fallback.unavailable,
+        failed: typeof parsed.failed === 'string' ? parsed.failed : fallback.failed,
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  function initPostLikes(root: HTMLElement): void {
+    if (root.dataset.ready === '1') return;
+    root.dataset.ready = '1';
+
+    const buttonEl = root.querySelector<HTMLButtonElement>('[data-like-button]');
+    const labelEl = root.querySelector<HTMLElement>('[data-like-label]');
+    const countEl = root.querySelector<HTMLElement>('[data-like-count]');
+    const statusEl = root.querySelector<HTMLElement>('[data-like-status]');
+    if (!buttonEl || !labelEl || !countEl || !statusEl) return;
+    const button: HTMLButtonElement = buttonEl;
+    const label: HTMLElement = labelEl;
+    const count: HTMLElement = countEl;
+    const status: HTMLElement = statusEl;
+
+    const postKey = root.dataset.post?.trim() ?? '';
+    const i18n = readI18n(root);
+    const endpoint = postLikesEndpoint(
+      commentsApiUrl(window.location.origin, root.dataset.api ?? ''),
+    );
+    const requestUrl = new URL(endpoint, window.location.origin);
+
+    let state: PostLikeState | null = null;
+    let busy = false;
+
+    function setStatus(text: string): void {
+      status.textContent = text;
+    }
+
+    function render(next: PostLikeState): void {
+      const labelText = next.liked ? i18n.liked : i18n.like;
+      button.setAttribute('aria-pressed', String(next.liked));
+      button.setAttribute('aria-label', `${labelText} (${next.count})`);
+      button.classList.toggle('is-liked', next.liked);
+      button.title = labelText;
+      label.textContent = labelText;
+      count.textContent = String(next.count);
+    }
+
+    function messageFor(statusCode: number): string {
+      return statusCode === 503 ? i18n.unavailable : i18n.failed;
+    }
+
+    async function load(): Promise<void> {
+      if (busy) return;
+      busy = true;
+      button.disabled = true;
+      setStatus(i18n.loading);
+
+      try {
+        const url = new URL(requestUrl);
+        url.searchParams.set('post', postKey);
+        const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        const result = await response.json().catch(() => null);
+        const next = response.ok ? parsePostLikeState(result) : null;
+        if (!next) {
+          state = null;
+          button.setAttribute('aria-pressed', 'false');
+          button.classList.remove('is-liked');
+          label.textContent = i18n.like;
+          count.textContent = '—';
+          setStatus(response.ok ? i18n.loadError : messageFor(response.status));
+          return;
+        }
+        state = next;
+        render(next);
+        setStatus('');
+      } catch {
+        state = null;
+        button.setAttribute('aria-pressed', 'false');
+        button.classList.remove('is-liked');
+        label.textContent = i18n.like;
+        count.textContent = '—';
+        setStatus(i18n.loadError);
+      } finally {
+        busy = false;
+        button.disabled = false;
+      }
+    }
+
+    button.addEventListener('click', async () => {
+      if (busy) return;
+      if (!state) {
+        await load();
+        return;
+      }
+
+      const previous = state;
+      const next = togglePostLikeState(state);
+      state = next;
+      render(next);
+      setStatus('');
+      busy = true;
+      button.disabled = true;
+
+      try {
+        const response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            post: postKey,
+            action: previous.liked ? 'unlike' : 'like',
+          }),
+        });
+        const result = await response.json().catch(() => null);
+        const serverState = response.ok ? parsePostLikeState(result) : null;
+        if (!serverState) {
+          state = previous;
+          render(previous);
+          setStatus(response.ok ? i18n.failed : messageFor(response.status));
+          return;
+        }
+        state = serverState;
+        render(serverState);
+      } catch {
+        state = previous;
+        render(previous);
+        setStatus(i18n.failed);
+      } finally {
+        busy = false;
+        button.disabled = false;
+      }
+    });
+
+    if (!postKey) {
+      setStatus(i18n.loadError);
+      button.disabled = true;
+      return;
+    }
+
+    void load();
+  }
+
+  function initAllPostLikes(): void {
+    document.querySelectorAll<HTMLElement>('[data-post-likes]').forEach(initPostLikes);
+  }
+
+  initAllPostLikes();
+  document.addEventListener('astro:page-load', initAllPostLikes);
+</script>
+
+<style>
+  .post-likes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-top: var(--space-5);
+    padding: var(--space-3) var(--space-4);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .post-likes__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 2.75rem;
+    padding: 0.5em 0.9em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    box-shadow: 0 var(--px) 0 0 var(--card-edge);
+    color: var(--text);
+    font: inherit;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    cursor: pointer;
+    transition:
+      border-color var(--dur),
+      color var(--dur),
+      background var(--dur),
+      transform var(--dur);
+  }
+
+  .post-likes__button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .post-likes__button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .post-likes__button:disabled {
+    cursor: progress;
+    opacity: 0.72;
+  }
+
+  .post-likes__button.is-liked {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 13%, var(--card));
+    color: var(--accent);
+  }
+
+  .post-likes__heart {
+    width: 1.15rem;
+    height: 1.15rem;
+    flex: none;
+  }
+
+  .post-likes__heart path {
+    fill: transparent;
+    stroke: currentColor;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+    transition: fill var(--dur);
+  }
+
+  .post-likes__button.is-liked .post-likes__heart path {
+    fill: currentColor;
+  }
+
+  .post-likes__count {
+    min-width: 1.8em;
+    padding: 0.08em 0.45em;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-family: var(--font-mono);
+    text-align: center;
+  }
+
+  .post-likes__status {
+    flex: 1 1 12rem;
+    min-width: 0;
+    margin: 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 480px) {
+    .post-likes {
+      align-items: stretch;
+      padding: var(--space-3);
+    }
+
+    .post-likes__button {
+      width: 100%;
+    }
+
+    .post-likes__status {
+      flex-basis: 100%;
+    }
+  }
+</style>

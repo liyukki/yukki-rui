@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 公开评论 API（Cloudflare Pages Functions）。
  *
  *   GET  /api/comments?thread=/zh/posts/x/&before=12&limit=20
@@ -326,7 +326,7 @@ async function isRateLimited(db, ipHash, now, options = {}) {
   return Number(dayRow?.n ?? 0) >= LIMITS.rateDayMax;
 }
 
-function clientIp(request) {
+export function clientIp(request) {
   const direct = request.headers.get('CF-Connecting-IP');
   if (direct) return direct.trim();
   const forwarded = request.headers.get('x-forwarded-for');
