@@ -342,6 +342,38 @@ try {
       .every((item) => item.url.startsWith(`${ORIGIN}/api/chat`) && !item.headers.authorization),
   );
 
+  const navPage = await context.newPage();
+  navPage.on('pageerror', (error) => pageErrors.push(String(error).slice(0, 240)));
+  await navPage.goto(`${ORIGIN}/zh/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await openChat(navPage);
+  const navInput = navPage.locator('[data-chat-input]');
+  const navLog = navPage.locator('[data-chat-log]');
+  const navPanel = navPage.locator('[data-chat-panel]');
+  await navInput.fill('停止测试');
+  await navInput.press('Enter');
+  await navPage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === '片段一',
+      ),
+    { timeout: 20000 },
+  );
+  await navPage.locator('.site-nav a[href$="/zh/about/"]').click();
+  await navPage.waitForURL('**/zh/about/', { timeout: 20000 });
+  await navPage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === '片段一片段二',
+      ),
+    { timeout: 10000 },
+  );
+  const navigatedChatText = await navLog.innerText();
+  check(
+    '切换页面后聊天会话与流式回复保持',
+    navPage.url().endsWith('/zh/about/') && /片段一/.test(navigatedChatText) && /片段二/.test(navigatedChatText) && (await navPanel.isVisible()),
+  );
+  await navPage.close();
+
   const darkContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
   const darkPage = await darkContext.newPage();
   await darkPage.goto(`${ORIGIN}/zh/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
