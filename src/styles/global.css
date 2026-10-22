@@ -428,6 +428,10 @@ img { max-width: 100%; height: auto; }
 .project-card h3 { margin: 0; font-size: 1.1rem; font-family: var(--font-pixel); letter-spacing: 0.03em; }
 .project-card p { margin: 0; color: var(--text-dim); }
 .project-card .project-foot { margin-top: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+.project-card-link { color: var(--text); text-decoration: none; }
+.project-card-link:hover { text-decoration: none; }
+.project-card-link .project-foot { justify-content: space-between; }
+.project-card-cta { margin-right: auto; color: var(--link); font: 700 0.75rem var(--font-mono); }
 
 /* 联系入口 */
 .contact-list { display: flex; flex-wrap: wrap; gap: var(--space-3); }

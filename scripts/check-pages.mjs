@@ -132,24 +132,47 @@ try {
       friendLinks[0].target === '_blank',
     JSON.stringify({ friendTitles, friendLinks }),
   );
+  const friendIntro = (await page.locator('.subpage-heading p').first().innerText()).trim();
+  check('友链页引言已更新', friendIntro === '这里是一些好朋友', friendIntro);
   const friendAlternate = await page.locator('link[rel="alternate"][hreflang="en"]').getAttribute('href').catch(() => '');
   const friendDescription = await page.locator('meta[name="description"]').getAttribute('content');
   check('友链页有英文对应页与 description', (friendAlternate ?? '').endsWith('/en/friends/') && (friendDescription ?? '').trim().length > 10, `${friendAlternate} / ${friendDescription}`);
 
-  // 6. 英文四页标题
+  // 6. 首页关于卡片:整卡鼠标与键盘都能进入关于页
+  await page.goto(`${origin}${BASE}zh/`, { waitUntil: 'load' });
+  const aboutCard = page.locator('.project-card-link');
+  const aboutCardHref = await aboutCard.getAttribute('href');
+  const aboutCardText = (await aboutCard.innerText()).replace(/\s+/g, ' ');
+  check(
+    '首页关于卡片显示整卡入口',
+    aboutCardHref === `${BASE}zh/about/` && aboutCardText.includes('关于我自己') && aboutCardText.includes('了解更多'),
+    `${aboutCardHref} / ${aboutCardText.slice(0, 80)}`,
+  );
+  await aboutCard.click();
+  await page.waitForURL((url) => url.pathname === `${BASE}zh/about/`, { timeout: 10000 });
+  check('首页关于卡片点击后进入关于页', (await heading()) === '关于', page.url());
+
+  await page.goto(`${origin}${BASE}zh/`, { waitUntil: 'load' });
+  await page.locator('.project-card-link').focus();
+  check('首页关于卡片可键盘聚焦', await page.locator('.project-card-link').evaluate((el) => el === document.activeElement), '');
+  await page.keyboard.press('Enter');
+  await page.waitForURL((url) => url.pathname === `${BASE}zh/about/`, { timeout: 10000 });
+  check('首页关于卡片回车可进入关于页', (await heading()) === '关于', page.url());
+
+  // 7. 英文四页标题
   for (const [slug, title] of [['now', 'Now'], ['works', 'Works'], ['listening', 'Listening'], ['friends', 'Friends']]) {
     await page.goto(`${origin}${BASE}en/${slug}/`, { waitUntil: 'load' });
     check(`英文 ${slug} 页标题正确`, (await heading()) === title, await heading());
   }
 
-  // 7. 双语对应页(hreflang)与 description
+  // 8. 双语对应页(hreflang)与 description
   await page.goto(`${origin}${BASE}zh/now/`, { waitUntil: 'load' });
   const alternate = await page.locator('link[rel="alternate"][hreflang="en"]').getAttribute('href').catch(() => '');
   check('现在页有英文对应页', (alternate ?? '').endsWith('/en/now/'), String(alternate));
   const description = await page.locator('meta[name="description"]').getAttribute('content');
   check('新页面有 description', (description ?? '').trim().length > 10, String(description).slice(0, 40));
 
-  // 8. 窄屏:四页都不横向溢出
+  // 9. 窄屏:四页都不横向溢出
   const mobile = await context.newPage();
   // 每个页面最少几条:作品页目前只有 2 条(本站 + 源码),所以按页面给下限。
   for (const [slug, minimum] of [['now', 3], ['works', 2], ['listening', 3], ['friends', 1]]) {
@@ -161,7 +184,7 @@ try {
   }
   await mobile.close();
 
-  // 9. 资源与脚本异常
+  // 10. 资源与脚本异常
   const failures = failedResponses.filter((item) => !item.includes('favicon'));
   check('新页面没有加载失败的资源', failures.length === 0, failures.join(' | ').slice(0, 300));
   check('无页面脚本异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300));

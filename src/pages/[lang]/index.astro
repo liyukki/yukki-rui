@@ -43,6 +43,10 @@ const work = {
   linkUrl: info?.work.linkUrl ?? '',
   status: info?.work.status ?? 'WIP',
 };
+const workHref = work.linkUrl
+  ? (work.linkUrl.startsWith('/') ? withBase(work.linkUrl) : work.linkUrl)
+  : withBase(`${lang}/about/`);
+const workLinkLabel = work.linkLabel || (zh ? '了解更多' : 'Learn more');
 const decor = [
   { name: 'star-gold', x: 6, y: 20, size: 26 }, { name: 'note-blue', x: 89, y: 22, size: 36 },
   { name: 'star-pink', x: 80, y: 63, size: 22 }, { name: 'note-orange', x: 12, y: 67, size: 30 },
@@ -92,7 +96,7 @@ const jsonLd = {
   <div class="stat-row"><StatBar icon="coin-sprite" label={zh ? '文章' : 'LOGS'} value={String(posts.length).padStart(2, '0')} /><StatBar icon="star-blue" label={zh ? '标签' : 'TAGS'} value={String(tags.length).padStart(2, '0')} tone="len" /><StatBar icon="note-orange" label={zh ? '语言' : 'LANG'} value="ZH / EN" /></div>
   <section aria-labelledby="work-heading"><SectionTitle title={text.works} icon="coin-sprite" tail="QUEST 01" /><div class="grid-2">
     <article class="card project-card"><div class="project-art art-blog" aria-hidden="true"><div class="mini-window"><div>● ● ● <span>BLOG.MD</span></div><p>&gt; hello, world_</p><i></i><i></i><i></i></div><PixelSprite name="star-gold" size={32} /></div><div class="project-head"><span class="quest-number">01</span><h3 id="work-heading">{text.diary}</h3><span class="status-badge">LIVE</span></div><p>{text.diaryText}</p><div class="project-foot"><span class="tech-chip">ASTRO</span><span class="tech-chip">MARKDOWN</span><a href={withBase(`${lang}/about/`)}>{zh ? '小站介绍' : 'About the site'} ↗</a></div></article>
-    <article class="card project-card"><div class="project-art art-next" aria-hidden="true"><div class="locked-slot">? <PixelSprite name="key" size={36} /></div><span class="pixel-caption">A NEW ADVENTURE AWAITS</span></div><div class="project-head"><span class="quest-number">02</span><h3>{work.title}</h3><span class={`status-badge${work.status === 'WIP' ? ' muted' : ''}`}>{work.status}</span></div><p>{work.text}</p><div class="project-foot">{work.linkUrl ? <a href={work.linkUrl}>{work.linkLabel || work.linkUrl} ↗</a> : work.status === 'WIP' ? <span class="tech-chip">COMING LATER</span> : null}<PixelSprite name="star-blue" size={20} /></div></article>
+    <a class="card project-card project-card-link" href={workHref} aria-label={zh ? `查看${work.title}` : `View ${work.title}`}><div class="project-art art-next" aria-hidden="true"><div class="locked-slot">? <PixelSprite name="key" size={36} /></div><span class="pixel-caption">A NEW ADVENTURE AWAITS</span></div><div class="project-head"><span class="quest-number">02</span><h3>{work.title}</h3><span class={`status-badge${work.status === 'WIP' ? ' muted' : ''}`}>{work.status}</span></div><p>{work.text}</p><div class="project-foot"><span class="project-card-cta">{workLinkLabel} ↗</span><PixelSprite name="star-blue" size={20} /></div></a>
   </div></section>
   <section><SectionTitle title={text.contact} icon="note-blue" tail="QUEST 02" /><div class="grid-2"><div class="card contact-card"><span class="contact-symbol" aria-hidden="true">(( • ))</span><div><h3>{text.rss}</h3><p>{text.rssText}</p><a class="text-link" href={withBase(RSS_PATH[lang])}>RSS {zh ? '订阅' : 'FEED'} ↗</a></div></div><div class="card contact-card"><span class="contact-symbol" aria-hidden="true">[ @ ]</span><div><h3>{text.social}</h3><p class="contact-text">{contact.text}</p>{contact.links.length ? <div class="social-links">{contact.links.map((link) => <a class="text-link" href={link.url}>{link.label} ↗</a>)}</div> : <a class="text-link" href={withBase(`${lang}/about/`)}>{text.about} ↗</a>}</div></div></div></section>
   <section id="latest"><SectionTitle title={text.latest} icon="star-gold" tail="QUEST 03" /><div class="post-list">{posts.map((post) => <PostCard post={post} />)}</div></section>
