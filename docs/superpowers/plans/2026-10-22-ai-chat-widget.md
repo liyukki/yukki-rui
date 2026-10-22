@@ -16,7 +16,7 @@
 - 浏览器不得直接访问上游地址，也不得携带 `Authorization`。
 - 单次最多 20 条消息，单条最多 8000 字符，最后一条必须是 `user`。
 - 前端输入框最多 2000 字符；服务端最多输出 800 tokens。
-- 每 IP 每分钟最多 8 次、每天最多 80 次；IP 仅存 `sha256(IP + COMMENTS_SALT)`。
+- 每 IP 每分钟最多 10 次、每天最多 800 次；IP 仅存 `sha256(IP + COMMENTS_SALT)`。
 - 不修改页头、页脚、主内容宽度、配色令牌或现有页面结构；聊天组件只追加固定定位 DOM。
 - 模型输出只能通过 `textContent` 写入页面，禁止 `innerHTML`。
 - `prefers-reduced-motion: reduce` 时使用静态 PNG，不播放 GIF。
@@ -276,9 +276,9 @@ export const CHAT_LIMITS = Object.freeze({
   contentMax: 8000,
   bodyBytesMax: 128 * 1024,
   minuteMs: 60_000,
-  minuteMax: 8,
+  minuteMax: 10,
   dayMs: 86_400_000,
-  dayMax: 80,
+  dayMax: 800,
   outputTokensMax: 800,
 });
 

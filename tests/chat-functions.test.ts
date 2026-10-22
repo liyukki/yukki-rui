@@ -94,14 +94,26 @@ describe('validateChatPayload', () => {
 });
 
 describe('reserveRateLimit', () => {
-  it('同一 IP 每分钟第 9 次被拒绝，换个 IP 可通过', async () => {
+  it('同一 IP 每分钟前 10 次通过，第 11 次被拒绝，换个 IP 可通过', async () => {
     const db = createFakeD1();
     const now = Date.UTC(2026, 9, 22, 12, 0, 5);
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       expect(await reserveRateLimit(db, 'same-hash', now)).toBe('ok');
     }
     expect(await reserveRateLimit(db, 'same-hash', now)).toBe('minute');
     expect(await reserveRateLimit(db, 'other-hash', now)).toBe('ok');
+  });
+
+  it('同一 IP 每天前 800 次通过，第 801 次被拒绝', async () => {
+    const db = createFakeD1();
+    const start = Date.UTC(2026, 9, 22, 0, 0, 5);
+    for (let minute = 0; minute < 80; minute += 1) {
+      const now = start + minute * 60_000;
+      for (let index = 0; index < 10; index += 1) {
+        expect(await reserveRateLimit(db, 'day-hash', now)).toBe('ok');
+      }
+    }
+    expect(await reserveRateLimit(db, 'day-hash', start + 80 * 60_000)).toBe('day');
   });
 });
 
@@ -259,18 +271,18 @@ describe('POST /api/chat 上游代理', () => {
     }
   });
 
-  it('同 IP 第 9 次请求被限流，且数据库不存明文 IP', async () => {
+  it('同 IP 第 11 次请求被限流，且数据库不存明文 IP', async () => {
     const upstream = vi.fn(async () => sseResponse(['data: [DONE]\n\n']));
     vi.stubGlobal('fetch', upstream);
     const env = testEnv();
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       const response = await onRequestPost({ request: chatRequest(), env });
       expect(response.status).toBe(200);
     }
     const limited = await onRequestPost({ request: chatRequest(), env });
     expect(limited.status).toBe(429);
     expect(((await limited.json()) as { error: string }).error).toBe('rate-limited');
-    expect(upstream).toHaveBeenCalledTimes(8);
+    expect(upstream).toHaveBeenCalledTimes(10);
 
     const row = env.DB!.raw.prepare('SELECT ip_hash FROM ai_chat_limits LIMIT 1').get() as { ip_hash: string };
     expect(row.ip_hash).toMatch(/^[0-9a-f]{64}$/);

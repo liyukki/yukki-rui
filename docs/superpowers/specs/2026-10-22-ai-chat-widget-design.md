@@ -123,7 +123,7 @@ export const AI_CHAT = {
 
 - 使用已有 D1 `DB` 绑定，新建幂等表 `ai_chat_limits (ip_hash TEXT PRIMARY KEY, window_start INTEGER, count INTEGER)`。
 - IP 仅保存 `sha256(IP + COMMENTS_SALT)`，不存明文。
-- 限制：同一 IP 每分钟最多 8 次，每天最多 80 次；超限返回 429。
+- 限制：同一 IP 每分钟最多 10 次，每天最多 800 次；超限返回 429。
 - 请求体大小、消息数量、单条长度均在代理层校验。
 - 模型、上游地址、最大输出 Token 由服务端控制，前端不能覆盖。
 - 限流与密钥校验失败时不请求上游。

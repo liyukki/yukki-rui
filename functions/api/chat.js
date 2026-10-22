@@ -12,9 +12,9 @@ export const CHAT_LIMITS = Object.freeze({
   contentMax: 8000,
   bodyBytesMax: 128 * 1024,
   minuteMs: 60_000,
-  minuteMax: 8,
+  minuteMax: 10,
   dayMs: 86_400_000,
-  dayMax: 80,
+  dayMax: 800,
   outputTokensMax: 800,
 });
 
