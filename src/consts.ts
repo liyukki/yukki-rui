@@ -123,6 +123,24 @@ export const UI: Record<Lang, Record<string, string>> = {
     keepExploring: '继续探索',
     notFoundTitle: '页面不存在',
     notFoundBody: '这个页面不存在。',
+    aiTitle: 'YUKKI AI',
+    aiOnline: '在线',
+    aiClear: '清空对话',
+    aiClose: '关闭聊天窗',
+    aiOpen: '打开 YUKKI AI 聊天',
+    aiWelcome: '你好，我是 YUKKI AI。今天想聊点什么？',
+    aiPlaceholder: '输入消息…',
+    aiSend: '发送',
+    aiStop: '停止',
+    aiThinking: 'YUKKI AI 正在输入',
+    aiInputHint: 'Enter 发送 · Shift+Enter 换行',
+    aiNoReply: '没有收到回复，请重试。',
+    aiNotConfigured: 'AI 服务尚未配置，请稍后再试。',
+    aiAuthFailed: 'AI 服务授权失败，请稍后再试。',
+    aiRateLimited: '请求太频繁了，请稍后再试。',
+    aiUnavailable: 'AI 服务暂时不可用，请稍后再试。',
+    aiInvalid: '消息不合法，请修改后再试。',
+    aiFailed: '出了点问题，请稍后再试。',
     readMore: '阅读全文',
   },
   en: {
@@ -205,6 +223,24 @@ export const UI: Record<Lang, Record<string, string>> = {
     keepExploring: 'Keep exploring',
     notFoundTitle: 'Page not found',
     notFoundBody: 'This page does not exist.',
+    aiTitle: 'YUKKI AI',
+    aiOnline: 'Online',
+    aiClear: 'Clear chat',
+    aiClose: 'Close chat',
+    aiOpen: 'Open YUKKI AI chat',
+    aiWelcome: 'Hi, I am YUKKI AI. What would you like to talk about?',
+    aiPlaceholder: 'Type a message…',
+    aiSend: 'Send',
+    aiStop: 'Stop',
+    aiThinking: 'YUKKI AI is typing',
+    aiInputHint: 'Enter to send · Shift+Enter for a new line',
+    aiNoReply: 'No reply received. Please try again.',
+    aiNotConfigured: 'The AI assistant is not configured yet.',
+    aiAuthFailed: 'The AI service authorization failed. Please try again later.',
+    aiRateLimited: 'Too many requests. Please wait a moment and try again.',
+    aiUnavailable: 'The AI service is temporarily unavailable. Please try again later.',
+    aiInvalid: 'That message could not be sent. Please edit it and try again.',
+    aiFailed: 'Something went wrong. Please try again.',
     readMore: 'Read more',
   },
 };
@@ -223,6 +259,20 @@ export const COMMENTS = {
   enabled: true,
   origin: 'https://yukki-rui.pages.dev',
   pageSize: 20,
+} as const;
+
+/**
+ * AI 聊天小窗。
+ *
+ * 浏览器只请求本站 /api/chat；Cloudflare Function 从 Secret 读取上游密钥。
+ * GitHub Pages 镜像跨域调用主站代理，因此 origin 必须是主站源。
+ */
+export const AI_CHAT = {
+  enabled: true,
+  origin: 'https://yukki-rui.pages.dev',
+  maxMessages: 20,
+  maxInputLength: 2000,
+  maxOutputTokens: 800,
 } as const;
 
 /** 默认 OG 图，相对 public/ 的路径。1200×630。 */

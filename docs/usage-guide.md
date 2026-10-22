@@ -48,6 +48,8 @@
 **新增:三个页面**。页头多了「现在 / 作品 / 在听」:记录最近在忙什么、做过的东西、循环中的歌;内容都在网页后台里改,见第 16 节。
 
 **新增:RSS 全文**。两个订阅源不再只给摘要:阅读器里直接显示完整正文,图片和链接都能正常打开,见第 17 节。
+
+**新增：AI 聊天小窗**。右下角角色点一下就会弹出聊天窗；浏览器只访问本站 `/api/chat`，密钥保存在 Cloudflare Secret 中，不会进入前端或 Git。配置和自检见第 18 节。
 ---
 
 ## 1. 日常最常用：本地预览
@@ -781,7 +783,82 @@ Firefox、Safari 不支持 File System Access API，请用 Edge 或 Chrome 打�
 
 ---
 
-## 18. 还缺什么
+## 18. AI 聊天小窗（服务端代理）
+
+右下角的角色按钮点一下会弹出聊天窗。它使用你指定的 OpenAI 兼容上游，但**浏览器不会直接访问上游，也不会携带 API Key**：
+
+```text
+浏览器 → 本站 /api/chat（Cloudflare Pages Function）→ 上游 AI 服务
+```
+
+| 部分 | 位置 | 作用 |
+|---|---|---|
+| 聊天界面 | `src/components/AiChat.astro` | 全站右下角弹窗；只追加固定定位层，不改原页面布局 |
+| 浏览器逻辑 | `src/lib/chat.ts` | 消息规整、SSE 流式解析、接口地址选择 |
+| 服务端代理 | `functions/api/chat.js` | 校验来源与消息、D1 限流、从 Secret 读取密钥并转发 |
+| 全站挂载 | `src/layouts/BaseLayout.astro` | 所有中英文页面都会出现聊天入口 |
+| 开关与主站地址 | `src/consts.ts` 的 `AI_CHAT` | 关闭入口、调整 GitHub Pages 镜像调用的主站地址 |
+
+### 18.1 Cloudflare 配置（上线前必须做）
+
+在 Cloudflare Pages 项目 `yukki-rui` → Settings → Variables and secrets 中确认：
+
+1. **`AI_API_KEY`**：类型选 **Secret**，值是第三方中转站的 API Key。
+2. **`AI_API_BASE`**：普通变量，默认可用 `https://token.astrumflow.com/v1`。
+3. **`AI_MODEL`**：普通变量，默认可用 `gemma-4-26b-a4b-it`。
+4. **D1 绑定 `DB`**：继续使用评论区已经建好的 D1 数据库；聊天限流表会自动创建。
+5. **`COMMENTS_SALT` Secret**：聊天也用它给 IP 做加盐哈希，不保存原始 IP。
+
+也可以在登录 Wrangler 后设置密钥：
+
+```powershell
+npx wrangler pages secret put AI_API_KEY --project-name yukki-rui
+```
+
+配置完点一次 **Retry deployment**，让新的 Secret 和变量进入部署。**不要把 Key 写进 `src/`、`public/`、`.env`、测试或 Git**。Cloudflare Secret 是平台加密托管；前端所谓“可逆加密”仍会把密钥交给浏览器，不是安全方案，本项目不使用。
+
+> 如果这个 Key 曾经出现在旧版前端、公开仓库或历史构建产物里，请先到中转站后台**作废并换一把新 Key**，再配置 Cloudflare Secret。
+
+### 18.2 限流与输入边界
+
+服务端强制执行，改前端也绕不过：
+
+- 每个加盐 IP 哈希：**每分钟 8 次、每天 80 次**；
+- 最多带 **20 条**历史消息；
+- 单条历史消息最多 **8000 字符**；输入框单条最多 **2000 字符**；
+- 请求体最大 **128 KiB**，模型输出上限 **800 tokens**；
+- 上游 401/403、429、异常响应都会转成统一的安全错误文案，不会把上游响应或密钥回传给浏览器。
+
+### 18.3 两个站点都能用
+
+- **Cloudflare Pages**：同源请求 `/api/chat`。
+- **GitHub Pages**：静态站没有 Functions，会跨域调用 `https://yukki-rui.pages.dev/api/chat`；服务端 CORS 只放行主站和 GitHub Pages 地址。
+
+以后换自定义域名时，除了第 7 节的 `SITE_URL`，还要同步检查 `src/consts.ts` 里 `AI_CHAT.origin` 和 `functions/api/comments.js` 的 CORS 白名单。
+
+### 18.4 关闭聊天和本地自检
+
+想临时关闭入口，把 `src/consts.ts` 改成：
+
+```ts
+export const AI_CHAT = {
+  enabled: false,
+  // 其余字段保持不变
+};
+```
+
+聊天端到端自检需要先构建。它会启动本地 Wrangler、模拟上游，检查打开/关闭、流式回复、停止生成、清空历史、503/429、移动端溢出、密钥不进入浏览器，并生成三张审核截图：
+
+```powershell
+npm run build
+npm run check:chat
+```
+
+截图输出到 `.tmp-chat-screens/`：`desktop-light.png`、`desktop-dark.png`、`mobile-390.png`。该检查依赖 Playwright 和 Chromium/Edge，属于可选手测，不放进 `verify:frontend`。
+
+---
+
+## 19. 还缺什么
 
 **上线工作已全部完成**：两个平台在跑，网页后台可以登录并改内容（新建/删除文章都已实测，提交真的进了仓库）。
 

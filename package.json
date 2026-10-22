@@ -21,6 +21,7 @@
     "check:cms-oauth": "node scripts/check-cms-oauth.mjs",
     "check:comments": "node scripts/check-comments.mjs",
     "check:comments-live": "node scripts/check-comments-live.mjs",
+    "check:chat": "node scripts/check-chat.mjs",
     "verify": "npm run check && npm test && npm run check:base && npm run check:content",
     "verify:frontend": "npm run verify && npm run build && npm run check:links && npm run check:og && npm run check:frontend",
     "check:reading": "node scripts/check-reading.mjs",

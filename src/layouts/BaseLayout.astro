@@ -4,6 +4,7 @@ import { ClientRouter } from 'astro:transitions';
 import '../styles/tokens.css';
 import '../styles/global.css';
 import '../styles/world.css';
+import AiChat from '../components/AiChat.astro';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
@@ -69,5 +70,6 @@ const { title, description, lang, ogType, ogImage, jsonLd, alternate } = Astro.p
       <slot />
     </main>
     <Footer lang={lang} />
+    <AiChat lang={lang} />
   </body>
 </html>

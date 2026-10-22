@@ -1,0 +1,890 @@
+---
+/**
+ * 全站 AI 聊天小窗。
+ *
+ * 所有请求都发往本站 /api/chat；Cloudflare Pages Function 持有密钥并代理上游。
+ * UI 只追加一个固定定位层，不改变页面原有布局。
+ */
+import { AI_CHAT, SITE, UI, type Lang } from '../consts';
+import { chatEndpoint } from '../lib/chat';
+import { withBase } from '../lib/url';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = UI[lang];
+const endpoint = chatEndpoint(SITE.url, AI_CHAT.origin);
+const gifSrc = withBase('chat/yukki-chat.gif');
+const staticSrc = withBase('chat/yukki-chat-static.png');
+const i18n = {
+  title: t.aiTitle,
+  online: t.aiOnline,
+  clear: t.aiClear,
+  close: t.aiClose,
+  open: t.aiOpen,
+  welcome: t.aiWelcome,
+  placeholder: t.aiPlaceholder,
+  send: t.aiSend,
+  stop: t.aiStop,
+  thinking: t.aiThinking,
+  inputHint: t.aiInputHint,
+  noReply: t.aiNoReply,
+  notConfigured: t.aiNotConfigured,
+  authFailed: t.aiAuthFailed,
+  rateLimited: t.aiRateLimited,
+  unavailable: t.aiUnavailable,
+  invalid: t.aiInvalid,
+  failed: t.aiFailed,
+};
+---
+
+{AI_CHAT.enabled && (
+  <aside
+    class="ai-chat"
+    id="ai-chat"
+    data-api={endpoint}
+    data-lang={lang}
+    data-max-input={String(AI_CHAT.maxInputLength)}
+    data-max-messages={String(AI_CHAT.maxMessages)}
+    data-i18n={JSON.stringify(i18n)}
+    data-pagefind-ignore
+  >
+    <button
+      type="button"
+      class="ai-chat-launcher"
+      data-chat-launcher
+      aria-label={t.aiOpen}
+      aria-controls="ai-chat-panel"
+      aria-expanded="false"
+    >
+      <span class="ai-chat-launcher-halo" aria-hidden="true"></span>
+      <img class="ai-chat-gif pixelated" src={gifSrc} width="104" height="177" alt="" />
+      <img class="ai-chat-static pixelated" src={staticSrc} width="104" height="177" alt="" />
+    </button>
+
+    <section
+      class="ai-chat-panel"
+      id="ai-chat-panel"
+      role="dialog"
+      aria-modal="false"
+      aria-label={t.aiTitle}
+      aria-busy="false"
+      data-chat-panel
+      hidden
+    >
+      <header class="ai-chat-head">
+        <span class="ai-chat-avatar" aria-hidden="true">
+          <img class="pixelated" src={staticSrc} width="30" height="51" alt="" />
+        </span>
+        <div class="ai-chat-identity">
+          <strong>{t.aiTitle}</strong>
+          <span class="ai-chat-status"><i aria-hidden="true"></i>{t.aiOnline}</span>
+        </div>
+        <button type="button" class="ai-chat-head-btn" data-chat-clear aria-label={t.aiClear} title={t.aiClear}>
+          {lang === 'zh' ? '清空' : 'CLR'}
+        </button>
+        <button type="button" class="ai-chat-head-btn ai-chat-close" data-chat-close aria-label={t.aiClose} title={t.aiClose}>
+          ×
+        </button>
+      </header>
+
+      <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-relevant="additions text">
+        <div class="ai-chat-message is-assistant">
+          <span class="ai-chat-message-avatar" aria-hidden="true">Y</span>
+          <p class="ai-chat-bubble">{t.aiWelcome}</p>
+        </div>
+      </div>
+
+      <form class="ai-chat-composer" data-chat-form>
+        <label class="ai-chat-sr-only" for="ai-chat-input">{t.aiPlaceholder}</label>
+        <textarea
+          id="ai-chat-input"
+          data-chat-input
+          rows="1"
+          maxlength={AI_CHAT.maxInputLength}
+          placeholder={t.aiPlaceholder}
+          autocomplete="off"
+        ></textarea>
+        <div class="ai-chat-composer-foot">
+          <span class="ai-chat-hint">{t.aiInputHint}</span>
+          <span class="ai-chat-counter" data-chat-counter>0/{AI_CHAT.maxInputLength}</span>
+          <button type="button" class="ai-chat-send" data-chat-send>{t.aiSend}</button>
+        </div>
+      </form>
+    </section>
+  </aside>
+)}
+
+<script>
+  import {
+    chatApiUrl,
+    createSseParser,
+    extractChatDelta,
+    normalizeChatMessages,
+    type ChatMessage,
+  } from '../lib/chat';
+
+  type Lang = 'zh' | 'en';
+
+  interface ChatI18n {
+    title: string;
+    online: string;
+    clear: string;
+    close: string;
+    open: string;
+    welcome: string;
+    placeholder: string;
+    send: string;
+    stop: string;
+    thinking: string;
+    inputHint: string;
+    noReply: string;
+    notConfigured: string;
+    authFailed: string;
+    rateLimited: string;
+    unavailable: string;
+    invalid: string;
+    failed: string;
+  }
+
+  function initAiChat(): void {
+    const root = document.getElementById('ai-chat');
+    if (!root || root.dataset.ready === '1') return;
+    root.dataset.ready = '1';
+
+    const lang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
+    let i18n: ChatI18n;
+    try {
+      i18n = JSON.parse(root.dataset.i18n ?? '{}') as ChatI18n;
+    } catch {
+      return;
+    }
+
+    const launcher = root.querySelector<HTMLButtonElement>('[data-chat-launcher]')!;
+    const panel = root.querySelector<HTMLElement>('[data-chat-panel]')!;
+    const log = root.querySelector<HTMLElement>('[data-chat-log]')!;
+    const form = root.querySelector<HTMLFormElement>('[data-chat-form]')!;
+    const input = root.querySelector<HTMLTextAreaElement>('[data-chat-input]')!;
+    const counter = root.querySelector<HTMLElement>('[data-chat-counter]')!;
+    const sendButton = root.querySelector<HTMLButtonElement>('[data-chat-send]')!;
+    const clearButton = root.querySelector<HTMLButtonElement>('[data-chat-clear]');
+    const closeButton = root.querySelector<HTMLButtonElement>('[data-chat-close]');
+    if (!launcher || !panel || !log || !form || !input || !counter || !sendButton) return;
+
+    const maxInput = Math.max(1, Number(root.dataset.maxInput) || 2000);
+    const maxMessages = Math.max(1, Number(root.dataset.maxMessages) || 20);
+    const endpoint = root.dataset.api ?? '';
+    const api = () => chatApiUrl(window.location.origin, endpoint);
+
+    let history: ChatMessage[] = [];
+    let controller: AbortController | null = null;
+    let generating = false;
+    let requestSeq = 0;
+    let composing = false;
+
+    function messageError(): string {
+      if (lang === 'en') {
+        return i18n.failed || 'Something went wrong. Please try again.';
+      }
+      return i18n.failed || '出了点问题，请稍后再试。';
+    }
+
+    function errorText(status: number, code?: string): string {
+      if (code === 'ai-not-configured' || code === 'rate-limit-unavailable') return i18n.notConfigured;
+      if (code === 'upstream-auth') return i18n.authFailed;
+      if (code === 'ai-rate-limited' || code === 'rate-limited' || status === 429) return i18n.rateLimited;
+      if (code === 'upstream-unavailable' || code === 'upstream-invalid' || status >= 500) return i18n.unavailable;
+      if (status === 400 || code?.startsWith('invalid-') || code === 'payload-too-large') return i18n.invalid;
+      return messageError();
+    }
+
+    function scrollToBottom(): void {
+      requestAnimationFrame(() => {
+        log.scrollTop = log.scrollHeight;
+      });
+    }
+
+    function createMessage(role: 'user' | 'assistant', text: string) {
+      const row = document.createElement('div');
+      row.className = `ai-chat-message is-${role}`;
+      const avatar = document.createElement('span');
+      avatar.className = 'ai-chat-message-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = role === 'user' ? 'YOU' : 'Y';
+      const bubble = document.createElement('p');
+      bubble.className = 'ai-chat-bubble';
+      bubble.textContent = text;
+      row.append(avatar, bubble);
+      return { row, bubble };
+    }
+
+    function appendMessage(role: 'user' | 'assistant', text: string) {
+      const message = createMessage(role, text);
+      log.append(message.row);
+      scrollToBottom();
+      return message;
+    }
+
+    function appendNotice(text: string): void {
+      const row = document.createElement('div');
+      row.className = 'ai-chat-message is-notice';
+      const bubble = document.createElement('p');
+      bubble.className = 'ai-chat-bubble';
+      bubble.setAttribute('role', 'status');
+      bubble.textContent = text;
+      row.append(bubble);
+      log.append(row);
+      scrollToBottom();
+    }
+
+    let thinking: HTMLElement | null = null;
+    function setThinking(show: boolean): void {
+      if (show && !thinking) {
+        thinking = document.createElement('div');
+        thinking.className = 'ai-chat-thinking';
+        thinking.setAttribute('role', 'status');
+        const label = document.createElement('span');
+        label.className = 'ai-chat-thinking-label';
+        label.textContent = i18n.thinking;
+        const dots = document.createElement('span');
+        dots.className = 'ai-chat-dots';
+        dots.setAttribute('aria-hidden', 'true');
+        dots.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+        thinking.append(label, dots);
+        log.append(thinking);
+        scrollToBottom();
+      } else if (!show && thinking) {
+        thinking.remove();
+        thinking = null;
+      }
+    }
+
+    function setBusy(busy: boolean): void {
+      generating = busy;
+      panel.setAttribute('aria-busy', String(busy));
+      sendButton.textContent = busy ? i18n.stop : i18n.send;
+      sendButton.setAttribute('aria-label', busy ? i18n.stop : i18n.send);
+      sendButton.classList.toggle('is-stop', busy);
+      sendButton.disabled = busy ? false : input.value.trim() === '';
+    }
+
+    function updateCounter(): void {
+      const count = [...input.value].length;
+      counter.textContent = `${count}/${maxInput}`;
+      counter.classList.toggle('is-near', count >= maxInput * 0.9);
+      sendButton.disabled = !generating && input.value.trim() === '';
+    }
+
+    function resizeInput(): void {
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 112)}px`;
+    }
+
+    function resetConversation(): void {
+      requestSeq += 1;
+      controller?.abort();
+      controller = null;
+      history = [];
+      input.value = '';
+      setThinking(false);
+      setBusy(false);
+      log.replaceChildren();
+      const welcome = createMessage('assistant', i18n.welcome);
+      log.append(welcome.row);
+      updateCounter();
+      resizeInput();
+      scrollToBottom();
+    }
+
+    function setOpen(open: boolean): void {
+      panel.hidden = !open;
+      launcher.hidden = open;
+      launcher.setAttribute('aria-expanded', String(open));
+      if (open) {
+        requestAnimationFrame(() => {
+          input.focus();
+          scrollToBottom();
+        });
+      } else {
+        launcher.focus();
+      }
+    }
+
+    async function responseError(response: Response): Promise<{ code: string; status: number }> {
+      try {
+        const data = (await response.json()) as { error?: unknown };
+        return { code: typeof data.error === 'string' ? data.error : '', status: response.status };
+      } catch {
+        return { code: '', status: response.status };
+      }
+    }
+
+    async function sendMessage(): Promise<void> {
+      if (generating) return;
+      const text = input.value.trim();
+      if (!text) return;
+
+      const messages = normalizeChatMessages([...history, { role: 'user', content: text }], maxMessages);
+      if (messages.length === 0 || messages[messages.length - 1]?.role !== 'user') return;
+
+      const token = ++requestSeq;
+      history.push({ role: 'user', content: text });
+      appendMessage('user', text);
+      input.value = '';
+      updateCounter();
+      resizeInput();
+      setThinking(true);
+      controller = new AbortController();
+      setBusy(true);
+
+      let received = '';
+      let assistantBubble: HTMLParagraphElement | null = null;
+
+      try {
+        const response = await fetch(api(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          body: JSON.stringify({ messages }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const detail = await responseError(response);
+          if (token === requestSeq) appendNotice(errorText(detail.status, detail.code));
+          return;
+        }
+        if (!response.body) {
+          if (token === requestSeq) appendNotice(i18n.noReply);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const parser = createSseParser((data) => {
+          if (token !== requestSeq || data === '[DONE]') return;
+          const delta = extractChatDelta(data);
+          if (!delta) return;
+          if (!assistantBubble) {
+            assistantBubble = appendMessage('assistant', '').bubble;
+            setThinking(false);
+          }
+          received += delta;
+          assistantBubble.textContent = received;
+          scrollToBottom();
+        });
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          parser.push(decoder.decode(value, { stream: true }));
+        }
+        parser.push(decoder.decode());
+        parser.finish();
+
+        if (token === requestSeq && !received) appendNotice(i18n.noReply);
+      } catch (error) {
+        if (token === requestSeq && !(error instanceof DOMException && error.name === 'AbortError')) {
+          if (!received) appendNotice(messageError());
+        }
+      } finally {
+        if (token === requestSeq) {
+          if (received) history.push({ role: 'assistant', content: received });
+          setThinking(false);
+          controller = null;
+          setBusy(false);
+          input.focus();
+        }
+      }
+    }
+
+    launcher.addEventListener('click', () => setOpen(Boolean(panel.hidden)));
+    closeButton?.addEventListener('click', () => setOpen(false));
+    clearButton?.addEventListener('click', () => {
+      resetConversation();
+      input.focus();
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void sendMessage();
+    });
+
+    sendButton.addEventListener('click', () => {
+      if (generating) {
+        controller?.abort();
+        return;
+      }
+      void sendMessage();
+    });
+
+    input.addEventListener('input', () => {
+      updateCounter();
+      resizeInput();
+    });
+
+    input.addEventListener('compositionstart', () => {
+      composing = true;
+    });
+    input.addEventListener('compositionend', () => {
+      composing = false;
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing || composing) return;
+      event.preventDefault();
+      void sendMessage();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (!root.isConnected || event.key !== 'Escape' || panel.hidden) return;
+      setOpen(false);
+    });
+
+    updateCounter();
+    resizeInput();
+  }
+
+  initAiChat();
+  document.addEventListener('astro:page-load', initAiChat);
+</script>
+<style is:global>
+  #ai-chat {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    color: var(--text);
+    font-family: var(--font-sans);
+  }
+
+  #ai-chat [hidden] {
+    display: none !important;
+  }
+
+  #ai-chat .ai-chat-launcher {
+    position: absolute;
+    right: 18px;
+    bottom: 16px;
+    width: 86px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    pointer-events: auto;
+    filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.22));
+    animation: ai-chat-bob 3.2s ease-in-out infinite;
+    transition: transform var(--dur) var(--ease-pop), filter var(--dur);
+  }
+
+  #ai-chat .ai-chat-launcher:hover {
+    transform: translateY(-4px) scale(1.03);
+    filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.28));
+  }
+
+  #ai-chat .ai-chat-launcher:active {
+    transform: translateY(1px) scale(0.99);
+  }
+
+  #ai-chat .ai-chat-launcher img {
+    position: relative;
+    display: block;
+    width: 86px;
+    height: auto;
+  }
+
+  #ai-chat .ai-chat-launcher .ai-chat-static,
+  #ai-chat .ai-chat-launcher .ai-chat-launcher-halo {
+    display: none;
+  }
+
+  #ai-chat .ai-chat-launcher-halo {
+    position: absolute;
+    left: 50%;
+    bottom: 18%;
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    background: var(--accent-gradient);
+    opacity: 0.2;
+    filter: blur(18px);
+    transform: translateX(-50%);
+  }
+
+  #ai-chat .ai-chat-panel {
+    position: absolute;
+    right: 18px;
+    bottom: 18px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    width: min(370px, calc(100vw - 24px));
+    height: min(540px, calc(100dvh - 24px));
+    overflow: hidden;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-hover), 0 0 0 3px color-mix(in srgb, var(--card-edge) 55%, transparent),
+      0 20px 42px rgba(0, 0, 0, 0.24);
+    pointer-events: auto;
+    animation: ai-chat-pop var(--dur-long) var(--ease-pop) both;
+  }
+
+  #ai-chat .ai-chat-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 62px;
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--line);
+    background: color-mix(in srgb, var(--bg-soft) 88%, var(--card));
+  }
+
+  #ai-chat .ai-chat-avatar {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 38px;
+    height: 42px;
+    overflow: hidden;
+    border: 2px solid color-mix(in srgb, var(--accent) 65%, var(--line));
+    border-radius: var(--radius);
+    background: var(--accent-gradient);
+  }
+
+  #ai-chat .ai-chat-avatar img {
+    width: 31px;
+    height: auto;
+    filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.2));
+  }
+
+  #ai-chat .ai-chat-identity {
+    display: grid;
+    min-width: 0;
+    margin-right: auto;
+    line-height: 1.2;
+  }
+
+  #ai-chat .ai-chat-identity strong {
+    overflow: hidden;
+    font-family: var(--font-pixel);
+    font-size: 0.92rem;
+    letter-spacing: 0.08em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #ai-chat .ai-chat-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    margin-top: 3px;
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.05em;
+  }
+
+  #ai-chat .ai-chat-status i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #65d46e;
+    box-shadow: 0 0 8px rgba(101, 212, 110, 0.75);
+    animation: ai-chat-pulse 1.8s steps(2) infinite;
+  }
+
+  #ai-chat .ai-chat-head-btn {
+    flex: none;
+    min-width: 34px;
+    height: 30px;
+    padding: 0 7px;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text-dim);
+    font: 700 0.68rem var(--font-pixel);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color var(--dur), border-color var(--dur), transform var(--dur);
+  }
+
+  #ai-chat .ai-chat-head-btn:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    transform: translateY(-1px);
+  }
+
+  #ai-chat .ai-chat-close {
+    font: 700 1.2rem/1 var(--font-mono);
+  }
+
+  #ai-chat .ai-chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 14px 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--line) 14%, transparent) 1px,
+      transparent 1px
+    );
+    background-size: 100% 4px;
+    scrollbar-color: var(--line) transparent;
+    scrollbar-width: thin;
+  }
+
+  #ai-chat .ai-chat-message {
+    display: flex;
+    align-items: flex-end;
+    gap: 7px;
+    max-width: 100%;
+  }
+
+  #ai-chat .ai-chat-message.is-user {
+    flex-direction: row-reverse;
+  }
+
+  #ai-chat .ai-chat-message-avatar {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 25px;
+    height: 25px;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text-dim);
+    font: 700 0.54rem var(--font-pixel);
+  }
+
+  #ai-chat .ai-chat-message.is-user .ai-chat-message-avatar {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 14%, var(--card));
+    color: var(--text);
+  }
+
+  #ai-chat .ai-chat-bubble {
+    max-width: calc(100% - 36px);
+    margin: 0;
+    padding: 8px 10px;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: var(--fs-small);
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  #ai-chat .ai-chat-message.is-user .ai-chat-bubble {
+    border-color: color-mix(in srgb, var(--accent-2) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent-2) 13%, var(--card));
+  }
+
+  #ai-chat .ai-chat-message.is-notice {
+    justify-content: center;
+  }
+
+  #ai-chat .ai-chat-message.is-notice .ai-chat-bubble {
+    max-width: 92%;
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 8%, var(--card));
+    color: var(--text-dim);
+    font-size: var(--fs-tiny);
+    text-align: center;
+  }
+
+  #ai-chat .ai-chat-thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    margin-left: 32px;
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  #ai-chat .ai-chat-dots {
+    display: inline-flex;
+    gap: 3px;
+  }
+
+  #ai-chat .ai-chat-dots i {
+    width: 5px;
+    height: 5px;
+    background: var(--accent);
+    animation: ai-chat-dot 1.1s steps(2) infinite;
+  }
+
+  #ai-chat .ai-chat-dots i:nth-child(2) { animation-delay: 0.16s; }
+  #ai-chat .ai-chat-dots i:nth-child(3) { animation-delay: 0.32s; }
+  #ai-chat .ai-chat-composer {
+    display: grid;
+    gap: 7px;
+    padding: 10px;
+    border-top: 2px solid var(--line);
+    background: color-mix(in srgb, var(--bg-soft) 82%, var(--card));
+  }
+
+  #ai-chat .ai-chat-composer textarea {
+    width: 100%;
+    min-height: 42px;
+    max-height: 112px;
+    padding: 8px 10px;
+    resize: none;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    outline: none;
+    transition: border-color var(--dur), box-shadow var(--dur);
+  }
+
+  #ai-chat .ai-chat-composer textarea:focus {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-2) 24%, transparent);
+  }
+
+  #ai-chat .ai-chat-composer-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  #ai-chat .ai-chat-hint {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #ai-chat .ai-chat-counter {
+    flex: none;
+    margin-left: auto;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+  }
+
+  #ai-chat .ai-chat-counter.is-near {
+    color: var(--accent);
+  }
+
+  #ai-chat .ai-chat-send {
+    flex: none;
+    min-width: 62px;
+    padding: 0.45em 0.9em;
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--accent-gradient);
+    box-shadow: 0 var(--px) 0 0 var(--card-edge);
+    color: var(--bg);
+    font: 700 var(--fs-small) var(--font-pixel);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: transform var(--dur), opacity var(--dur), filter var(--dur);
+  }
+
+  #ai-chat .ai-chat-send:hover:not(:disabled) {
+    transform: translateY(-2px);
+    filter: brightness(1.06);
+  }
+
+  #ai-chat .ai-chat-send:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  #ai-chat .ai-chat-send.is-stop {
+    background: var(--card);
+    border: 2px solid var(--accent);
+    color: var(--accent);
+  }
+
+  #ai-chat .ai-chat-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @keyframes ai-chat-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-7px); }
+  }
+
+  @keyframes ai-chat-pop {
+    from { opacity: 0; transform: translateY(14px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  @keyframes ai-chat-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+
+  @keyframes ai-chat-dot {
+    0%, 100% { opacity: 0.3; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #ai-chat .ai-chat-launcher {
+      animation: none;
+    }
+
+    #ai-chat .ai-chat-launcher .ai-chat-gif {
+      display: none;
+    }
+
+    #ai-chat .ai-chat-launcher .ai-chat-static {
+      display: block;
+    }
+
+    #ai-chat .ai-chat-panel {
+      animation: none;
+    }
+  }
+
+  @media (max-width: 560px) {
+    #ai-chat .ai-chat-launcher {
+      right: 8px;
+      bottom: 8px;
+      width: 76px;
+    }
+
+    #ai-chat .ai-chat-launcher img {
+      width: 76px;
+    }
+
+    #ai-chat .ai-chat-panel {
+      right: 8px;
+      bottom: 8px;
+      width: calc(100vw - 16px);
+      height: auto;
+      max-height: calc(100dvh - 16px);
+    }
+
+    #ai-chat .ai-chat-hint {
+      display: none;
+    }
+  }
+</style>
