@@ -23,8 +23,22 @@ interface MarkdownSection {
   text: string;
 }
 
+interface FenceMarker {
+  char: string;
+  length: number;
+}
+
 const TARGET_CHARS = 1000;
 const CODE_LIMIT = 600;
+
+/** 围栏开启标记：` 或 ~，至少三个，允许行首缩进。 */
+const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/u;
+
+/**
+ * H2/H3 标题行。闭合 hashes 只在有前导空白时剥离 —— `## C#` 的井号属于标题本身，
+ * `## 标题 ##` 的尾部井号才是闭合标记。
+ */
+const HEADING_RE = /^(#{2,3})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/u;
 
 function charLength(value: string): number {
   return [...value].length;
@@ -34,10 +48,29 @@ function charSlice(value: string, maxChars: number): string {
   return [...value].slice(0, maxChars).join('');
 }
 
+function fenceMarker(line: string): FenceMarker | undefined {
+  const match = FENCE_RE.exec(line);
+  if (!match) return undefined;
+  return { char: match[1][0], length: match[1].length };
+}
+
+/** 闭合围栏必须同字符且不短于开启围栏，```` 内部的三反引号行不算闭合。 */
+function closesFence(line: string, open: FenceMarker): boolean {
+  const marker = fenceMarker(line);
+  return marker !== undefined && marker.char === open.char && marker.length >= open.length;
+}
+
+/**
+ * 清洗行内标记用于与 Astro 渲染出的标题文本比对。
+ * 只剥离成对标记，绝不整体删除 `_` `~` `#`：`snake_case` 与 `C#` 必须原样保留，
+ * 否则不同标题会被清洗成同一个文本，进而互相串锚点。
+ */
 function cleanInline(value: string): string {
   return value
     .replace(/\[([^\]]+)\]\([^)]+\)/gu, '$1')
-    .replace(/[*_`~]/gu, '')
+    .replace(/(\*\*|__|~~)(.+?)\1/gu, '$2')
+    .replace(/`([^`]+)`/gu, '$1')
+    .replace(/(?<!\w)(\*|_)(?=\S)(.+?)(?<=\S)\1(?!\w)/gu, '$2')
     .trim();
 }
 
@@ -53,16 +86,20 @@ export function splitMarkdownSections(body: string): MarkdownSection[] {
     buffer = [];
   };
 
-  let fence = '';
+  let fence: FenceMarker | undefined;
   for (const line of lines) {
-    const fenceMatch = /^\s*(?:`{3,}|~{3,})/u.exec(line);
-    if (!fence && fenceMatch) fence = fenceMatch[0].trim()[0];
-    else if (fence && fenceMatch && fenceMatch[0].trim()[0] === fence) fence = '';
-    if (fence || fenceMatch) {
+    if (fence !== undefined) {
+      buffer.push(line);
+      if (closesFence(line, fence)) fence = undefined;
+      continue;
+    }
+    const opening = fenceMarker(line);
+    if (opening !== undefined) {
+      fence = opening;
       buffer.push(line);
       continue;
     }
-    const match = /^(#{2,3})\s+(.+?)\s*#*\s*$/u.exec(line);
+    const match = HEADING_RE.exec(line);
     if (!match) {
       buffer.push(line);
       continue;
@@ -75,11 +112,42 @@ export function splitMarkdownSections(body: string): MarkdownSection[] {
   return sections;
 }
 
+/**
+ * 按同一套围栏规则处理代码块预算：与分节共用 fenceMarker/closesFence，
+ * 因此 `~~~`、```` 及更长的反引号围栏都会被截断到 CODE_LIMIT。
+ */
 function trimLongCodeFences(text: string): string {
-  return text.replace(/```[\s\S]*?```/gu, (block) => {
-    if (charLength(block) <= CODE_LIMIT) return block;
-    return `${charSlice(block, CODE_LIMIT)}\n\n[代码已截断]`;
-  });
+  const lines = text.split('\n');
+  const output: string[] = [];
+  let block: string[] = [];
+  let fence: FenceMarker | undefined;
+
+  const flush = () => {
+    if (block.length === 0) return;
+    const joined = block.join('\n');
+    output.push(charLength(joined) <= CODE_LIMIT ? joined : `${charSlice(joined, CODE_LIMIT)}\n\n[代码已截断]`);
+    block = [];
+  };
+
+  for (const line of lines) {
+    if (fence === undefined) {
+      const opening = fenceMarker(line);
+      if (opening === undefined) {
+        output.push(line);
+        continue;
+      }
+      fence = opening;
+      block.push(line);
+      continue;
+    }
+    block.push(line);
+    if (closesFence(line, fence)) {
+      fence = undefined;
+      flush();
+    }
+  }
+  flush();
+  return output.join('\n');
 }
 
 function splitLongText(text: string): string[] {
@@ -113,11 +181,15 @@ function splitLongText(text: string): string[] {
   return output.filter(Boolean);
 }
 
+/**
+ * 锚点严格逐项对应：只把当前游标指向的 Astro 标题与本节标题比较。
+ * 文本不一致时回退空锚点且不推进游标，绝不向后扫描「找一个像的」，
+ * 否则 snake_case / snakecase 这类归一化碰撞会互相串锚点。
+ */
 function matchHeading(sectionHeading: string, headings: RenderedHeading[], cursor: number): { anchor: string; nextCursor: number } {
   if (!sectionHeading) return { anchor: '', nextCursor: cursor };
-  for (let index = cursor; index < headings.length; index += 1) {
-    if (headings[index].text === sectionHeading) return { anchor: headings[index].slug, nextCursor: index + 1 };
-  }
+  const current = headings[cursor];
+  if (current && current.text === sectionHeading) return { anchor: current.slug, nextCursor: cursor + 1 };
   return { anchor: '', nextCursor: cursor };
 }
 
