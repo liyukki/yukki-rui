@@ -6,18 +6,21 @@
  * UI 只追加一个固定定位层，不改变页面原有布局。
  */
 import { AI_CHAT, SITE, UI, type Lang } from '../consts';
+import { buildAiContext, parseAiIndex, type AiIndex, type AiSource } from '../lib/ai-context';
 import { chatEndpoint } from '../lib/chat';
 import { withBase } from '../lib/url';
 
 interface Props {
   lang: Lang;
+  articleId?: string;
 }
 
-const { lang } = Astro.props;
+const { lang, articleId } = Astro.props;
 const t = UI[lang];
 const endpoint = chatEndpoint(SITE.url, AI_CHAT.origin);
 const gifSrc = withBase('chat/yukki-chat.gif');
 const staticSrc = withBase('chat/yukki-chat-static.png');
+const indexSrc = withBase(`ai/${lang}.json`);
 const i18n = {
   title: t.aiTitle,
   online: t.aiOnline,
@@ -37,6 +40,12 @@ const i18n = {
   unavailable: t.aiUnavailable,
   invalid: t.aiInvalid,
   failed: t.aiFailed,
+  contextUnavailable: t.aiContextUnavailable,
+  sources: t.aiSources,
+  quickSummary: t.aiQuickSummary,
+  quickPoints: t.aiQuickPoints,
+  quickExplain: t.aiQuickExplain,
+  quickRelated: t.aiQuickRelated,
 };
 ---
 
@@ -47,6 +56,9 @@ const i18n = {
     transition:persist="ai-chat"
     data-api={endpoint}
     data-lang={lang}
+    data-context-enabled={AI_CHAT.contextEnabled ? '1' : '0'}
+    data-index={indexSrc}
+    data-article-id={articleId ?? ''}
     data-max-input={String(AI_CHAT.maxInputLength)}
     data-max-messages={String(AI_CHAT.maxMessages)}
     data-i18n={JSON.stringify(i18n)}
@@ -98,6 +110,13 @@ const i18n = {
         </div>
       </div>
 
+      <div class="ai-chat-quick" data-chat-quick hidden>
+        <button type="button" data-chat-prompt={t.aiQuickSummary}>{t.aiQuickSummary}</button>
+        <button type="button" data-chat-prompt={t.aiQuickPoints}>{t.aiQuickPoints}</button>
+        <button type="button" data-chat-prompt={t.aiQuickExplain}>{t.aiQuickExplain}</button>
+        <button type="button" data-chat-prompt={t.aiQuickRelated}>{t.aiQuickRelated}</button>
+      </div>
+
       <form class="ai-chat-composer" data-chat-form>
         <label class="ai-chat-sr-only" for="ai-chat-input">{t.aiPlaceholder}</label>
         <textarea
@@ -120,6 +139,12 @@ const i18n = {
 
 <script>
   import {
+    buildAiContext,
+    parseAiIndex,
+    type AiIndex,
+    type AiSource,
+  } from '../lib/ai-context';
+  import {
     chatApiUrl,
     createSseParser,
     extractChatDelta,
@@ -128,6 +153,11 @@ const i18n = {
   } from '../lib/chat';
 
   type Lang = 'zh' | 'en';
+  type ChatMessageView = {
+    row: HTMLDivElement;
+    bubble: HTMLParagraphElement;
+    main: HTMLDivElement;
+  };
 
   interface ChatI18n {
     title: string;
@@ -148,14 +178,28 @@ const i18n = {
     unavailable: string;
     invalid: string;
     failed: string;
+    contextUnavailable: string;
+    sources: string;
+    quickSummary: string;
+    quickPoints: string;
+    quickExplain: string;
+    quickRelated: string;
   }
 
   function initAiChat(): void {
-    const root = document.getElementById('ai-chat');
-    if (!root || root.dataset.ready === '1') return;
+    const chatRoot = document.getElementById('ai-chat');
+    if (!chatRoot) return;
+    const root: HTMLElement = chatRoot;
+
+    type RefreshableRoot = HTMLElement & { __aiChatRefresh?: () => void };
+    const refreshable = root as RefreshableRoot;
+    if (root.dataset.ready === '1') {
+      refreshable.__aiChatRefresh?.();
+      return;
+    }
     root.dataset.ready = '1';
 
-    const lang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
+    let activeLang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
     let i18n: ChatI18n;
     try {
       i18n = JSON.parse(root.dataset.i18n ?? '{}') as ChatI18n;
@@ -174,6 +218,13 @@ const i18n = {
     const closeButton = root.querySelector<HTMLButtonElement>('[data-chat-close]');
     if (!launcher || !panel || !log || !form || !input || !counter || !sendButton) return;
 
+    const quick = root.querySelector<HTMLElement>('[data-chat-quick]');
+    const contextEnabled = root.dataset.contextEnabled === '1';
+    let indexSrcPath = root.dataset.index ?? '';
+    let indexPromise: Promise<AiIndex | null> | null = null;
+    let indexUnavailable = false;
+    let indexNoticeShown = false;
+
     const maxInput = Math.max(1, Number(root.dataset.maxInput) || 2000);
     const maxMessages = Math.max(1, Number(root.dataset.maxMessages) || 20);
     const endpoint = root.dataset.api ?? '';
@@ -186,7 +237,7 @@ const i18n = {
     let composing = false;
 
     function messageError(): string {
-      if (lang === 'en') {
+      if (activeLang === 'en') {
         return i18n.failed || 'Something went wrong. Please try again.';
       }
       return i18n.failed || '出了点问题，请稍后再试。';
@@ -207,6 +258,85 @@ const i18n = {
       });
     }
 
+    function currentPageMarker(): HTMLElement | null {
+      return document.querySelector<HTMLElement>('[data-ai-page-context]');
+    }
+
+    function currentArticleId(): string {
+      const marker = currentPageMarker();
+      return marker?.dataset.articleId || root.dataset.articleId || '';
+    }
+
+    function syncPageContext(): void {
+      const markerLang = currentPageMarker()?.dataset.lang;
+      if (markerLang === 'zh' || markerLang === 'en') activeLang = markerLang;
+      const nextIndexPath = (root.dataset.index ?? '').replace(/(?:zh|en)\.json$/u, `${activeLang}.json`);
+      if (nextIndexPath && nextIndexPath !== indexSrcPath) {
+        indexSrcPath = nextIndexPath;
+        indexPromise = null;
+        indexUnavailable = false;
+        indexNoticeShown = false;
+      }
+      updateQuickVisibility();
+    }
+
+    function updateQuickVisibility(): void {
+      if (!quick) return;
+      quick.hidden = !contextEnabled || !currentArticleId() || history.length > 0;
+    }
+
+    function loadIndex(): Promise<AiIndex | null> {
+      if (!contextEnabled || !indexSrcPath) return Promise.resolve(null);
+      indexPromise ??= fetch(indexSrcPath, { headers: { Accept: 'application/json' } })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((value) => parseAiIndex(value))
+        .catch(() => null)
+        .then((index) => {
+          indexUnavailable = !index;
+          return index;
+        });
+      return indexPromise;
+    }
+
+    function sourceHref(source: AiSource): string {
+      if (typeof source.url !== 'string') return '';
+      const unsafePathPart = (value: string): boolean =>
+        /[\u0000-\u001f\u007f-\u009f\s]/u.test(value)
+        || value.includes('//')
+        || value.includes('..')
+        || value.includes('\\')
+        || /[?#]/u.test(value);
+
+      if (
+        !source.url.startsWith('/')
+        || source.url.startsWith('//')
+        || source.url.includes('//')
+        || /[\u0000-\u001f\u007f-\u009f\s]/u.test(source.url)
+        || source.url.includes('..')
+        || source.url.includes('\\')
+        || /[?#]/u.test(source.url)
+        || /%(?![0-9a-f]{2})/iu.test(source.url)
+      ) {
+        return '';
+      }
+
+      let decoded = source.url;
+      while (/%[0-9a-f]{2}/iu.test(decoded)) {
+        try {
+          decoded = decodeURIComponent(decoded);
+        } catch {
+          return '';
+        }
+        if (unsafePathPart(decoded) || /%(?![0-9a-f]{2})/iu.test(decoded)) return '';
+      }
+
+      try {
+        return source.url + (source.anchor ? `#${encodeURIComponent(source.anchor)}` : '');
+      } catch {
+        return '';
+      }
+    }
+
     function createMessage(role: 'user' | 'assistant', text: string) {
       const row = document.createElement('div');
       row.className = `ai-chat-message is-${role}`;
@@ -214,11 +344,34 @@ const i18n = {
       avatar.className = 'ai-chat-message-avatar';
       avatar.setAttribute('aria-hidden', 'true');
       avatar.textContent = role === 'user' ? 'YOU' : 'Y';
+      const main = document.createElement('div');
+      main.className = 'ai-chat-message-main';
       const bubble = document.createElement('p');
       bubble.className = 'ai-chat-bubble';
       bubble.textContent = text;
-      row.append(avatar, bubble);
-      return { row, bubble };
+      main.append(bubble);
+      row.append(avatar, main);
+      return { row, bubble, main };
+    }
+
+    function renderSources(container: HTMLElement, sources: AiSource[]): void {
+      if (!sources.length) return;
+      const section = document.createElement('section');
+      section.className = 'ai-chat-sources';
+      const label = document.createElement('strong');
+      label.textContent = i18n.sources;
+      const list = document.createElement('ol');
+      for (const [index, source] of sources.entries()) {
+        const item = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = sourceHref(source);
+        if (!link.getAttribute('href')) link.removeAttribute('href');
+        link.textContent = `${index + 1}. ${source.title}${source.heading && source.heading !== source.title ? ` — ${source.heading}` : ''}`;
+        item.append(link);
+        list.append(item);
+      }
+      section.append(label, list);
+      container.append(section);
     }
 
     function appendMessage(role: 'user' | 'assistant', text: string) {
@@ -294,6 +447,7 @@ const i18n = {
       log.replaceChildren();
       const welcome = createMessage('assistant', i18n.welcome);
       log.append(welcome.row);
+      updateQuickVisibility();
       updateCounter();
       resizeInput();
       scrollToBottom();
@@ -332,6 +486,7 @@ const i18n = {
 
       const token = ++requestSeq;
       history.push({ role: 'user', content: text });
+      updateQuickVisibility();
       appendMessage('user', text);
       input.value = '';
       updateCounter();
@@ -341,13 +496,20 @@ const i18n = {
       setBusy(true);
 
       let received = '';
-      let assistantBubble: HTMLParagraphElement | null = null;
+      let assistantMessage: ChatMessageView | null = null;
+      let sentSources: AiSource[] = [];
+      let contextUnavailable = false;
 
       try {
+        const index = await loadIndex();
+        contextUnavailable = indexUnavailable;
+        const context = index ? buildAiContext(index, text, activeLang, currentArticleId()) : undefined;
+        sentSources = context?.sources ?? [];
+
         const response = await fetch(api(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-          body: JSON.stringify({ messages }),
+          body: JSON.stringify(context ? { messages, context } : { messages }),
           signal: controller.signal,
         });
 
@@ -367,12 +529,12 @@ const i18n = {
           if (token !== requestSeq || data === '[DONE]') return;
           const delta = extractChatDelta(data);
           if (!delta) return;
-          if (!assistantBubble) {
-            assistantBubble = appendMessage('assistant', '').bubble;
+          if (!assistantMessage) {
+            assistantMessage = appendMessage('assistant', '');
             setThinking(false);
           }
           received += delta;
-          assistantBubble.textContent = received;
+          assistantMessage.bubble.textContent = received;
           scrollToBottom();
         });
 
@@ -385,6 +547,12 @@ const i18n = {
         parser.finish();
 
         if (token === requestSeq && !received) appendNotice(i18n.noReply);
+        const finalAssistant = assistantMessage as ChatMessageView | null;
+        if (token === requestSeq && received && finalAssistant) renderSources(finalAssistant.main, sentSources);
+        if (token === requestSeq && contextUnavailable && !indexNoticeShown) {
+          indexNoticeShown = true;
+          appendNotice(i18n.contextUnavailable);
+        }
       } catch (error) {
         if (token === requestSeq && !(error instanceof DOMException && error.name === 'AbortError')) {
           if (!received) appendNotice(messageError());
@@ -398,6 +566,16 @@ const i18n = {
           input.focus();
         }
       }
+    }
+
+    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-chat-prompt]')) {
+      button.addEventListener('click', () => {
+        input.value = button.dataset.chatPrompt ?? '';
+        updateCounter();
+        resizeInput();
+        input.focus();
+        void sendMessage();
+      });
     }
 
     launcher.addEventListener('click', () => setOpen(Boolean(panel.hidden)));
@@ -442,6 +620,9 @@ const i18n = {
       if (!root.isConnected || event.key !== 'Escape' || panel.hidden) return;
       setOpen(false);
     });
+
+    refreshable.__aiChatRefresh = syncPageContext;
+    syncPageContext();
 
     updateCounter();
     resizeInput();
@@ -680,8 +861,78 @@ const i18n = {
     color: var(--text);
   }
 
-  #ai-chat .ai-chat-bubble {
+  #ai-chat .ai-chat-message-main {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
     max-width: calc(100% - 36px);
+  }
+
+  #ai-chat .ai-chat-sources {
+    display: grid;
+    gap: 5px;
+    padding: 7px 8px;
+    border: 2px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--accent) 6%, var(--card));
+  }
+
+  #ai-chat .ai-chat-sources strong {
+    color: var(--text-dim);
+    font: 700 0.62rem var(--font-pixel);
+    letter-spacing: 0.06em;
+  }
+
+  #ai-chat .ai-chat-sources ol {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 1.3em;
+  }
+
+  #ai-chat .ai-chat-sources li {
+    min-width: 0;
+    padding-left: 1px;
+  }
+
+  #ai-chat .ai-chat-sources a {
+    color: var(--link);
+    font-size: var(--fs-tiny);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
+  #ai-chat .ai-chat-quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px 0;
+    background: color-mix(in srgb, var(--bg-soft) 82%, var(--card));
+  }
+
+  #ai-chat .ai-chat-quick button {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+    padding: 6px 7px;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text-dim);
+    font: 700 0.62rem/1.35 var(--font-pixel);
+    cursor: pointer;
+    transition: color var(--dur), border-color var(--dur), transform var(--dur);
+  }
+
+  #ai-chat .ai-chat-quick button:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    transform: translateY(-1px);
+  }
+
+  #ai-chat .ai-chat-bubble {
+    max-width: 100%;
     margin: 0;
     padding: 8px 10px;
     border: 2px solid var(--line);
@@ -909,6 +1160,14 @@ const i18n = {
 
     #ai-chat .ai-chat-hint {
       display: none;
+    }
+
+    #ai-chat .ai-chat-quick button {
+      flex-basis: 100%;
+    }
+
+    #ai-chat .ai-chat-sources a {
+      font-size: 0.68rem;
     }
   }
 </style>
