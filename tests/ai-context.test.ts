@@ -85,6 +85,40 @@ describe('parseAiIndex', () => {
     expect(parseAiIndex({ ...index, chunks: [{ ...index.chunks[0], url: 'https://evil.example/' }] })).toBeNull();
     expect(parseAiIndex({ ...index, chunks: [{ ...index.chunks[0], text: { toString: null } }] })).toBeNull();
   });
+
+  it('兼容根路径和 /yukki-rui/ base 前缀', () => {
+    const baseIndex = {
+      ...index,
+      posts: index.posts.map((post) => ({ ...post, url: `/yukki-rui${post.url}` })),
+      chunks: index.chunks.map((chunk) => ({ ...chunk, url: `/yukki-rui${chunk.url}` })),
+    };
+    expect(parseAiIndex(baseIndex)?.posts[0].url).toBe('/yukki-rui/zh/posts/current/');
+    expect(parseAiIndex(baseIndex)?.chunks[0].url).toBe('/yukki-rui/zh/posts/current/');
+  });
+
+  it('拒绝编码路径绕过、控制字符和非法编码', () => {
+    for (const url of [
+      '/%2e%2e/%2e%2e/etc/passwd',
+      '/%252e%252e/%252e%252e/etc/passwd',
+      '/%2f%2fevil.example',
+      '/%5c..%5cwindows',
+      '/%3fquery',
+      '/%23hash',
+      '/%00',
+      '/%C2%A0',
+      '/%C0%AF',
+      '/zh/posts/\u0000/',
+      '/zh/posts/\u0085/',
+      '/zh/posts/hello%20world/',
+      '/zh/posts/hello/ ',
+      '/zh/posts/hello/\t',
+      '/zh/posts/%E0%A4%A/',
+      '/zh/posts/%ZZ/',
+    ]) {
+      expect(parseAiIndex({ ...index, posts: [{ ...index.posts[0], url }] })).toBeNull();
+      expect(parseAiIndex({ ...index, chunks: [{ ...index.chunks[0], url }] })).toBeNull();
+    }
+  });
 });
 
 describe('rankAiChunks', () => {

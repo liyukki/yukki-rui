@@ -63,10 +63,33 @@ function safeText(value: unknown, maxChars: number): string {
   return typeof value === 'string' ? charSlice(value.trim(), maxChars) : '';
 }
 
+const CONTROL_OR_WHITESPACE_RE = /[\u0000-\u001f\u007f-\u009f\s]/u;
+const INVALID_PERCENT_RE = /%(?![0-9a-f]{2})/iu;
+const ENCODED_PERCENT_RE = /%[0-9a-f]{2}/iu;
+
+function hasUnsafePathChars(path: string): boolean {
+  return CONTROL_OR_WHITESPACE_RE.test(path)
+    || path.includes('\\')
+    || path.includes('//')
+    || path.includes('..')
+    || /[?#]/u.test(path);
+}
+
 function safeSitePath(value: unknown): string {
-  const path = safeText(value, 1000);
-  if (!path.startsWith('/') || path.startsWith('//')) return '';
-  if (path.includes('\\') || path.includes('..') || /[?#]/u.test(path)) return '';
+  if (typeof value !== 'string') return '';
+  const path = charSlice(value, 1000);
+  if (path !== path.trim() || !path.startsWith('/') || hasUnsafePathChars(path)) return '';
+  if (INVALID_PERCENT_RE.test(path)) return '';
+
+  let decoded = path;
+  while (ENCODED_PERCENT_RE.test(decoded)) {
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      return '';
+    }
+    if (hasUnsafePathChars(decoded)) return '';
+  }
   return path;
 }
 

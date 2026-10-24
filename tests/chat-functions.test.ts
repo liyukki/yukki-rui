@@ -131,6 +131,62 @@ describe('validateChatContext', () => {
     expect(validateChatContext({ ...validContext, sources: [{ ...validContext.sources[0], text: { toString: null } }] }).ok).toBe(false);
   });
 
+  it('空 sources 归一化为 null，重复 id 保留首个', () => {
+    const empty = validateChatContext({ ...validContext, sources: [] });
+    expect(empty).toEqual({ ok: true, context: null });
+
+    const duplicate = validateChatContext({
+      ...validContext,
+      sources: [validContext.sources[0], { ...validContext.sources[0], title: '重复来源' }],
+    });
+    expect(duplicate.ok).toBe(true);
+    if (duplicate.ok) {
+      expect(duplicate.context?.sources).toHaveLength(1);
+      expect(duplicate.context?.sources[0].title).toBe('你好，世界');
+    }
+  });
+
+  it('允许根路径和带 base 前缀路径，并拒绝编码绕过、控制字符和非法编码', () => {
+    const basePath = validateChatContext({
+      ...validContext,
+      sources: [{ ...validContext.sources[0], url: '/yukki-rui/zh/posts/hello-world/' }],
+    });
+    expect(basePath.ok).toBe(true);
+
+    for (const url of [
+      '/%2e%2e/%2e%2e/etc/passwd',
+      '/%252e%252e/%252e%252e/etc/passwd',
+      '/%2f%2fevil.example',
+      '/%5c..%5cwindows',
+      '/%3fquery',
+      '/%23hash',
+      '/%00',
+      '/%C2%A0',
+      '/%C0%AF',
+      '/zh/posts/\u0000/',
+      '/zh/posts/\u0085/',
+      '/zh/posts/hello%20world/',
+      '/zh/posts/hello/ ',
+      '/zh/posts/hello/\t',
+      '/zh/posts/%E0%A4%A/',
+      '/zh/posts/%ZZ/',
+    ]) {
+      const result = validateChatContext({
+        ...validContext,
+        sources: [{ ...validContext.sources[0], url }],
+      });
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  it('不保留下游未使用的 currentPostId', () => {
+    const result = validateChatContext(validContext);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.context).not.toHaveProperty('currentPostId');
+    }
+  });
+
   it('单段截断到 1200 字符，总量最多 6000 字符', () => {
     const long = validateChatContext({
       ...validContext,

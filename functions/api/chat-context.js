@@ -25,10 +25,33 @@ function textValue(value, maxChars) {
   return typeof value === 'string' ? charSlice(value.trim(), maxChars) : '';
 }
 
+const CONTROL_OR_WHITESPACE_RE = /[\u0000-\u001f\u007f-\u009f\s]/u;
+const INVALID_PERCENT_RE = /%(?![0-9a-f]{2})/iu;
+const ENCODED_PERCENT_RE = /%[0-9a-f]{2}/iu;
+
+function hasUnsafePathChars(path) {
+  return CONTROL_OR_WHITESPACE_RE.test(path)
+    || path.includes('\\')
+    || path.includes('//')
+    || path.includes('..')
+    || /[?#]/u.test(path);
+}
+
 function safeSitePath(value) {
-  const path = textValue(value, CHAT_CONTEXT_LIMITS.maxUrlChars);
-  if (!path.startsWith('/') || path.startsWith('//')) return '';
-  if (path.includes('\\') || path.includes('..') || /[?#]/u.test(path)) return '';
+  if (typeof value !== 'string') return '';
+  const path = charSlice(value, CHAT_CONTEXT_LIMITS.maxUrlChars);
+  if (path !== path.trim() || !path.startsWith('/') || hasUnsafePathChars(path)) return '';
+  if (INVALID_PERCENT_RE.test(path)) return '';
+
+  let decoded = path;
+  while (ENCODED_PERCENT_RE.test(decoded)) {
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      return '';
+    }
+    if (hasUnsafePathChars(decoded)) return '';
+  }
   return path;
 }
 
@@ -42,22 +65,26 @@ export function validateChatContext(value) {
   }
 
   const sources = [];
+  const seenIds = new Set();
   let total = 0;
   for (const item of value.sources) {
     if (!item || typeof item !== 'object') return { ok: false, error: 'invalid-context', message: '参考资料格式不合法' };
     const id = textValue(item.id, CHAT_CONTEXT_LIMITS.maxIdChars);
+    if (!id) return { ok: false, error: 'invalid-context', message: '参考资料字段不合法' };
+    if (seenIds.has(id)) continue;
     const postId = textValue(item.postId, CHAT_CONTEXT_LIMITS.maxIdChars);
     const title = textValue(item.title, CHAT_CONTEXT_LIMITS.maxTitleChars);
     const heading = textValue(item.heading, CHAT_CONTEXT_LIMITS.maxHeadingChars);
     const anchor = textValue(item.anchor, CHAT_CONTEXT_LIMITS.maxAnchorChars);
     const url = safeSitePath(item.url);
     const rawText = typeof item.text === 'string' ? item.text.trim() : '';
-    if (!id || !postId || !title || !url || !rawText) {
+    if (!postId || !title || !url || !rawText) {
       return { ok: false, error: 'invalid-context', message: '参考资料字段不合法' };
     }
     if (anchor.includes('/') || anchor.includes('\\') || anchor.includes('..')) {
       return { ok: false, error: 'invalid-context', message: '参考锚点不合法' };
     }
+    seenIds.add(id);
     const remaining = CHAT_CONTEXT_LIMITS.maxTotalChars - total;
     if (remaining <= 0) break;
     const text = charSlice(rawText, Math.min(CHAT_CONTEXT_LIMITS.maxSourceChars, remaining));
@@ -65,8 +92,7 @@ export function validateChatContext(value) {
     sources.push({ id, postId, title, url, heading, anchor, text });
   }
 
-  const currentPostId = textValue(value.currentPostId, CHAT_CONTEXT_LIMITS.maxIdChars);
-  return { ok: true, context: sources.length ? { version: 1, lang: value.lang, currentPostId: currentPostId || undefined, sources } : null };
+  return { ok: true, context: sources.length ? { version: 1, lang: value.lang, sources } : null };
 }
 
 export function buildChatContextPrompt(context) {
