@@ -46,6 +46,8 @@ const REQUIRED = [
   'en/listening/index.html',
   'zh/friends/index.html',
   'en/friends/index.html',
+  'ai/zh.json',
+  'ai/en.json',
   '404.html',
   'og-default.png',
   'pagefind/pagefind-entry.json',

@@ -52,7 +52,7 @@ function main() {
     const rootFiles = [...root.result.files].sort();
     const subFiles = [...sub.result.files].sort();
     // CSS/JS 文件名可能受 base 影响；页面与订阅、sitemap、robots 必须完全对应。
-    const routes = (files) => files.filter((file) => /\.(html|xml)$/.test(file) || file === 'robots.txt');
+    const routes = (files) => files.filter((file) => /\.(html|xml|json)$/.test(file) || file === 'robots.txt');
     if (JSON.stringify(routes(rootFiles)) !== JSON.stringify(routes(subFiles))) throw new Error('两种 base 的路由产物不一致');
     console.log('✓ 两种部署路径的实际页面和订阅产物一致');
     if (selfTest) {
