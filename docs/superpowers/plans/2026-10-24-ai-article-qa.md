@@ -493,6 +493,8 @@ const post = {
     '',
     '```ts',
     `const text = '${'x'.repeat(700)}';`,
+    '## 代码里的标题样式',
+    '### 不是真实章节',
     '```',
   ].join('\n'),
   data: { title: '你好，世界', description: '示例', lang: 'zh' as const, tags: ['写作'] },
@@ -615,7 +617,15 @@ export function splitMarkdownSections(body: string): MarkdownSection[] {
     buffer = [];
   };
 
+  let fence = '';
   for (const line of lines) {
+    const fenceMatch = /^\s*(?:`{3,}|~{3,})/u.exec(line);
+    if (!fence && fenceMatch) fence = fenceMatch[0].trim()[0];
+    else if (fence && fenceMatch && fenceMatch[0].trim()[0] === fence) fence = '';
+    if (fence || fenceMatch) {
+      buffer.push(line);
+      continue;
+    }
     const match = /^(#{2,3})\s+(.+?)\s*#*\s*$/u.exec(line);
     if (!match) {
       buffer.push(line);
@@ -967,6 +977,9 @@ export const CHAT_CONTEXT_LIMITS = Object.freeze({
   maxUrlChars: 1000,
 });
 
+export const CHAT_SYSTEM_PROMPT =
+  '你是 yukki rui 个人网站里的 AI 助手。默认使用与用户相同的语言，回答简洁、友善、准确；不确定时明确说明，不要编造。不要声称自己是站长本人。';
+
 function charLength(value) {
   return [...value].length;
 }
@@ -1043,22 +1056,21 @@ export function buildChatContextPrompt(context) {
 }
 
 export function buildChatSystemPrompt(context) {
-  if (!context) return '你是 yukki rui 个人网站里的 AI 助手。默认使用与用户相同的语言，回答简洁、友善、准确；不确定时明确说明，不要编造。不要声称自己是站长本人。';
-  return [
-    '你是 yukki rui 个人网站里的 AI 助手。默认使用与用户相同的语言，回答简洁、友善、准确；不确定时明确说明，不要编造。不要声称自己是站长本人。',
-    buildChatContextPrompt(context),
-  ].join('\n\n');
+  if (!context) return CHAT_SYSTEM_PROMPT;
+  return [CHAT_SYSTEM_PROMPT, buildChatContextPrompt(context)].join('\n\n');
 }
 ```
 
-Important: `buildChatSystemPrompt` must reproduce the existing `CHAT_SYSTEM_PROMPT` exactly as its first line. If the existing constant changes later, update both call sites together.
+Important: `CHAT_SYSTEM_PROMPT` has one canonical definition in `functions/api/chat-context.js`; `functions/api/chat.js` must re-export it so existing imports and the `buildChatSystemPrompt(null)` regression test keep working.
 
 - [ ] **Step 4: Wire the validator into the proxy**
 
-In `functions/api/chat.js`, replace the static system message usage:
+In `functions/api/chat.js`, remove the existing `CHAT_SYSTEM_PROMPT` constant declaration, then replace the static system message usage. Add this import and re-export so existing importers still see the same named export:
 
 ```js
-import { buildChatSystemPrompt, validateChatContext } from './chat-context.js';
+import { buildChatSystemPrompt, CHAT_SYSTEM_PROMPT, validateChatContext } from './chat-context.js';
+
+export { CHAT_SYSTEM_PROMPT };
 ```
 
 After `const checked = validateChatPayload(payload);` add:
@@ -1148,8 +1160,9 @@ describe('文章问答界面接入', () => {
       'buildAiContext',
       'parseAiIndex',
       'renderSources',
+      'syncPageContext',
       'ai-chat-sources',
-      'source.textContent',
+      'link.textContent',
       'link.href = sourceHref',
     ]) {
       expect(component).toContain(token);
@@ -1324,7 +1337,7 @@ quickExplain: string;
 quickRelated: string;
 ```
 
-Replace the early initialization block with a refresh-aware version:
+Replace the early initialization block with a refresh-aware version. Also replace the script's existing `const lang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';` declaration with `let activeLang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';` so later navigations can switch indexes without recreating the persisted chat.
 
 ```ts
 type RefreshableRoot = HTMLElement & { __aiChatRefresh?: () => void };
@@ -1341,7 +1354,7 @@ After the composer element lookups, add:
 ```ts
 const quick = root.querySelector<HTMLElement>('[data-chat-quick]');
 const contextEnabled = root.dataset.contextEnabled === '1';
-const indexSrcPath = root.dataset.index ?? '';
+let indexSrcPath = root.dataset.index ?? '';
 let indexPromise: Promise<AiIndex | null> | null = null;
 let indexUnavailable = false;
 let indexNoticeShown = false;
@@ -1350,9 +1363,26 @@ let indexNoticeShown = false;
 Add these helpers before `createMessage`:
 
 ```ts
+function currentPageMarker(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-ai-page-context]');
+}
+
 function currentArticleId(): string {
-  const marker = document.querySelector<HTMLElement>('[data-ai-page-context]');
+  const marker = currentPageMarker();
   return marker?.dataset.articleId || root.dataset.articleId || '';
+}
+
+function syncPageContext(): void {
+  const markerLang = currentPageMarker()?.dataset.lang;
+  if (markerLang === 'zh' || markerLang === 'en') activeLang = markerLang;
+  const nextIndexPath = (root.dataset.index ?? '').replace(/(?:zh|en)\.json$/u, `${activeLang}.json`);
+  if (nextIndexPath && nextIndexPath !== indexSrcPath) {
+    indexSrcPath = nextIndexPath;
+    indexPromise = null;
+    indexUnavailable = false;
+    indexNoticeShown = false;
+  }
+  updateQuickVisibility();
 }
 
 function updateQuickVisibility(): void {
@@ -1433,7 +1463,7 @@ In `sendMessage()`, immediately after the existing `history.push({ role: 'user',
       try {
         const index = await loadIndex();
         contextUnavailable = indexUnavailable;
-        const context = index ? buildAiContext(index, text, lang, currentArticleId()) : undefined;
+        const context = index ? buildAiContext(index, text, activeLang, currentArticleId()) : undefined;
         sentSources = context?.sources ?? [];
 
         const response = await fetch(api(), {
@@ -1514,10 +1544,8 @@ Add quick-prompt activation before the launcher listener:
 In `resetConversation()`, call `updateQuickVisibility()` after appending the welcome row. Before the final `updateCounter(); resizeInput();` at the end of `initAiChat()`, add:
 
 ```ts
-    refreshable.__aiChatRefresh = () => {
-      updateQuickVisibility();
-    };
-    updateQuickVisibility();
+    refreshable.__aiChatRefresh = syncPageContext;
+    syncPageContext();
 ```
 
 - [ ] **Step 8: Add source-card and quick-prompt styles**
@@ -1688,8 +1716,14 @@ const draftIds = new Set(['going-live']);
 const indexProblems = [];
 for (const lang of ['zh', 'en']) {
   const data = indexes[lang];
-  if (data?.version !== 1 || data?.lang !== lang) indexProblems.push(`${lang}: version/lang`);
-  if (!data?.posts?.length || !data?.chunks?.length) indexProblems.push(`${lang}: empty`);
+  if (data?.version !== 1 || data?.lang !== lang) {
+    indexProblems.push(`${lang}: version/lang`);
+    continue;
+  }
+  if (!Array.isArray(data.posts) || data.posts.length === 0 || !Array.isArray(data.chunks) || data.chunks.length === 0) {
+    indexProblems.push(`${lang}: empty`);
+    continue;
+  }
   if (data.posts.some((post) => draftIds.has(post.id))) indexProblems.push(`${lang}: draft`);
   if (data.chunks.some((chunk) => [...chunk.text].length > 1200)) indexProblems.push(`${lang}: oversized chunk`);
 }
@@ -1718,6 +1752,9 @@ Before the existing `if (userText === '停止测试')` branch in the mock server
     send('这是一个');
     later(900, () => send('用 Markdown 写的个人博客。'));
     later(1050, () => response.end('data: [DONE]\n\n'));
+  } else if (userText === 'What runs this site?') {
+    send('It runs on Markdown and static hosting.');
+    later(140, () => response.end('data: [DONE]\n\n'));
   } else if (userText === 'What is quantum entanglement?') {
     send('I could not find that in the site posts.');
     later(140, () => response.end('data: [DONE]\n\n'));
@@ -1740,6 +1777,7 @@ Replace the existing `await input.fill('你好');` block through the `服务端�
       ),
     { timeout: 20000 },
   );
+  await log.locator('.ai-chat-sources a').first().waitFor({ state: 'visible', timeout: 20000 });
   const homeSourceHrefs = await log.locator('.ai-chat-sources a').evaluateAll((links) =>
     links.map((link) => link.getAttribute('href')),
   );
@@ -1785,6 +1823,7 @@ Replace the existing `navPage` block with:
       ),
     { timeout: 10000 },
   );
+  await articleLog.locator('.ai-chat-sources a').first().waitFor({ state: 'visible', timeout: 20000 });
   const articleSourceLinks = await articleLog.locator('.ai-chat-sources a').evaluateAll((links) =>
     links.map((link) => ({ href: link.getAttribute('href'), text: link.textContent ?? '' })),
   );
@@ -1802,6 +1841,25 @@ Replace the existing `navPage` block with:
   const articlePrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
   const articleContext = JSON.parse(/SITE_CONTEXT_JSON=([\s\S]*)$/.exec(articlePrompt)?.[1] ?? '[]');
   check('文章页优先发送当前文章片段', articleContext.some((source) => source.postId === 'hello-world' && source.anchor === '这个站点是什么'));
+
+  await articlePage.locator('.site-nav a[href$="/en/about/"]').click();
+  await articlePage.waitForURL('**/en/about/', { timeout: 20000 });
+  await articleInput.fill('What runs this site?');
+  await articleInput.press('Enter');
+  await articlePage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === 'It runs on Markdown and static hosting.',
+      ),
+    { timeout: 20000 },
+  );
+  await articleLog.locator('.ai-chat-sources a').first().waitFor({ state: 'visible', timeout: 20000 });
+  const langSwitchPrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
+  const langSwitchContext = JSON.parse(/SITE_CONTEXT_JSON=([\s\S]*)$/.exec(langSwitchPrompt)?.[1] ?? '[]');
+  check(
+    '跨语言导航后复用聊天窗并切换 en 索引',
+    langSwitchContext.some((source) => source.postId === 'hello-world' && source.url.startsWith('/en/posts/')) && langSwitchContext.every((source) => source.url.startsWith('/en/posts/')),
+  );
 
   await articleLog.evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await articlePage.emulateMedia({ colorScheme: 'dark' });
@@ -1917,7 +1975,8 @@ git commit -m "test(chat): 覆盖文章问答端到端"
 ### Task 6: 发布与线上只读验收
 
 **Files:**
-- No source files should change in this task.
+- Normal acceptance: no source files should change in this task.
+- Failure exception: if a deployment build fails, fix the source, run `npm run verify:frontend`, commit the repair separately, then push again.
 
 **Interfaces:**
 - Consumes: Task 1–5 commits, Cloudflare Pages deployment, GitHub Pages deployment.
