@@ -5,7 +5,10 @@
  * 从 Cloudflare Secret 读取上游密钥并调用 OpenAI 兼容接口。
  * 密钥、上游地址和 Authorization 都不会进入浏览器。
  */
+import { buildChatSystemPrompt, CHAT_SYSTEM_PROMPT, validateChatContext } from './chat-context.js';
 import { isAllowedOrigin, sha256Hex } from './comments.js';
+
+export { CHAT_SYSTEM_PROMPT };
 
 export const CHAT_LIMITS = Object.freeze({
   messagesMax: 20,
@@ -17,9 +20,6 @@ export const CHAT_LIMITS = Object.freeze({
   dayMax: 800,
   outputTokensMax: 800,
 });
-
-export const CHAT_SYSTEM_PROMPT =
-  '你是 yukki rui 个人网站里的 AI 助手。默认使用与用户相同的语言，回答简洁、友善、准确；不确定时明确说明，不要编造。不要声称自己是站长本人。';
 
 const DEFAULT_API_BASE = 'https://token.astrumflow.com/v1';
 const DEFAULT_MODEL = 'gemma-4-26b-a4b-it';
@@ -232,6 +232,8 @@ export async function onRequestPost(context) {
   }
   const checked = validateChatPayload(payload);
   if (!checked.ok) return errorResponse(request, 400, checked.error, checked.message);
+  const checkedContext = validateChatContext(payload.context);
+  if (!checkedContext.ok) return errorResponse(request, 400, checkedContext.error, checkedContext.message);
 
   const ipHash = await sha256Hex(`${clientIp(request)}:${salt}`);
   const limit = await reserveRateLimit(env.DB, ipHash, Date.now());
@@ -251,7 +253,7 @@ export async function onRequestPost(context) {
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: 'system', content: CHAT_SYSTEM_PROMPT }, ...checked.messages],
+        messages: [{ role: 'system', content: buildChatSystemPrompt(checkedContext.context) }, ...checked.messages],
         temperature: 0.7,
         max_tokens: CHAT_LIMITS.outputTokensMax,
         stream: true,
