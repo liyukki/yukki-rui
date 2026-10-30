@@ -362,12 +362,12 @@ const i18n = chatI18n(lang);
       const label = document.createElement('strong');
       label.textContent = i18n.sources;
       const list = document.createElement('ol');
-      for (const [index, source] of sources.entries()) {
+      for (const source of sources) {
         const item = document.createElement('li');
         const link = document.createElement('a');
         link.href = sourceHref(source);
         if (!link.getAttribute('href')) link.removeAttribute('href');
-        link.textContent = `${index + 1}. ${source.title}${source.heading && source.heading !== source.title ? ` — ${source.heading}` : ''}`;
+        link.textContent = `${source.title}${source.heading && source.heading !== source.title ? ` — ${source.heading}` : ''}`;
         item.append(link);
         list.append(item);
       }

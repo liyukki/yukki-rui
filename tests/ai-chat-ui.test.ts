@@ -39,6 +39,7 @@ describe('文章问答界面接入', () => {
       expect(component).toContain(token);
     }
     expect(component).not.toMatch(/\.innerHTML\s*=/);
+    expect(component).not.toContain('${index + 1}. ${source.title}');
   });
 
   it('来源链接在组件内防御性复核站内路径', () => {
