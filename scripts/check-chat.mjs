@@ -12,7 +12,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +49,13 @@ async function openChat(page) {
   await panel.evaluate((element) => Promise.all(element.getAnimations({ subtree: false }).map((animation) => animation.finished.catch(() => {}))));
 }
 
+async function waitForViewTransition(page) {
+  await page.waitForFunction(
+    () => !document.documentElement.hasAttribute('data-astro-transition'),
+    { timeout: 10000 },
+  );
+}
+
 function resetDir(path) {
   const resolved = resolve(path);
   const root = resolve(ROOT) + sep;
@@ -56,12 +63,44 @@ function resetDir(path) {
   rmSync(resolved, { recursive: true, force: true });
 }
 
-const required = ['dist/zh/index.html', 'dist/chat/yukki-chat.gif', 'dist/chat/yukki-chat-static.png'];
+const required = [
+  'dist/zh/index.html',
+  'dist/chat/yukki-chat.gif',
+  'dist/chat/yukki-chat-static.png',
+  'dist/ai/zh.json',
+  'dist/ai/en.json',
+];
 const missing = required.filter((file) => !existsSync(join(ROOT, file)));
 if (missing.length) {
   console.error(`缺少构建产物：${missing.join(', ')}\n先跑 npm run build。`);
   process.exit(2);
 }
+
+const indexes = Object.fromEntries(
+  ['zh', 'en'].map((lang) => [lang, JSON.parse(readFileSync(join(ROOT, `dist/ai/${lang}.json`), 'utf8'))]),
+);
+const draftIds = new Set(['going-live']);
+const indexProblems = [];
+for (const lang of ['zh', 'en']) {
+  const data = indexes[lang];
+  if (data?.version !== 1 || data?.lang !== lang) {
+    indexProblems.push(`${lang}: version/lang`);
+    continue;
+  }
+  if (!Array.isArray(data.posts) || data.posts.length === 0 || !Array.isArray(data.chunks) || data.chunks.length === 0) {
+    indexProblems.push(`${lang}: empty`);
+    continue;
+  }
+  if (data.posts.some((post) => draftIds.has(post.id))) indexProblems.push(`${lang}: draft`);
+  if (data.chunks.some((chunk) => [...chunk.text].length > 1200)) indexProblems.push(`${lang}: oversized chunk`);
+}
+if (indexProblems.length) {
+  console.error(`AI 索引产物不合法：\n${indexProblems.map((item) => `  ${item}`).join('\n')}`);
+  process.exit(2);
+}
+console.log(
+  `✓ AI 索引就绪：zh ${indexes.zh.posts.length}/${indexes.zh.chunks.length}，en ${indexes.en.posts.length}/${indexes.en.chunks.length}`,
+);
 
 let chromium;
 try {
@@ -109,7 +148,20 @@ const mock = createServer(async (request, response) => {
   };
   const userText = payload.messages?.at(-1)?.content ?? '';
 
-  if (userText === '停止测试') {
+  if (userText === '写作语法有哪些？') {
+    send('写作先确定主题，再整理结构。');
+    later(140, () => response.end('data: [DONE]\n\n'));
+  } else if (userText === '这个站点是什么') {
+    send('这是一个');
+    later(900, () => send('用 Markdown 写的个人博客。'));
+    later(1050, () => response.end('data: [DONE]\n\n'));
+  } else if (userText === 'What runs this site?') {
+    send('It runs on Markdown and static hosting.');
+    later(140, () => response.end('data: [DONE]\n\n'));
+  } else if (userText === 'What is quantum entanglement?') {
+    send('I could not find that in the site posts.');
+    later(140, () => response.end('data: [DONE]\n\n'));
+  } else if (userText === '停止测试') {
     send('片段一');
     later(1600, () => {
       send('片段二');
@@ -215,7 +267,7 @@ try {
   const pageErrors = [];
   const browserRequests = [];
   page.on('pageerror', (error) => pageErrors.push(String(error).slice(0, 240)));
-  page.on('request', (request) => {
+  context.on('request', (request) => {
     browserRequests.push({
       url: request.url(),
       headers: request.headers(),
@@ -254,18 +306,33 @@ try {
   await sleep(250);
   check('Shift+Enter 只换行、不发送', (await input.inputValue()).includes('\n') && apiRequestCount() === 0);
 
-  await input.fill('你好');
+  await input.fill('写作语法有哪些？');
   await input.press('Enter');
   await page.waitForFunction(
     () =>
       [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
-        (node) => node.textContent === '你好！',
+        (node) => node.textContent === '写作先确定主题，再整理结构。',
       ),
     { timeout: 20000 },
   );
-  check('Enter 发送并拼接完整 SSE 流', /你好！/.test(await log.innerText()) && apiRequestCount() === 1);
+  await log.locator('.ai-chat-sources a').first().waitFor({ state: 'visible', timeout: 20000 });
+  const homeSourceHrefs = await log.locator('.ai-chat-sources a').evaluateAll((links) =>
+    links.map((link) => link.getAttribute('href')),
+  );
+  check('首页检索全站并显示来源卡片', homeSourceHrefs.some((href) => href?.includes('/zh/posts/writing-in-markdown/')));
+  check('Enter 发送并拼接完整 SSE 流', /写作先确定主题/.test(await log.innerText()) && apiRequestCount() === 1);
   check('生成完成后按钮恢复发送', (await send.innerText()).trim() === '发送');
-  check('服务端代理拿到了固定模型和 system prompt', mockRequests.at(-1)?.model === 'gemma-4-26b-a4b-it' && mockRequests.at(-1)?.messages?.[0]?.role === 'system');
+  const homePrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
+  check(
+    '首页请求带全站资料且模型由服务端固定',
+    mockRequests.at(-1)?.model === 'gemma-4-26b-a4b-it' && homePrompt.includes('SITE_CONTEXT_JSON='),
+  );
+  const homeContext = JSON.parse(/SITE_CONTEXT_JSON=([\s\S]*)$/.exec(homePrompt)?.[1] ?? '[]');
+  check(
+    '首页来源跨文章且语言隔离',
+    homeContext.some((source) => source.postId === 'writing-in-markdown' && source.url.startsWith('/zh/posts/')) &&
+      homeContext.every((source) => source.url.startsWith('/zh/posts/')),
+  );
 
   await input.fill('停止测试');
   await input.press('Enter');
@@ -333,81 +400,167 @@ try {
   check('429 显示限流文案', /请求太频繁/.test(await log.innerText()));
   await page.unroute('**/api/chat');
 
-  const html = await page.content();
-  check('页面源码不含密钥、上游地址或模拟上游地址', ![API_KEY, 'token.astrumflow.com', MOCK_ORIGIN].some((value) => html.includes(value)));
+  const noEvidencePage = await context.newPage();
+  noEvidencePage.on('pageerror', (error) => pageErrors.push(String(error).slice(0, 240)));
+  await noEvidencePage.goto(`${ORIGIN}/en/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await openChat(noEvidencePage);
+  await noEvidencePage.locator('[data-chat-input]').fill('What is quantum entanglement?');
+  await noEvidencePage.locator('[data-chat-input]').press('Enter');
+  await noEvidencePage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === 'I could not find that in the site posts.',
+      ),
+    { timeout: 20000 },
+  );
+  const noEvidencePrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
+  check(
+    '无站内依据时不发送 context 且明确不编造',
+    !noEvidencePrompt.includes('SITE_CONTEXT_JSON=') && (await noEvidencePage.locator('.ai-chat-sources').count()) === 0,
+  );
+  await noEvidencePage.close();
+
+  const fallbackPage = await context.newPage();
+  fallbackPage.on('pageerror', (error) => pageErrors.push(String(error).slice(0, 240)));
+  await fallbackPage.route('**/ai/zh.json', (route) => route.fulfill({ status: 404, body: 'not found' }));
+  await fallbackPage.goto(`${ORIGIN}/zh/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await openChat(fallbackPage);
+  await fallbackPage.locator('[data-chat-input]').fill('索引坏了还能聊天吗？');
+  await fallbackPage.locator('[data-chat-input]').press('Enter');
+  await fallbackPage.waitForFunction(
+    () => /站内参考资料暂不可用/.test(document.querySelector('[data-chat-log]')?.textContent ?? ''),
+    { timeout: 20000 },
+  );
+  const fallbackText = await fallbackPage.locator('[data-chat-log]').innerText();
+  const fallbackPrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
+  check(
+    '索引 404 时普通聊天继续且只提示一次',
+    /你好！/.test(fallbackText) &&
+      !fallbackPrompt.includes('SITE_CONTEXT_JSON=') &&
+      (fallbackText.match(/站内参考资料暂不可用/g) ?? []).length === 1,
+  );
+  await fallbackPage.close();
+
+  const articlePage = await context.newPage();
+  articlePage.on('pageerror', (error) => pageErrors.push(String(error).slice(0, 240)));
+  await articlePage.goto(`${ORIGIN}/zh/posts/hello-world/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await openChat(articlePage);
+  const articleInput = articlePage.locator('[data-chat-input]');
+  const articleLog = articlePage.locator('[data-chat-log]');
+  const articlePanel = articlePage.locator('[data-chat-panel]');
+  check('文章页显示四个快捷问题', (await articlePage.locator('[data-chat-quick] button:visible').count()) === 4);
+
+  await articleInput.fill('这个站点是什么');
+  await articleInput.press('Enter');
+  await articlePage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === '这是一个',
+      ),
+    { timeout: 20000 },
+  );
+
+  await articlePage.locator('.site-nav a[href$="/zh/about/"]').click();
+  await articlePage.waitForURL('**/zh/about/', { timeout: 20000 });
+  await waitForViewTransition(articlePage);
+  await articlePage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === '这是一个用 Markdown 写的个人博客。',
+      ),
+    { timeout: 10000 },
+  );
+  await articleLog.locator('.ai-chat-sources a').first().waitFor({ state: 'visible', timeout: 20000 });
+  const articleSourceLinks = await articleLog.locator('.ai-chat-sources a').evaluateAll((links) =>
+    links.map((link) => ({ href: link.getAttribute('href'), text: link.textContent ?? '' })),
+  );
+  check(
+    '切换页面后来源卡片和流式回复保持',
+    articlePage.url().endsWith('/zh/about/') &&
+      articleSourceLinks.some((link) => link.href?.startsWith('/zh/posts/hello-world/')) &&
+      (await articlePanel.isVisible()),
+  );
+
+  const anchorLink = articleLog.locator('.ai-chat-sources a[href*="#"]').first();
+  const anchorHref = await anchorLink.getAttribute('href');
+  await anchorLink.scrollIntoViewIfNeeded();
+  const anchorBox = await anchorLink.boundingBox();
+  if (!anchorBox) throw new Error('来源锚点链接没有可点击区域');
+  await Promise.all([
+    articlePage.waitForURL(
+      (url) => url.pathname === '/zh/posts/hello-world/' && url.hash.length > 1,
+      { timeout: 20000 },
+    ),
+    articlePage.mouse.click(anchorBox.x + anchorBox.width / 2, anchorBox.y + anchorBox.height / 2),
+  ]);
+  check('点击来源跳到文章真实锚点', anchorHref?.startsWith('/zh/posts/hello-world/#') === true && articlePage.url().includes('#'));
+
+  const articlePrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
+  const articleContext = JSON.parse(/SITE_CONTEXT_JSON=([\s\S]*)$/.exec(articlePrompt)?.[1] ?? '[]');
+  check(
+    '文章页优先发送当前文章片段',
+    articleContext.some((source) => source.postId === 'hello-world' && source.anchor === '这个站点是什么'),
+  );
+
+  await articlePage.locator('.site-nav a[href$="/en/posts/hello-worlden/"]').click();
+  await articlePage.waitForURL('**/en/posts/hello-worlden/', { timeout: 20000 });
+  await waitForViewTransition(articlePage);
+  await articleInput.fill('What runs this site?');
+  await articleInput.press('Enter');
+  await articlePage.waitForFunction(
+    () =>
+      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
+        (node) => node.textContent === 'It runs on Markdown and static hosting.',
+      ),
+    { timeout: 20000 },
+  );
+  await articleLog.locator('.ai-chat-sources a').first().waitFor({ state: 'visible', timeout: 20000 });
+  const langSwitchPrompt = mockRequests.at(-1)?.messages?.[0]?.content ?? '';
+  const langSwitchContext = JSON.parse(/SITE_CONTEXT_JSON=([\s\S]*)$/.exec(langSwitchPrompt)?.[1] ?? '[]');
+  check(
+    '跨语言导航后复用聊天窗并切换 en 索引',
+    langSwitchContext.some((source) => source.postId === 'hello-worlden' && source.url.startsWith('/en/posts/')) &&
+      langSwitchContext.every((source) => source.url.startsWith('/en/posts/')),
+  );
+
+  await articleLog.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await articlePage.locator('#theme-toggle').click();
+  await articlePage.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await sleep(250);
+  await articlePage.screenshot({ path: join(SCREENS, 'desktop-dark.png') });
+  await articlePage.locator('#theme-toggle').click();
+  await articlePage.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  await sleep(250);
+  await articlePage.setViewportSize({ width: 390, height: 844 });
+  const mobileSourceMetrics = await articlePage.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    innerWidth: window.innerWidth,
+    sourceRight: document.querySelector('.ai-chat-sources')?.getBoundingClientRect().right ?? 0,
+  }));
+  check(
+    '390px 下来源卡片不造成横向溢出',
+    mobileSourceMetrics.scrollWidth <= mobileSourceMetrics.innerWidth &&
+      mobileSourceMetrics.sourceRight <= mobileSourceMetrics.innerWidth + 1,
+    JSON.stringify(mobileSourceMetrics),
+  );
+  await articlePage.screenshot({ path: join(SCREENS, 'mobile-390.png') });
+  await articlePage.setViewportSize({ width: 1280, height: 900 });
+  await articlePage.close();
+
+  const pageHtml = await page.content();
+  check(
+    '索引和源码均不含密钥',
+    ![API_KEY, 'sk-', MOCK_ORIGIN].some((value) => JSON.stringify(indexes).includes(value)) &&
+      ![API_KEY, 'token.astrumflow.com', MOCK_ORIGIN].some((value) => pageHtml.includes(value)),
+  );
   check(
     '浏览器只请求本站 /api/chat，且不带 Authorization',
     browserRequests
       .filter((item) => item.url.includes('/api/chat'))
       .every((item) => item.url.startsWith(`${ORIGIN}/api/chat`) && !item.headers.authorization),
   );
-
-  const navPage = await context.newPage();
-  navPage.on('pageerror', (error) => pageErrors.push(String(error).slice(0, 240)));
-  await navPage.goto(`${ORIGIN}/zh/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await openChat(navPage);
-  const navInput = navPage.locator('[data-chat-input]');
-  const navLog = navPage.locator('[data-chat-log]');
-  const navPanel = navPage.locator('[data-chat-panel]');
-  await navInput.fill('停止测试');
-  await navInput.press('Enter');
-  await navPage.waitForFunction(
-    () =>
-      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
-        (node) => node.textContent === '片段一',
-      ),
-    { timeout: 20000 },
-  );
-  await navPage.locator('.site-nav a[href$="/zh/about/"]').click();
-  await navPage.waitForURL('**/zh/about/', { timeout: 20000 });
-  await navPage.waitForFunction(
-    () =>
-      [...document.querySelectorAll('[data-chat-log] .ai-chat-message.is-assistant .ai-chat-bubble')].some(
-        (node) => node.textContent === '片段一片段二',
-      ),
-    { timeout: 10000 },
-  );
-  const navigatedChatText = await navLog.innerText();
-  check(
-    '切换页面后聊天会话与流式回复保持',
-    navPage.url().endsWith('/zh/about/') && /片段一/.test(navigatedChatText) && /片段二/.test(navigatedChatText) && (await navPanel.isVisible()),
-  );
-  await navPage.close();
-
-  const darkContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' });
-  const darkPage = await darkContext.newPage();
-  await darkPage.goto(`${ORIGIN}/zh/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await openChat(darkPage);
-  await darkPage.screenshot({ path: join(SCREENS, 'desktop-dark.png') });
-  await darkContext.close();
-
-  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'light' });
-  const mobilePage = await mobileContext.newPage();
-  await mobilePage.goto(`${ORIGIN}/zh/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await openChat(mobilePage);
-  const mobileMetrics = await mobilePage.evaluate(() => {
-    const panel = document.querySelector('[data-chat-panel]');
-    const rect = panel?.getBoundingClientRect();
-    return {
-      scrollWidth: document.documentElement.scrollWidth,
-      innerWidth: window.innerWidth,
-      left: rect?.left ?? -1,
-      right: rect?.right ?? -1,
-      top: rect?.top ?? -1,
-      bottom: rect?.bottom ?? -1,
-    };
-  });
-  check(
-    '390px 下无横向溢出且面板在视口内',
-    mobileMetrics.scrollWidth <= mobileMetrics.innerWidth &&
-      mobileMetrics.left >= 0 &&
-      mobileMetrics.right <= mobileMetrics.innerWidth + 1 &&
-      mobileMetrics.top >= 0 &&
-      mobileMetrics.bottom <= 844 + 1,
-    JSON.stringify(mobileMetrics),
-  );
-  await mobilePage.screenshot({ path: join(SCREENS, 'mobile-390.png') });
-  await mobileContext.close();
 
   check('页面没有脚本异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 240));
   check('三张审核截图已生成', ['desktop-light.png', 'desktop-dark.png', 'mobile-390.png'].every((name) => existsSync(join(SCREENS, name))));
