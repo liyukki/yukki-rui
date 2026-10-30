@@ -91,6 +91,7 @@ img { max-width: 100%; height: auto; }
   flex-wrap: wrap;
 }
 .site-name {
+  order: 1;
   font-family: var(--font-pixel);
   font-weight: 800;
   font-size: 1.1rem;
@@ -111,7 +112,23 @@ img { max-width: 100%; height: auto; }
   0%, 100% { transform: scaleX(1); }
   50% { transform: scaleX(-1); }
 }
-.site-nav { display: flex; gap: var(--space-2); margin-left: auto; align-items: center; flex-wrap: wrap; }
+.site-nav {
+  display: flex;
+  order: 2;
+  gap: var(--space-2);
+  margin-left: auto;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.header-tools {
+  display: flex;
+  order: 3;
+  align-items: center;
+  gap: var(--space-2);
+}
+.site-header .nav-toggle {
+  display: none;
+}
 .site-nav a.nav-link {
   color: var(--text-dim);
   font-size: var(--fs-small);
@@ -128,6 +145,70 @@ img { max-width: 100%; height: auto; }
   border-color: var(--accent);
   text-decoration: none;
   transform: translateY(-2px);
+}
+
+@media (max-width: 760px) {
+  .site-header .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+  }
+
+  .site-name {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .header-tools {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .site-header .nav-toggle {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0.35em 0.65em;
+  }
+
+  .site-header .nav-toggle[aria-expanded='true'] {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 13%, var(--card));
+    color: var(--accent);
+  }
+
+  .site-nav {
+    display: none;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    margin: 0;
+    padding-top: var(--space-2);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  .site-nav.is-open {
+    display: grid;
+  }
+
+  .site-nav a.nav-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0.55em 0.7em;
+    text-align: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .nav-toggle__label {
+    display: none;
+  }
 }
 
 /* 像素按钮：硬边 + 阶梯阴影 */

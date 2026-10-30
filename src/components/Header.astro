@@ -1,6 +1,6 @@
 ---
-/** 站点头部：站名、当前语言导航、语言与主题按钮。 */
-import { NAV, SITE, type Lang } from '../consts';
+/** 站点头部：移动端默认收起导航，桌面端保持横向导航。 */
+import { NAV, SITE, UI, type Lang } from '../consts';
 import { langHref, withBase } from '../lib/url';
 import LangSwitch from './LangSwitch.astro';
 import PixelSprite from './PixelSprite.astro';
@@ -12,13 +12,115 @@ interface Props {
 }
 const { lang, alternateUrl } = Astro.props;
 ---
-<header class="site-header">
+<header class="site-header" data-site-header>
   <div class="wrap">
     <a class="site-name" href={langHref(lang)}><PixelSprite name="coin-sprite" size={20} />{SITE.name}</a>
-    <nav class="site-nav" aria-label={lang === 'zh' ? '主导航' : 'Main navigation'}>
-      {NAV[lang].map((item) => <a class="nav-link" href={withBase(item.path)}>{item.label}</a>)}
+    <div class="header-tools">
       <LangSwitch lang={lang} alternateUrl={alternateUrl} />
       <ThemeToggle lang={lang} />
+      <button
+        class="icon-btn nav-toggle"
+        type="button"
+        data-nav-toggle
+        aria-label={UI[lang].menu}
+        aria-expanded="false"
+        aria-controls="site-navigation"
+      >
+        <span class="nav-toggle__icon" aria-hidden="true">☰</span>
+        <span class="nav-toggle__label">{UI[lang].menu}</span>
+      </button>
+    </div>
+    <nav
+      id="site-navigation"
+      class="site-nav"
+      data-site-nav
+      aria-label={lang === 'zh' ? '主导航' : 'Main navigation'}
+    >
+      {NAV[lang].map((item) => <a class="nav-link" href={withBase(item.path)}>{item.label}</a>)}
     </nav>
   </div>
 </header>
+
+<noscript>
+  <style>
+    .nav-toggle {
+      display: none !important;
+    }
+
+    @media (max-width: 760px) {
+      .site-nav {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</noscript>
+
+<script>
+  let controller: AbortController | null = null;
+
+  function init(): void {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+
+    const header = document.querySelector<HTMLElement>('[data-site-header]');
+    const toggle = header?.querySelector<HTMLButtonElement>('[data-nav-toggle]');
+    const nav = header?.querySelector<HTMLElement>('[data-site-nav]');
+    if (!header || !toggle || !nav) return;
+
+    const mobile = window.matchMedia('(max-width: 760px)');
+
+    const setOpen = (open: boolean, focusToggle = false): void => {
+      nav.classList.toggle('is-open', open);
+      toggle.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      if (focusToggle) toggle.focus();
+    };
+
+    setOpen(false);
+
+    toggle.addEventListener(
+      'click',
+      () => setOpen(!nav.classList.contains('is-open')),
+      { signal },
+    );
+
+    nav.addEventListener(
+      'click',
+      (event) => {
+        if (event.target instanceof Element && event.target.closest('a')) setOpen(false);
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (!mobile.matches || !nav.classList.contains('is-open')) return;
+        if (!(event.target instanceof Node) || !header.contains(event.target)) setOpen(false);
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === 'Escape' && nav.classList.contains('is-open')) {
+          event.preventDefault();
+          setOpen(false, true);
+        }
+      },
+      { signal },
+    );
+
+    mobile.addEventListener('change', () => setOpen(false), { signal });
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-site-header]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
