@@ -37,19 +37,22 @@ const i18n = {
   data-i18n={JSON.stringify(i18n)}
   aria-label={t.postLikes}
 >
-  <button
-    class="post-likes__button"
-    type="button"
-    data-like-button
-    aria-pressed="false"
-    disabled
-  >
-    <svg class="post-likes__heart" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 20.4 4.8 13.7A4.9 4.9 0 0 1 4.8 6.6a4.9 4.9 0 0 1 6.9 0l.3.3.3-.3a4.9 4.9 0 0 1 6.9 0 4.9 4.9 0 0 1 0 7.1Z"></path>
-    </svg>
-    <span data-like-label>{t.postLike}</span>
-    <span class="post-likes__count" data-like-count aria-hidden="true">—</span>
-  </button>
+  <div class="post-likes__actions">
+    <button
+      class="post-likes__button"
+      type="button"
+      data-like-button
+      aria-pressed="false"
+      disabled
+    >
+      <svg class="post-likes__heart" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 20.4 4.8 13.7A4.9 4.9 0 0 1 4.8 6.6a4.9 4.9 0 0 1 6.9 0l.3.3.3-.3a4.9 4.9 0 0 1 6.9 0 4.9 4.9 0 0 1 0 7.1Z"></path>
+      </svg>
+      <span data-like-label>{t.postLike}</span>
+      <span class="post-likes__count" data-like-count aria-hidden="true">—</span>
+    </button>
+    <slot />
+  </div>
   <p class="post-likes__status" data-like-status role="status" aria-live="polite"></p>
 </section>
 
@@ -253,6 +256,14 @@ const i18n = {
     box-shadow: var(--shadow);
   }
 
+  .post-likes__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   .post-likes__button {
     display: inline-flex;
     align-items: center;
@@ -341,6 +352,12 @@ const i18n = {
     }
 
     .post-likes__button {
+      width: 100%;
+    }
+
+    .post-likes__actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       width: 100%;
     }
 

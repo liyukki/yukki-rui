@@ -21,6 +21,8 @@ describe('文章点赞组件接入', () => {
     expect(layout).toContain('<PostLikes');
     expect(layout).toContain('lang={lang}');
     expect(layout).toContain('postKey={postLikeKey(post)}');
+    expect(layout).toContain('<PostShare');
+    expect(layout.indexOf('<PostShare')).toBeLessThan(layout.indexOf('</PostLikes>'));
   });
 
   it('提供稳定的 DOM 契约和无障碍状态', () => {

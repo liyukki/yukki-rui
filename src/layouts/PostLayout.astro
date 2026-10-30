@@ -7,6 +7,7 @@ import Comments from '../components/Comments.astro';
 import PostExtras from '../components/PostExtras.astro';
 import PostLikes from '../components/PostLikes.astro';
 import PostNav from '../components/PostNav.astro';
+import PostShare from '../components/PostShare.astro';
 import PostToc from '../components/PostToc.astro';
 import ReadingSettings from '../components/ReadingSettings.astro';
 import TagList from '../components/TagList.astro';
@@ -134,7 +135,14 @@ const jsonLd = {
       prevLabel={UI[lang].prevPost}
       nextLabel={UI[lang].nextPost}
     />
-    <PostLikes lang={lang} postKey={postLikeKey(post)} />
+    <PostLikes lang={lang} postKey={postLikeKey(post)}>
+      <PostShare
+        lang={lang}
+        title={post.data.title}
+        text={post.data.description}
+        url={canonical}
+      />
+    </PostLikes>
     <Comments lang={lang} />
   </article>
 </BaseLayout>
