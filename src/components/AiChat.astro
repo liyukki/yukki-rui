@@ -6,8 +6,7 @@
  * UI 只追加一个固定定位层，不改变页面原有布局。
  */
 import { AI_CHAT, SITE, UI, type Lang } from '../consts';
-import { buildAiContext, parseAiIndex, type AiIndex, type AiSource } from '../lib/ai-context';
-import { chatEndpoint } from '../lib/chat';
+import { chatEndpoint, chatI18n } from '../lib/chat';
 import { withBase } from '../lib/url';
 
 interface Props {
@@ -21,32 +20,7 @@ const endpoint = chatEndpoint(SITE.url, AI_CHAT.origin);
 const gifSrc = withBase('chat/yukki-chat.gif');
 const staticSrc = withBase('chat/yukki-chat-static.png');
 const indexSrc = withBase(`ai/${lang}.json`);
-const i18n = {
-  title: t.aiTitle,
-  online: t.aiOnline,
-  clear: t.aiClear,
-  close: t.aiClose,
-  open: t.aiOpen,
-  welcome: t.aiWelcome,
-  placeholder: t.aiPlaceholder,
-  send: t.aiSend,
-  stop: t.aiStop,
-  thinking: t.aiThinking,
-  inputHint: t.aiInputHint,
-  noReply: t.aiNoReply,
-  notConfigured: t.aiNotConfigured,
-  authFailed: t.aiAuthFailed,
-  rateLimited: t.aiRateLimited,
-  unavailable: t.aiUnavailable,
-  invalid: t.aiInvalid,
-  failed: t.aiFailed,
-  contextUnavailable: t.aiContextUnavailable,
-  sources: t.aiSources,
-  quickSummary: t.aiQuickSummary,
-  quickPoints: t.aiQuickPoints,
-  quickExplain: t.aiQuickExplain,
-  quickRelated: t.aiQuickRelated,
-};
+const i18n = chatI18n(lang);
 ---
 
 {AI_CHAT.enabled && (
@@ -92,8 +66,8 @@ const i18n = {
           <img class="pixelated" src={staticSrc} width="30" height="51" alt="" />
         </span>
         <div class="ai-chat-identity">
-          <strong>{t.aiTitle}</strong>
-          <span class="ai-chat-status"><i aria-hidden="true"></i>{t.aiOnline}</span>
+          <strong data-chat-title>{t.aiTitle}</strong>
+          <span class="ai-chat-status"><i aria-hidden="true"></i><span data-chat-online>{t.aiOnline}</span></span>
         </div>
         <button type="button" class="ai-chat-head-btn" data-chat-clear aria-label={t.aiClear} title={t.aiClear}>
           {lang === 'zh' ? '清空' : 'CLR'}
@@ -106,7 +80,7 @@ const i18n = {
       <div class="ai-chat-log" data-chat-log role="log" aria-live="polite" aria-relevant="additions text">
         <div class="ai-chat-message is-assistant">
           <span class="ai-chat-message-avatar" aria-hidden="true">Y</span>
-          <p class="ai-chat-bubble">{t.aiWelcome}</p>
+          <p class="ai-chat-bubble" data-chat-welcome>{t.aiWelcome}</p>
         </div>
       </div>
 
@@ -118,7 +92,7 @@ const i18n = {
       </div>
 
       <form class="ai-chat-composer" data-chat-form>
-        <label class="ai-chat-sr-only" for="ai-chat-input">{t.aiPlaceholder}</label>
+        <label class="ai-chat-sr-only" for="ai-chat-input" data-chat-input-label>{t.aiPlaceholder}</label>
         <textarea
           id="ai-chat-input"
           data-chat-input
@@ -128,7 +102,7 @@ const i18n = {
           autocomplete="off"
         ></textarea>
         <div class="ai-chat-composer-foot">
-          <span class="ai-chat-hint">{t.aiInputHint}</span>
+          <span class="ai-chat-hint" data-chat-hint>{t.aiInputHint}</span>
           <span class="ai-chat-counter" data-chat-counter>0/{AI_CHAT.maxInputLength}</span>
           <button type="button" class="ai-chat-send" data-chat-send>{t.aiSend}</button>
         </div>
@@ -139,16 +113,20 @@ const i18n = {
 
 <script>
   import {
-    buildAiContext,
     parseAiIndex,
     type AiIndex,
     type AiSource,
   } from '../lib/ai-context';
   import {
+    buildChatRequestPayload,
     chatApiUrl,
+    chatI18n,
     createSseParser,
     extractChatDelta,
     normalizeChatMessages,
+    resolveChatPageContext,
+    shouldShowQuickPrompts,
+    type ChatI18n,
     type ChatMessage,
   } from '../lib/chat';
 
@@ -159,32 +137,6 @@ const i18n = {
     main: HTMLDivElement;
   };
 
-  interface ChatI18n {
-    title: string;
-    online: string;
-    clear: string;
-    close: string;
-    open: string;
-    welcome: string;
-    placeholder: string;
-    send: string;
-    stop: string;
-    thinking: string;
-    inputHint: string;
-    noReply: string;
-    notConfigured: string;
-    authFailed: string;
-    rateLimited: string;
-    unavailable: string;
-    invalid: string;
-    failed: string;
-    contextUnavailable: string;
-    sources: string;
-    quickSummary: string;
-    quickPoints: string;
-    quickExplain: string;
-    quickRelated: string;
-  }
 
   function initAiChat(): void {
     const chatRoot = document.getElementById('ai-chat');
@@ -200,12 +152,7 @@ const i18n = {
     root.dataset.ready = '1';
 
     let activeLang: Lang = root.dataset.lang === 'en' ? 'en' : 'zh';
-    let i18n: ChatI18n;
-    try {
-      i18n = JSON.parse(root.dataset.i18n ?? '{}') as ChatI18n;
-    } catch {
-      return;
-    }
+    let i18n: ChatI18n = chatI18n(activeLang);
 
     const launcher = root.querySelector<HTMLButtonElement>('[data-chat-launcher]')!;
     const panel = root.querySelector<HTMLElement>('[data-chat-panel]')!;
@@ -216,6 +163,10 @@ const i18n = {
     const sendButton = root.querySelector<HTMLButtonElement>('[data-chat-send]')!;
     const clearButton = root.querySelector<HTMLButtonElement>('[data-chat-clear]');
     const closeButton = root.querySelector<HTMLButtonElement>('[data-chat-close]');
+    const title = root.querySelector<HTMLElement>('[data-chat-title]');
+    const online = root.querySelector<HTMLElement>('[data-chat-online]');
+    const inputLabel = root.querySelector<HTMLElement>('[data-chat-input-label]');
+    const hint = root.querySelector<HTMLElement>('[data-chat-hint]');
     if (!launcher || !panel || !log || !form || !input || !counter || !sendButton) return;
 
     const quick = root.querySelector<HTMLElement>('[data-chat-quick]');
@@ -262,27 +213,77 @@ const i18n = {
       return document.querySelector<HTMLElement>('[data-ai-page-context]');
     }
 
+    function applyI18n(): void {
+      if (title) title.textContent = i18n.title;
+      if (online) online.textContent = i18n.online;
+      launcher.setAttribute('aria-label', i18n.open);
+      panel.setAttribute('aria-label', i18n.title);
+      if (clearButton) {
+        clearButton.textContent = activeLang === 'zh' ? '清空' : 'CLR';
+        clearButton.setAttribute('aria-label', i18n.clear);
+        clearButton.title = i18n.clear;
+      }
+      if (closeButton) {
+        closeButton.setAttribute('aria-label', i18n.close);
+        closeButton.title = i18n.close;
+      }
+      if (inputLabel) inputLabel.textContent = i18n.placeholder;
+      input.placeholder = i18n.placeholder;
+      if (hint) hint.textContent = i18n.inputHint;
+      sendButton.textContent = generating ? i18n.stop : i18n.send;
+      sendButton.setAttribute('aria-label', generating ? i18n.stop : i18n.send);
+
+      const welcome = log.querySelector<HTMLElement>('[data-chat-welcome]');
+      if (welcome && history.length === 0) welcome.textContent = i18n.welcome;
+
+      const prompts = [i18n.quickSummary, i18n.quickPoints, i18n.quickExplain, i18n.quickRelated];
+      const promptButtons = root.querySelectorAll<HTMLButtonElement>('[data-chat-prompt]');
+      promptButtons.forEach((button, index) => {
+        const prompt = prompts[index];
+        if (!prompt) return;
+        button.textContent = prompt;
+        button.dataset.chatPrompt = prompt;
+      });
+
+      const thinkingLabel = log.querySelector<HTMLElement>('[data-chat-thinking-label]');
+      if (thinkingLabel) thinkingLabel.textContent = i18n.thinking;
+      for (const label of root.querySelectorAll<HTMLElement>('.ai-chat-sources > strong')) {
+        label.textContent = i18n.sources;
+      }
+    }
+
     function currentArticleId(): string {
       const marker = currentPageMarker();
-      return marker?.dataset.articleId || root.dataset.articleId || '';
+      return marker ? marker.dataset.articleId ?? '' : root.dataset.articleId ?? '';
     }
 
     function syncPageContext(): void {
-      const markerLang = currentPageMarker()?.dataset.lang;
-      if (markerLang === 'zh' || markerLang === 'en') activeLang = markerLang;
+      const marker = currentPageMarker();
+      const nextContext = resolveChatPageContext(
+        marker ? { lang: marker.dataset.lang, articleId: marker.dataset.articleId } : null,
+        { lang: activeLang, articleId: root.dataset.articleId ?? '' },
+      );
+      activeLang = nextContext.lang;
+      i18n = chatI18n(activeLang);
+      root.dataset.lang = activeLang;
+      root.dataset.articleId = nextContext.articleId;
+      root.dataset.i18n = JSON.stringify(i18n);
+
       const nextIndexPath = (root.dataset.index ?? '').replace(/(?:zh|en)\.json$/u, `${activeLang}.json`);
+      root.dataset.index = nextIndexPath;
       if (nextIndexPath && nextIndexPath !== indexSrcPath) {
         indexSrcPath = nextIndexPath;
         indexPromise = null;
         indexUnavailable = false;
         indexNoticeShown = false;
       }
+      applyI18n();
       updateQuickVisibility();
     }
 
     function updateQuickVisibility(): void {
       if (!quick) return;
-      quick.hidden = !contextEnabled || !currentArticleId() || history.length > 0;
+      quick.hidden = !shouldShowQuickPrompts(contextEnabled, currentArticleId(), history.length);
     }
 
     function loadIndex(): Promise<AiIndex | null> {
@@ -401,6 +402,7 @@ const i18n = {
         thinking.setAttribute('role', 'status');
         const label = document.createElement('span');
         label.className = 'ai-chat-thinking-label';
+        label.dataset.chatThinkingLabel = '';
         label.textContent = i18n.thinking;
         const dots = document.createElement('span');
         dots.className = 'ai-chat-dots';
@@ -446,6 +448,7 @@ const i18n = {
       setBusy(false);
       log.replaceChildren();
       const welcome = createMessage('assistant', i18n.welcome);
+      welcome.bubble.dataset.chatWelcome = '';
       log.append(welcome.row);
       updateQuickVisibility();
       updateCounter();
@@ -503,13 +506,13 @@ const i18n = {
       try {
         const index = await loadIndex();
         contextUnavailable = indexUnavailable;
-        const context = index ? buildAiContext(index, text, activeLang, currentArticleId()) : undefined;
-        sentSources = context?.sources ?? [];
+        const payload = buildChatRequestPayload(messages, text, activeLang, currentArticleId(), index);
+        sentSources = payload.context?.sources ?? [];
 
         const response = await fetch(api(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-          body: JSON.stringify(context ? { messages, context } : { messages }),
+          body: JSON.stringify(payload),
           signal: controller.signal,
         });
 

@@ -1,5 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+  buildChatRequestPayload,
+  chatI18n,
+  resolveChatPageContext,
+  shouldShowQuickPrompts,
+} from '../src/lib/chat';
+import { parseAiIndex } from '../src/lib/ai-context';
 
 const component = readFileSync('src/components/AiChat.astro', 'utf8');
 const baseLayout = readFileSync('src/layouts/BaseLayout.astro', 'utf8');
@@ -20,10 +27,11 @@ describe('文章问答界面接入', () => {
       'data-index={indexSrc}',
       'data-chat-quick',
       'data-chat-prompt',
-      'buildAiContext',
+      'buildChatRequestPayload',
       'parseAiIndex',
       'renderSources',
       'syncPageContext',
+      'welcome.bubble.dataset.chatWelcome',
       'ai-chat-sources',
       'link.textContent',
       'link.href = sourceHref',
@@ -76,5 +84,58 @@ describe('文章问答界面接入', () => {
 
   it('配置里包含可回退的 contextEnabled 开关', () => {
     expect(consts).toMatch(/export const AI_CHAT = \{[\s\S]*contextEnabled: true,/);
+  });
+});
+
+describe('跨页问答状态刷新', () => {
+  it('文章页切到非文章页后清空当前文章并隐藏快捷问题', () => {
+    const next = resolveChatPageContext(
+      { lang: 'zh', articleId: '' },
+      { lang: 'zh', articleId: 'zh/posts/previous' },
+    );
+
+    expect(next.articleId).toBe('');
+    expect(shouldShowQuickPrompts(true, next.articleId, 0)).toBe(false);
+    expect(component).toContain('resolveChatPageContext(');
+    expect(component).toContain('shouldShowQuickPrompts(');
+  });
+
+  it('中文文章切到英文文章后使用英文快捷问题并生成 en context 请求体', () => {
+    const next = resolveChatPageContext(
+      { lang: 'en', articleId: 'en/posts/next' },
+      { lang: 'zh', articleId: 'zh/posts/previous' },
+    );
+    const t = chatI18n(next.lang);
+    const index = parseAiIndex({
+      version: 1,
+      lang: 'en',
+      posts: [
+        {
+          id: 'en/posts/next',
+          title: 'English post',
+          description: 'English summary',
+          url: '/en/posts/next/',
+          tags: ['writing'],
+        },
+      ],
+      chunks: [
+        {
+          id: 'en/posts/next:summary',
+          postId: 'en/posts/next',
+          title: 'English post',
+          url: '/en/posts/next/',
+          heading: 'Summary',
+          anchor: 'summary',
+          text: 'Summarize this post with one key point.',
+        },
+      ],
+    });
+    const messages = [{ role: 'user' as const, content: t.quickSummary }];
+    const payload = buildChatRequestPayload(messages, t.quickSummary, next.lang, next.articleId, index);
+
+    expect(t.quickSummary).toBe('Summarize this post');
+    expect(payload.context?.lang).toBe('en');
+    expect(payload.context?.currentPostId).toBe('en/posts/next');
+    expect(payload.context?.sources.length).toBeGreaterThan(0);
   });
 });

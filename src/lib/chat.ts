@@ -1,5 +1,6 @@
 /** AI 聊天小窗的纯逻辑：接口地址、消息规整、SSE 解析与错误文案。 */
-import type { Lang } from '../consts';
+import { UI, type Lang } from '../consts';
+import { buildAiContext, type AiContext, type AiIndex } from './ai-context';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -11,6 +12,103 @@ export interface ChatMessage {
 export const CHAT_MESSAGES_MAX = 20;
 export const CHAT_MESSAGE_MAX = 8000;
 export const CHAT_INPUT_MAX = 2000;
+
+export interface ChatI18n {
+  title: string;
+  online: string;
+  clear: string;
+  close: string;
+  open: string;
+  welcome: string;
+  placeholder: string;
+  send: string;
+  stop: string;
+  thinking: string;
+  inputHint: string;
+  noReply: string;
+  notConfigured: string;
+  authFailed: string;
+  rateLimited: string;
+  unavailable: string;
+  invalid: string;
+  failed: string;
+  contextUnavailable: string;
+  sources: string;
+  quickSummary: string;
+  quickPoints: string;
+  quickExplain: string;
+  quickRelated: string;
+}
+
+export interface ChatPageContext {
+  lang: Lang;
+  articleId: string;
+}
+
+export interface ChatRequestPayload {
+  messages: ChatMessage[];
+  context?: AiContext;
+}
+
+/** Return the same localized chat copy on the server and after SPA navigation. */
+export function chatI18n(lang: Lang): ChatI18n {
+  const t = UI[lang];
+  return {
+    title: t.aiTitle,
+    online: t.aiOnline,
+    clear: t.aiClear,
+    close: t.aiClose,
+    open: t.aiOpen,
+    welcome: t.aiWelcome,
+    placeholder: t.aiPlaceholder,
+    send: t.aiSend,
+    stop: t.aiStop,
+    thinking: t.aiThinking,
+    inputHint: t.aiInputHint,
+    noReply: t.aiNoReply,
+    notConfigured: t.aiNotConfigured,
+    authFailed: t.aiAuthFailed,
+    rateLimited: t.aiRateLimited,
+    unavailable: t.aiUnavailable,
+    invalid: t.aiInvalid,
+    failed: t.aiFailed,
+    contextUnavailable: t.aiContextUnavailable,
+    sources: t.aiSources,
+    quickSummary: t.aiQuickSummary,
+    quickPoints: t.aiQuickPoints,
+    quickExplain: t.aiQuickExplain,
+    quickRelated: t.aiQuickRelated,
+  };
+}
+
+/**
+ * Resolve the current page marker before falling back to the persisted chat
+ * root. A present marker with an empty article id intentionally clears the
+ * previous article context.
+ */
+export function resolveChatPageContext(
+  marker: { lang?: string; articleId?: string } | null,
+  current: ChatPageContext,
+): ChatPageContext {
+  const lang = marker?.lang === 'zh' || marker?.lang === 'en' ? marker.lang : current.lang;
+  const articleId = marker ? marker.articleId ?? '' : current.articleId;
+  return { lang, articleId };
+}
+
+export function shouldShowQuickPrompts(contextEnabled: boolean, articleId: string, historyLength: number): boolean {
+  return contextEnabled && articleId !== '' && historyLength === 0;
+}
+
+export function buildChatRequestPayload(
+  messages: ChatMessage[],
+  question: string,
+  lang: Lang,
+  articleId: string,
+  index: AiIndex | null,
+): ChatRequestPayload {
+  const context = index ? buildAiContext(index, question, lang, articleId || undefined) : undefined;
+  return context ? { messages, context } : { messages };
+}
 
 /**
  * 构建期决定聊天接口地址：
