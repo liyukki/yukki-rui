@@ -1,0 +1,286 @@
+---
+import { UI, type Lang } from '../consts';
+
+interface Props {
+  postId: string;
+  lang: Lang;
+  title: string;
+  href: string;
+}
+
+const { postId, lang, title, href } = Astro.props;
+const t = UI[lang];
+const entry = { id: postId, lang, title, href };
+const i18n = {
+  bookmark: t.bookmarkPost,
+  bookmarked: t.bookmarkedPost,
+  saved: t.bookmarkSaved,
+  removed: t.bookmarkRemoved,
+  failed: t.bookmarkFailed,
+};
+---
+<div
+  class="post-bookmark"
+  data-post-bookmark
+  data-entry={JSON.stringify(entry)}
+  data-i18n={JSON.stringify(i18n)}
+>
+  <button
+    class="post-bookmark__button"
+    type="button"
+    data-bookmark-button
+    aria-pressed="false"
+    aria-label={t.bookmarkPost}
+    hidden
+  >
+    <svg class="post-bookmark__icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 4.5h10v15l-5-3.5-5 3.5Z"></path>
+    </svg>
+    <span data-bookmark-label>{t.bookmarkPost}</span>
+  </button>
+  <p class="post-bookmark__status" data-bookmark-status role="status" aria-live="polite"></p>
+</div>
+
+<script>
+  import { UI } from '../consts';
+  import {
+    PERSONAL_LIBRARY_STORAGE_KEY,
+    personalLibraryKey,
+    readPersonalLibrary,
+    toggleBookmark,
+    writePersonalLibrary,
+    type BookmarkRecord,
+    type PersonalLibraryLang,
+  } from '../lib/personal-library';
+
+  interface BookmarkEntry {
+    id: string;
+    lang: PersonalLibraryLang;
+    title: string;
+    href: string;
+  }
+
+  interface BookmarkI18n {
+    bookmark: string;
+    bookmarked: string;
+    saved: string;
+    removed: string;
+    failed: string;
+  }
+
+  function parseRecord(value: string | undefined): Record<string, unknown> {
+    try {
+      return JSON.parse(value ?? '{}') as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  function readEntry(root: HTMLElement): BookmarkEntry | null {
+    const value = parseRecord(root.dataset.entry);
+    if (
+      typeof value.id !== 'string' ||
+      (value.lang !== 'zh' && value.lang !== 'en') ||
+      typeof value.title !== 'string' ||
+      typeof value.href !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      lang: value.lang,
+      title: value.title,
+      href: value.href,
+    };
+  }
+
+  function readI18n(root: HTMLElement): BookmarkI18n {
+    const fallback = root.querySelector<HTMLElement>('[data-bookmark-label]')?.textContent?.trim()
+      ?? UI.en.bookmarkPost;
+    const value = parseRecord(root.dataset.i18n);
+    const pick = (key: keyof BookmarkI18n): string =>
+      typeof value[key] === 'string' ? (value[key] as string) : fallback;
+    return {
+      bookmark: pick('bookmark'),
+      bookmarked: pick('bookmarked'),
+      saved: pick('saved'),
+      removed: pick('removed'),
+      failed: pick('failed'),
+    };
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  let controller: AbortController | null = null;
+
+  function init(): void {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+
+    const root = document.querySelector<HTMLElement>('[data-post-bookmark]');
+    const entry = root ? readEntry(root) : null;
+    if (!root || !entry) return;
+
+    const button = root.querySelector<HTMLButtonElement>('[data-bookmark-button]');
+    const label = root.querySelector<HTMLElement>('[data-bookmark-label]');
+    const status = root.querySelector<HTMLElement>('[data-bookmark-status]');
+    if (!button || !label || !status) return;
+
+    const i18n = readI18n(root);
+    const key = personalLibraryKey(entry.lang, entry.id);
+    let resetTimer = 0;
+
+    const isBookmarked = (): boolean =>
+      readPersonalLibrary(getStorage()).bookmarks.some(
+        (item) => personalLibraryKey(item.lang, item.id) === key,
+      );
+
+    const render = (bookmarked: boolean): void => {
+      const text = bookmarked ? i18n.bookmarked : i18n.bookmark;
+      button.hidden = false;
+      button.setAttribute('aria-pressed', String(bookmarked));
+      button.setAttribute('aria-label', text);
+      button.classList.toggle('is-bookmarked', bookmarked);
+      label.textContent = text;
+    };
+
+    const announce = (text: string): void => {
+      window.clearTimeout(resetTimer);
+      status.textContent = text;
+      resetTimer = window.setTimeout(() => {
+        status.textContent = '';
+      }, 2400);
+    };
+
+    render(isBookmarked());
+
+    button.addEventListener(
+      'click',
+      () => {
+        const storage = getStorage();
+        const current = readPersonalLibrary(storage);
+        const next = toggleBookmark(current, {
+          ...entry,
+          savedAt: Date.now(),
+        } satisfies BookmarkRecord);
+        if (!writePersonalLibrary(storage, next)) {
+          announce(i18n.failed);
+          return;
+        }
+        const bookmarked = next.bookmarks.some(
+          (item) => personalLibraryKey(item.lang, item.id) === key,
+        );
+        render(bookmarked);
+        announce(bookmarked ? i18n.saved : i18n.removed);
+      },
+      { signal },
+    );
+
+    window.addEventListener(
+      'storage',
+      (event) => {
+        if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render(isBookmarked());
+      },
+      { signal },
+    );
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-post-bookmark]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  .post-bookmark {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    margin-top: var(--space-3);
+  }
+
+  .post-bookmark__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 2.75rem;
+    padding: 0.5em 0.9em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    box-shadow: 0 var(--px) 0 0 var(--card-edge);
+    color: var(--text);
+    font: inherit;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    cursor: pointer;
+    transition:
+      border-color var(--dur),
+      color var(--dur),
+      background var(--dur),
+      transform var(--dur);
+  }
+
+  .post-bookmark__button[hidden] {
+    display: none;
+  }
+
+  .post-bookmark__button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .post-bookmark__button.is-bookmarked {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 13%, var(--card));
+    color: var(--accent);
+  }
+
+  .post-bookmark__icon {
+    width: 1.1rem;
+    height: 1.1rem;
+    flex: none;
+  }
+
+  .post-bookmark__icon path {
+    fill: transparent;
+    stroke: currentColor;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+    transition: fill var(--dur);
+  }
+
+  .post-bookmark__button.is-bookmarked .post-bookmark__icon path {
+    fill: currentColor;
+  }
+
+  .post-bookmark__status {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  .post-bookmark__status:empty {
+    display: none;
+  }
+
+  @media (max-width: 480px) {
+    .post-bookmark,
+    .post-bookmark__button {
+      width: 100%;
+    }
+  }
+</style>

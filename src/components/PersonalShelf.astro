@@ -1,0 +1,340 @@
+---
+import { UI, type Lang } from '../consts';
+import type { CatalogEntry } from '../lib/personal-library';
+import { withBase } from '../lib/url';
+import SectionTitle from './SectionTitle.astro';
+
+interface Props {
+  lang: Lang;
+  catalog: CatalogEntry[];
+}
+
+const { lang, catalog } = Astro.props;
+const t = UI[lang];
+const serializedCatalog = JSON.stringify(catalog).replace(/</g, '\\u003c');
+const i18n = {
+  continueReading: t.continueReading,
+  bookmarks: t.bookmarks,
+  readingProgress: t.readingProgress,
+};
+const archiveHref = withBase(`${lang}/archive/`);
+---
+<section
+  class="personal-shelf"
+  data-personal-shelf
+  data-lang={lang}
+  data-catalog={serializedCatalog}
+  data-i18n={JSON.stringify(i18n)}
+  aria-label={t.personalShelf}
+  data-pagefind-ignore
+  hidden
+>
+  <SectionTitle title={t.personalShelf} icon="star-pink" tail="LOCAL ONLY" />
+  <div class="personal-shelf__grid">
+    <div class="personal-shelf__group" data-continue-group hidden>
+      <div class="personal-shelf__group-head">
+        <span class="personal-shelf__marker" aria-hidden="true">01</span>
+        <h3>{t.continueReading}</h3>
+      </div>
+      <ul class="personal-shelf__list" data-continue-list></ul>
+    </div>
+    <div class="personal-shelf__group" data-bookmarks-group hidden>
+      <div class="personal-shelf__group-head">
+        <span class="personal-shelf__marker" aria-hidden="true">02</span>
+        <h3>{t.bookmarks}</h3>
+        <a class="text-link personal-shelf__archive" href={archiveHref}>{t.viewAllPosts} ↗</a>
+      </div>
+      <ul class="personal-shelf__list" data-bookmarks-list></ul>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { UI } from '../consts';
+  import {
+    PERSONAL_LIBRARY_STORAGE_KEY,
+    readPersonalLibrary,
+    selectBookmarks,
+    selectContinueReading,
+    type CatalogEntry,
+    type PersonalLibraryLang,
+  } from '../lib/personal-library';
+
+  interface ShelfI18n {
+    continueReading: string;
+    bookmarks: string;
+    readingProgress: string;
+  }
+
+  function parseRecord(value: string | undefined): Record<string, unknown> {
+    try {
+      return JSON.parse(value ?? '{}') as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  function readLanguage(root: HTMLElement): PersonalLibraryLang | null {
+    return root.dataset.lang === 'zh' || root.dataset.lang === 'en'
+      ? root.dataset.lang
+      : null;
+  }
+
+  function readCatalog(root: HTMLElement): CatalogEntry[] {
+    try {
+      const value = JSON.parse(root.dataset.catalog ?? '[]') as unknown;
+      if (!Array.isArray(value)) return [];
+      return value.flatMap((candidate) => {
+        if (!candidate || typeof candidate !== 'object') return [];
+        const entry = candidate as Record<string, unknown>;
+        if (
+          typeof entry.id !== 'string' ||
+          (entry.lang !== 'zh' && entry.lang !== 'en') ||
+          typeof entry.title !== 'string' ||
+          typeof entry.href !== 'string'
+        ) {
+          return [];
+        }
+        return [{
+          id: entry.id,
+          lang: entry.lang,
+          title: entry.title,
+          href: entry.href,
+        } satisfies CatalogEntry];
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  function readI18n(root: HTMLElement): ShelfI18n {
+    const value = parseRecord(root.dataset.i18n);
+    const pick = (key: keyof ShelfI18n): string =>
+      typeof value[key] === 'string' ? (value[key] as string) : '';
+    return {
+      continueReading: pick('continueReading'),
+      bookmarks: pick('bookmarks'),
+      readingProgress: pick('readingProgress'),
+    };
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function formatProgress(template: string, progress: number): string {
+    return template.replace('{progress}', String(progress));
+  }
+
+  function createShelfRow(title: string, href: string, progress?: string): HTMLLIElement {
+    const item = document.createElement('li');
+    item.className = 'personal-shelf__item';
+    const link = document.createElement('a');
+    link.className = 'personal-shelf__link';
+    link.href = href;
+    link.textContent = title;
+    item.append(link);
+    if (progress) {
+      const label = document.createElement('span');
+      label.className = 'personal-shelf__progress';
+      label.textContent = progress;
+      item.append(label);
+    }
+    return item;
+  }
+
+  let controller: AbortController | null = null;
+
+  function init(): void {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+    const root = document.querySelector<HTMLElement>('[data-personal-shelf]');
+    if (!root) return;
+
+    const lang = readLanguage(root);
+    const catalog = readCatalog(root);
+    const i18n = readI18n(root);
+    const continueGroup = root.querySelector<HTMLElement>('[data-continue-group]');
+    const continueList = root.querySelector<HTMLElement>('[data-continue-list]');
+    const bookmarksGroup = root.querySelector<HTMLElement>('[data-bookmarks-group]');
+    const bookmarksList = root.querySelector<HTMLElement>('[data-bookmarks-list]');
+    if (
+      !lang ||
+      !continueGroup ||
+      !continueList ||
+      !bookmarksGroup ||
+      !bookmarksList
+    ) {
+      root.hidden = true;
+      return;
+    }
+
+    const render = (): void => {
+      const library = readPersonalLibrary(getStorage());
+      const resume = selectContinueReading(library, catalog, lang);
+      const bookmarks = selectBookmarks(library, catalog, lang, 4);
+
+      if (resume) {
+        const progress = formatProgress(i18n.readingProgress, resume.progress);
+        continueList.replaceChildren(createShelfRow(resume.title, resume.href, progress));
+      } else {
+        continueList.replaceChildren();
+      }
+      continueGroup.hidden = !resume;
+
+      bookmarksList.replaceChildren(
+        ...bookmarks.map((bookmark) => createShelfRow(bookmark.title, bookmark.href)),
+      );
+      bookmarksGroup.hidden = bookmarks.length === 0;
+      root.hidden = !resume && bookmarks.length === 0;
+    };
+
+    render();
+    window.addEventListener(
+      'storage',
+      (event) => {
+        if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
+      },
+      { signal },
+    );
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-personal-shelf]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  .personal-shelf {
+    min-width: 0;
+    margin-top: var(--space-4);
+    padding: var(--space-3);
+    border: 2px dashed color-mix(in srgb, var(--accent-2) 55%, var(--line));
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--accent-2) 7%, var(--bg-soft)),
+        var(--bg-soft) 60%
+      );
+    box-shadow: var(--shadow);
+  }
+
+  .personal-shelf[hidden],
+  .personal-shelf__group[hidden] {
+    display: none;
+  }
+
+  .personal-shelf :global(.section-head) {
+    margin-top: 0;
+  }
+
+  .personal-shelf__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: var(--space-3);
+    align-items: start;
+  }
+
+  .personal-shelf__group {
+    min-width: 0;
+  }
+
+  .personal-shelf__group-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .personal-shelf__group-head h3 {
+    margin: 0;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    letter-spacing: 0.05em;
+  }
+
+  .personal-shelf__marker,
+  .personal-shelf__progress {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--fs-tiny);
+  }
+
+  .personal-shelf__archive {
+    margin-left: auto;
+  }
+
+  .personal-shelf__list {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .personal-shelf__item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .personal-shelf__link {
+    min-width: 0;
+    flex: 1;
+    padding: 0.5em 0.7em;
+    border: 1px solid var(--line);
+    background: var(--card);
+    overflow-wrap: anywhere;
+    font-size: var(--fs-small);
+    font-weight: 700;
+    transition:
+      border-color var(--dur),
+      color var(--dur),
+      transform var(--dur);
+  }
+
+  .personal-shelf__link:hover {
+    border-color: var(--accent);
+    color: var(--link);
+    text-decoration: none;
+    transform: translateX(2px);
+  }
+
+  .personal-shelf__progress {
+    flex: none;
+  }
+
+  @media (max-width: 480px) {
+    .personal-shelf {
+      padding: var(--space-2);
+    }
+
+    .personal-shelf__group-head {
+      flex-wrap: wrap;
+    }
+
+    .personal-shelf__archive {
+      flex-basis: 100%;
+      margin-left: calc(var(--space-2) + 1.2em);
+    }
+
+    .personal-shelf__item {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: var(--space-1);
+    }
+
+    .personal-shelf__link {
+      width: 100%;
+    }
+  }
+</style>

@@ -1,0 +1,152 @@
+---
+import type { Lang } from '../consts';
+
+interface Props {
+  postId: string;
+  lang: Lang;
+  title: string;
+  href: string;
+}
+
+const { postId, lang, title, href } = Astro.props;
+const entry = { id: postId, lang, title, href };
+---
+<div data-reading-tracker data-entry={JSON.stringify(entry)} hidden></div>
+
+<script>
+  import {
+    readPersonalLibrary,
+    recordReading,
+    writePersonalLibrary,
+    type PersonalLibraryLang,
+  } from '../lib/personal-library';
+
+  interface TrackerEntry {
+    id: string;
+    lang: PersonalLibraryLang;
+    title: string;
+    href: string;
+  }
+
+  function readEntry(root: HTMLElement): TrackerEntry | null {
+    try {
+      const value = JSON.parse(root.dataset.entry ?? '{}') as Record<string, unknown>;
+      if (
+        typeof value.id !== 'string' ||
+        (value.lang !== 'zh' && value.lang !== 'en') ||
+        typeof value.title !== 'string' ||
+        typeof value.href !== 'string'
+      ) {
+        return null;
+      }
+      return {
+        id: value.id,
+        lang: value.lang,
+        title: value.title,
+        href: value.href,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  let controller: AbortController | null = null;
+  let cleanup: (() => void) | null = null;
+  let activeRoot: HTMLElement | null = null;
+
+  function init(): void {
+    const root = document.querySelector<HTMLElement>('[data-reading-tracker]');
+    if (!root) {
+      cleanup?.();
+      return;
+    }
+    if (controller && activeRoot === root) return;
+
+    cleanup?.();
+    controller?.abort();
+
+    const entry = readEntry(root);
+    if (!entry) return;
+
+    const activeController = new AbortController();
+    const { signal } = activeController;
+    controller = activeController;
+    activeRoot = root;
+
+    let lastProgress = -1;
+    let frame = 0;
+    let finished = false;
+
+    const currentProgress = (): number => {
+      const distance = document.documentElement.scrollHeight - window.innerHeight;
+      if (distance <= 0) return 100;
+      return Math.min(100, Math.max(0, Math.round((window.scrollY / distance) * 100)));
+    };
+
+    const flush = (): void => {
+      const progress = currentProgress();
+      if (progress === lastProgress) return;
+      lastProgress = progress;
+      const storage = getStorage();
+      const library = readPersonalLibrary(storage);
+      const next = recordReading(library, {
+        ...entry,
+        progress,
+        updatedAt: Date.now(),
+      });
+      writePersonalLibrary(storage, next);
+    };
+
+    const schedule = (): void => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        flush();
+      });
+    };
+
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      flush();
+      activeController.abort();
+      if (controller === activeController) controller = null;
+      if (activeRoot === root) activeRoot = null;
+      if (cleanup === finish) cleanup = null;
+    };
+    cleanup = finish;
+
+    window.addEventListener('scroll', schedule, { signal, passive: true });
+    window.addEventListener('resize', schedule, { signal, passive: true });
+    window.addEventListener('pagehide', finish, { signal });
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.visibilityState === 'hidden') finish();
+      },
+      { signal },
+    );
+    document.addEventListener('astro:before-swap', finish, { signal });
+
+    flush();
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-reading-tracker]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>

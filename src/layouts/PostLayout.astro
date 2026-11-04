@@ -7,8 +7,10 @@ import Comments from '../components/Comments.astro';
 import PostExtras from '../components/PostExtras.astro';
 import PostLikes from '../components/PostLikes.astro';
 import PostNav from '../components/PostNav.astro';
+import PostBookmark from '../components/PostBookmark.astro';
 import PostShare from '../components/PostShare.astro';
 import PostToc from '../components/PostToc.astro';
+import ReadingProgressTracker from '../components/ReadingProgressTracker.astro';
 import ReadingSettings from '../components/ReadingSettings.astro';
 import TagList from '../components/TagList.astro';
 import { SITE, UI } from '../consts';
@@ -85,6 +87,12 @@ const jsonLd = {
   aiArticleId={post.id}
 >
   <article class="prose rise post" data-pagefind-body>
+    <ReadingProgressTracker
+      postId={post.id}
+      lang={lang}
+      title={post.data.title}
+      href={postHref(lang, post.id)}
+    />
     <PostExtras
       lang={lang}
       copyLabel={UI[lang].copyCode}
@@ -106,6 +114,12 @@ const jsonLd = {
         {' · '}<span class="post-reading">{readingTime}</span>
       </p>
       <TagList lang={lang} tags={post.data.tags} />
+      <PostBookmark
+        postId={post.id}
+        lang={lang}
+        title={post.data.title}
+        href={postHref(lang, post.id)}
+      />
     </header>
     <PostToc headings={tocHeadings} lang={lang} variant="inline" label={UI[lang].toc} />
     <ReadingSettings t={UI[lang]} />
