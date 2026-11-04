@@ -24,3 +24,12 @@
     justify-content: normal;
   }
 }
+
+/* Keep decorative project mockups inside their card at very narrow widths. */
+.project-art {
+  min-width: 0;
+}
+
+.mini-window {
+  width: min(240px, 100%);
+}

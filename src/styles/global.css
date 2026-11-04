@@ -13,6 +13,32 @@ body {
   transition: background-color var(--dur) ease, color var(--dur) ease;
 }
 
+.skip-link {
+  position: fixed;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 1000;
+  padding: 0.55em 0.9em;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-hover);
+  color: var(--text);
+  font-family: var(--font-pixel);
+  font-size: var(--fs-small);
+  transform: translateY(calc(-100% - var(--space-3)));
+  transition: transform var(--dur) var(--ease-pop);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+  text-decoration: none;
+}
+
+#main-content:focus {
+  outline: none;
+}
+
 /* 远景像素氛围：双色光晕缓慢漂移（在像素雨/星空之下） */
 .bg-orbs {
   position: fixed;
@@ -450,6 +476,8 @@ img { max-width: 100%; height: auto; }
 /* 通用网格 */
 .grid-2 { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
 .grid-3 { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+.grid-2 > *,
+.grid-3 > * { min-width: 0; }
 @media (min-width: 640px) {
   .grid-2 { grid-template-columns: 1fr 1fr; }
   .grid-3 { grid-template-columns: 1fr 1fr; }
@@ -503,10 +531,10 @@ img { max-width: 100%; height: auto; }
 .stat-item strong { color: var(--text); font-size: 1rem; }
 
 /* 项目/作品卡片内部 */
-.project-card { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-card { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .project-card .project-head { display: flex; align-items: center; gap: var(--space-2); }
 .project-card .project-icon { width: 36px; height: 36px; flex: none; }
-.project-card h3 { margin: 0; font-size: 1.1rem; font-family: var(--font-pixel); letter-spacing: 0.03em; }
+.project-card h3 { min-width: 0; margin: 0; font-size: 1.1rem; font-family: var(--font-pixel); letter-spacing: 0.03em; overflow-wrap: anywhere; }
 .project-card p { margin: 0; color: var(--text-dim); }
 .project-card .project-foot { margin-top: auto; display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
 .project-card-link { color: var(--text); text-decoration: none; }
@@ -516,6 +544,7 @@ img { max-width: 100%; height: auto; }
 
 /* 联系入口 */
 .contact-list { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.contact-card > div { min-width: 0; }
 
 /* 无障碍：减少动态 */
 @media (prefers-reduced-motion: reduce) {

@@ -35,6 +35,12 @@ describe('mobile navigation', () => {
     expect(mobileCss).toContain('justify-content: normal');
   });
 
+  it('marks only the current destination with aria-current', () => {
+    expect(header).toContain('currentPath');
+    expect(header).toContain('normalizeNavPath');
+    expect(header).toContain("aria-current={item.active ? 'page' : undefined}");
+  });
+
   it('keeps menu copy paired', () => {
     expect(consts.match(/menu:/g)?.length).toBe(2);
   });

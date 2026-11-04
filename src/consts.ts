@@ -53,6 +53,7 @@ export const UI: Record<Lang, Record<string, string>> = {
     menu: '菜单',
     languageSwitch: 'English',
     themeToggle: '切换深浅色主题',
+    skipToContent: '跳到正文',
     comments: '评论',
     commentsHint: '不用登录，填个昵称就能说两句；站长可以删除不合适的评论。',
     commentsEmpty: '还没有评论，来说两句吧。',
@@ -160,6 +161,7 @@ export const UI: Record<Lang, Record<string, string>> = {
     aiInvalid: '消息不合法，请修改后再试。',
     aiFailed: '出了点问题，请稍后再试。',
     readMore: '阅读全文',
+    viewAllPosts: '查看全部文章',
   },
   en: {
     latestPosts: 'Latest posts',
@@ -171,6 +173,7 @@ export const UI: Record<Lang, Record<string, string>> = {
     menu: 'Menu',
     languageSwitch: '中文',
     themeToggle: 'Toggle color theme',
+    skipToContent: 'Skip to content',
     comments: 'Comments',
     commentsHint: 'No sign-in needed — just pick a display name. The owner can remove unsuitable comments.',
     commentsEmpty: 'No comments yet. Say something!',
@@ -278,6 +281,7 @@ export const UI: Record<Lang, Record<string, string>> = {
     aiInvalid: 'That message could not be sent. Please edit it and try again.',
     aiFailed: 'Something went wrong. Please try again.',
     readMore: 'Read more',
+    viewAllPosts: 'View all posts',
   },
 };
 

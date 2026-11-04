@@ -10,7 +10,7 @@ import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
 import JsonLd from '../components/JsonLd.astro';
 import NoteRain from '../components/NoteRain.astro';
-import type { Lang } from '../consts';
+import { UI, type Lang } from '../consts';
 
 interface Props {
   title: string;
@@ -64,11 +64,12 @@ const { title, description, lang, ogType, ogImage, jsonLd, alternate, aiArticleI
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">{UI[lang].skipToContent}</a>
     <div class="bg-orbs" aria-hidden="true"></div>
     <NoteRain />
     <div class="scanlines" aria-hidden="true"></div>
-    <Header lang={lang} alternateUrl={alternate} />
-    <main class="wrap">
+    <Header lang={lang} alternateUrl={alternate} currentPath={Astro.url.pathname} />
+    <main id="main-content" class="wrap" tabindex="-1">
       <slot />
     </main>
     <Footer lang={lang} />

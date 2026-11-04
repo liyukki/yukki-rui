@@ -47,8 +47,22 @@ const groups: Group[] = [
   },
 ];
 ---
-<section class="reading-settings" data-pagefind-ignore aria-labelledby="reading-settings-title">
-  <h2 id="reading-settings-title" class="reading-settings__title">{t.readingSettings}</h2>
+<details class="reading-settings" data-reading-settings data-pagefind-ignore open>
+  <summary class="reading-settings__summary">
+    <span id="reading-settings-title" class="reading-settings__title">{t.readingSettings}</span>
+    <span class="reading-settings__chevron" aria-hidden="true">+</span>
+  </summary>
+  <script is:inline>
+    (() => {
+      const closeOnMobile = () => {
+        if (!matchMedia('(max-width: 760px)').matches) return;
+        const settings = document.querySelector('[data-reading-settings]');
+        if (settings instanceof HTMLDetailsElement) settings.open = false;
+      };
+      closeOnMobile();
+      document.addEventListener('astro:after-swap', closeOnMobile);
+    })();
+  </script>
   <div class="reading-settings__groups">
     {groups.map((group) => (
       <fieldset class="reading-settings__group">
@@ -67,7 +81,7 @@ const groups: Group[] = [
       </fieldset>
     ))}
   </div>
-</section>
+</details>
 
 <script>
   import {
@@ -85,6 +99,7 @@ const groups: Group[] = [
    * 避免 syncButtons() 重新读旧存储把页面状态静默回滚。
    */
   let memorySettings: ReadingSettings | null = null;
+  let disclosureController: AbortController | null = null;
 
   const storedSettings = (): ReadingSettings => {
     try {
@@ -108,6 +123,28 @@ const groups: Group[] = [
   };
 
   const init = () => {
+    disclosureController?.abort();
+    disclosureController = new AbortController();
+    const { signal } = disclosureController;
+    const disclosure = document.querySelector<HTMLDetailsElement>('[data-reading-settings]');
+    if (disclosure) {
+      const summary = disclosure.querySelector<HTMLElement>('.reading-settings__summary');
+      const mobile = window.matchMedia('(max-width: 760px)');
+      const syncDisclosure = () => {
+        disclosure.open = !mobile.matches;
+        if (summary) summary.tabIndex = mobile.matches ? 0 : -1;
+      };
+      syncDisclosure();
+      mobile.addEventListener('change', syncDisclosure, { signal });
+      summary?.addEventListener(
+        'click',
+        (event) => {
+          if (!mobile.matches) event.preventDefault();
+        },
+        { signal },
+      );
+    }
+
     syncButtons();
     document.querySelectorAll<HTMLButtonElement>('[data-reading-key]').forEach((button) => {
       if (button.dataset.bound === '1') return;
@@ -136,25 +173,49 @@ const groups: Group[] = [
 <style>
   .reading-settings {
     margin: 0 0 var(--space-4);
-    padding: var(--space-2) var(--space-3) var(--space-3);
     border: 2px solid var(--line);
     border-radius: var(--radius);
     background: var(--card);
     box-shadow: var(--shadow);
   }
 
+  .reading-settings__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 44px;
+    padding: var(--space-2) var(--space-3);
+    cursor: default;
+    list-style: none;
+  }
+
+  .reading-settings__summary::-webkit-details-marker {
+    display: none;
+  }
+
   .reading-settings__title {
-    margin: var(--space-2) 0 var(--space-2);
     color: var(--text);
     font-family: var(--font-pixel);
     font-size: var(--fs-small);
     letter-spacing: 0.04em;
   }
 
+  .reading-settings__chevron {
+    display: none;
+    flex: none;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: transform var(--dur), color var(--dur);
+  }
+
   .reading-settings__groups {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2) var(--space-3);
+    padding: 0 var(--space-3) var(--space-3);
   }
 
   /* fieldset 默认 min-inline-size:min-content 会撑破窄屏，这里显式收住。 */
@@ -204,5 +265,20 @@ const groups: Group[] = [
     color: var(--text);
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  }
+
+  @media (max-width: 760px) {
+    .reading-settings__summary {
+      cursor: pointer;
+    }
+
+    .reading-settings__chevron {
+      display: inline-block;
+    }
+
+    .reading-settings[open] .reading-settings__chevron {
+      color: var(--accent);
+      transform: rotate(45deg);
+    }
   }
 </style>

@@ -9,8 +9,24 @@ import ThemeToggle from './ThemeToggle.astro';
 interface Props {
   lang: Lang;
   alternateUrl?: string;
+  currentPath?: string;
 }
-const { lang, alternateUrl } = Astro.props;
+const { lang, alternateUrl, currentPath = '' } = Astro.props;
+
+function normalizeNavPath(path: string): string {
+  const normalized = path.replace(/\/{2,}/g, '/');
+  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+}
+
+const activePath = normalizeNavPath(currentPath);
+const navItems = NAV[lang].map((item) => {
+  const href = withBase(item.path);
+  return {
+    ...item,
+    href,
+    active: activePath === normalizeNavPath(href),
+  };
+});
 ---
 <header class="site-header" data-site-header>
   <div class="wrap">
@@ -36,7 +52,13 @@ const { lang, alternateUrl } = Astro.props;
       data-site-nav
       aria-label={lang === 'zh' ? '主导航' : 'Main navigation'}
     >
-      {NAV[lang].map((item) => <a class="nav-link" href={withBase(item.path)}>{item.label}</a>)}
+      {navItems.map((item) => (
+        <a
+          class="nav-link"
+          href={item.href}
+          aria-current={item.active ? 'page' : undefined}
+        >{item.label}</a>
+      ))}
     </nav>
   </div>
 </header>
