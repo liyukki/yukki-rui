@@ -1,0 +1,81 @@
+---
+import { getCollection } from 'astro:content';
+import JourneyList from '../../components/JourneyList.astro';
+import PixelSprite from '../../components/PixelSprite.astro';
+import { SITE, UI, type Lang } from '../../consts';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import {
+  resolveJourneys,
+  selectPublishedJourneys,
+  type JourneyInput,
+} from '../../lib/journeys';
+import { getPosts } from '../../lib/posts';
+import { postHref, withBase } from '../../lib/url';
+
+export function getStaticPaths() {
+  return SITE.langs.map((lang) => ({ params: { lang } }));
+}
+
+const lang = Astro.params.lang as Lang;
+const entries = (await getCollection('journeys'))
+  .filter((entry) => entry.data.lang === lang)
+  .map((entry) => entry.data as JourneyInput);
+const posts = await getPosts(lang);
+const journeys = selectPublishedJourneys(
+  resolveJourneys(
+    entries,
+    posts.map((post) => ({
+      id: post.id,
+      lang,
+      title: post.data.title,
+      href: postHref(lang, post.id),
+    })),
+  ),
+  lang,
+);
+const archiveHref = withBase(`${lang}/archive/`);
+---
+
+<BaseLayout
+  title={`${UI[lang].quests} - ${SITE.title}`}
+  description={UI[lang].questsHint}
+  lang={lang}
+>
+  <article class="prose rise subpage quests-page">
+    <header class="subpage-heading">
+      <PixelSprite name="sign-post" size={48} />
+      <span class="eyebrow">QUEST BOARD</span>
+      <h1>{UI[lang].quests}</h1>
+      <p>{UI[lang].questsHint}</p>
+      <a class="quests-page__archive" href={archiveHref}>
+        {UI[lang].viewAllPosts} ↗
+      </a>
+    </header>
+    {
+      journeys.length === 0 ? (
+        <p class="quests-page__empty">{UI[lang].questEmpty}</p>
+      ) : (
+        <JourneyList lang={lang} journeys={journeys} />
+      )
+    }
+  </article>
+</BaseLayout>
+
+<style>
+  .quests-page__archive {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin-top: var(--space-2);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.05em;
+  }
+
+  .quests-page__empty {
+    margin-top: var(--space-4);
+    padding: var(--space-3);
+    border: 2px dashed var(--line);
+    color: var(--text-dim);
+  }
+</style>

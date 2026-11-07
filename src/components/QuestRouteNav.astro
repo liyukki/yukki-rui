@@ -1,0 +1,554 @@
+---
+import { UI, type Lang } from '../consts';
+import {
+  computeJourneyProgress,
+  selectJourneysForPost,
+  selectPublishedJourneys,
+  type Journey,
+} from '../lib/journeys';
+import { withBase } from '../lib/url';
+
+interface Props {
+  lang: Lang;
+  journeys: Journey[];
+  postId: string;
+}
+
+const { lang, journeys, postId } = Astro.props;
+const t = UI[lang];
+const matches = selectPublishedJourneys(
+  selectJourneysForPost(journeys, postId),
+  lang,
+);
+const serializedJourneys = JSON.stringify(matches).replace(/</g, '\\u003c');
+const i18n = {
+  progress: t.questProgress,
+  completed: t.questCompleted,
+  inProgress: t.questInProgress,
+  notStarted: t.questNotStarted,
+  current: t.questCurrent,
+};
+const overviewHref = withBase(`${lang}/quests/`);
+---
+
+{
+  matches.length > 0 && (
+    <section
+      class="quest-route-nav"
+      data-quest-route-nav
+      data-lang={lang}
+      data-post-id={postId}
+      data-journeys={serializedJourneys}
+      data-i18n={JSON.stringify(i18n)}
+      aria-label={t.quests}
+      data-pagefind-ignore
+    >
+      {matches.map((journey) => {
+        const currentIndex = journey.steps.findIndex(
+          (step) => step.postId === postId,
+        );
+        const current = journey.steps[currentIndex];
+        const previous = currentIndex > 0 ? journey.steps[currentIndex - 1] : null;
+        const next =
+          currentIndex >= 0 && currentIndex < journey.steps.length - 1
+            ? journey.steps[currentIndex + 1]
+            : null;
+        const progress = computeJourneyProgress(journey, []);
+        return (
+          <article
+            class="quest-route"
+            data-quest-route
+            data-journey-id={journey.id}
+            data-current-post-id={postId}
+            data-state={progress.state}
+          >
+            <div class="quest-route__head">
+              <span class="quest-route__route">{journey.title}</span>
+              <span class="quest-route__state" data-quest-state>
+                {t.questNotStarted}
+              </span>
+            </div>
+            <div class="quest-route__body">
+              <div class="quest-route__chapter">
+                <span class="quest-route__chapter-index">
+                  {String(currentIndex + 1).padStart(2, '0')} /{' '}
+                  {String(journey.steps.length).padStart(2, '0')}
+                </span>
+                <a
+                  class="quest-route__current"
+                  href={current.href}
+                  aria-current="step"
+                  data-current-step
+                >
+                  {current.label}
+                </a>
+                <span class="quest-route__current-label">{t.questCurrent}</span>
+              </div>
+              <div class="quest-route__progress">
+                <span data-progress>
+                  {t.questProgress
+                    .replace('{completed}', String(progress.completedCount))
+                    .replace('{total}', String(progress.total))}
+                </span>
+                <i aria-hidden="true">
+                  <b
+                    data-quest-route-progress-bar
+                    style={`width: ${
+                      Math.round(
+                        (progress.completedCount / Math.max(1, progress.total)) * 100,
+                      )
+                    }%`}
+                  >
+                  </b>
+                </i>
+                <ol class="quest-route__markers" aria-hidden="true">
+                  {journey.steps.map((step) => (
+                    <li
+                      data-quest-marker
+                      data-post-id={step.postId}
+                      data-state={step.postId === postId ? 'current' : 'upcoming'}
+                    >
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+            <nav class="quest-route__nav" aria-label={journey.title}>
+              {previous ? (
+                <a class="quest-route__step-link" rel="prev" href={previous.href}>
+                  <span aria-hidden="true">←</span>
+                  <span>
+                    <small>{t.questPrevious}</small>
+                    {previous.label}
+                  </span>
+                </a>
+              ) : (
+                <span class="quest-route__step-placeholder"></span>
+              )}
+              <a class="quest-route__overview" href={overviewHref}>
+                {t.questOverview}
+              </a>
+              {next ? (
+                <a class="quest-route__step-link" rel="next" href={next.href}>
+                  <span>
+                    <small>{t.questNext}</small>
+                    {next.label}
+                  </span>
+                  <span aria-hidden="true">→</span>
+                </a>
+              ) : (
+                <span class="quest-route__step-placeholder"></span>
+              )}
+            </nav>
+          </article>
+        );
+      })}
+    </section>
+  )
+}
+
+<script>
+  import {
+    PERSONAL_LIBRARY_STORAGE_KEY,
+    readPersonalLibrary,
+  } from '../lib/personal-library';
+  import {
+    computeJourneyProgress,
+    type Journey,
+    type JourneyProgress,
+  } from '../lib/journeys';
+
+  interface QuestRouteI18n {
+    progress: string;
+    completed: string;
+    inProgress: string;
+    notStarted: string;
+    current: string;
+  }
+
+  function parseJson(value: string | undefined): unknown {
+    try {
+      return JSON.parse(value ?? 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function parseJourneys(value: string | undefined): Journey[] {
+    const parsed = parseJson(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((candidate) => {
+      if (!candidate || typeof candidate !== 'object') return [];
+      const item = candidate as Record<string, unknown>;
+      if (
+        typeof item.id !== 'string' ||
+        typeof item.slug !== 'string' ||
+        (item.lang !== 'zh' && item.lang !== 'en') ||
+        typeof item.title !== 'string' ||
+        typeof item.description !== 'string' ||
+        typeof item.draft !== 'boolean' ||
+        typeof item.order !== 'number' ||
+        !Array.isArray(item.steps)
+      ) {
+        return [];
+      }
+      const steps = item.steps.flatMap((step) => {
+        if (!step || typeof step !== 'object') return [];
+        const value = step as Record<string, unknown>;
+        if (
+          typeof value.index !== 'number' ||
+          typeof value.postId !== 'string' ||
+          typeof value.label !== 'string' ||
+          typeof value.title !== 'string' ||
+          typeof value.href !== 'string'
+        ) {
+          return [];
+        }
+        return [{
+          index: value.index,
+          postId: value.postId,
+          label: value.label,
+          title: value.title,
+          href: value.href,
+        }];
+      });
+      return [{
+        id: item.id,
+        slug: item.slug,
+        lang: item.lang,
+        title: item.title,
+        description: item.description,
+        draft: item.draft,
+        order: item.order,
+        steps,
+      }];
+    });
+  }
+
+  function parseI18n(value: string | undefined): QuestRouteI18n {
+    const parsed = parseJson(value);
+    const source = parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : {};
+    const pick = (key: keyof QuestRouteI18n): string =>
+      typeof source[key] === 'string' ? (source[key] as string) : '';
+    return {
+      progress: pick('progress'),
+      completed: pick('completed'),
+      inProgress: pick('inProgress'),
+      notStarted: pick('notStarted'),
+      current: pick('current'),
+    };
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function stateLabel(progress: JourneyProgress, i18n: QuestRouteI18n): string {
+    if (progress.state === 'completed') return i18n.completed;
+    if (progress.state === 'in-progress') return i18n.inProgress;
+    return i18n.notStarted;
+  }
+
+  let controller: AbortController | null = null;
+  let activeRoot: HTMLElement | null = null;
+
+  function init(): void {
+    const root = document.querySelector<HTMLElement>('[data-quest-route-nav]');
+    if (!root) return;
+    if (controller && activeRoot === root) return;
+
+    controller?.abort();
+    const activeController = new AbortController();
+    const { signal } = activeController;
+    controller = activeController;
+    activeRoot = root;
+
+    const journeys = parseJourneys(root.dataset.journeys);
+    const i18n = parseI18n(root.dataset.i18n);
+    if (!journeys.length) {
+      root.hidden = true;
+      return;
+    }
+
+    const render = (): void => {
+      const history = readPersonalLibrary(getStorage());
+      const byId = new Map(
+        journeys.map((journey) => [
+          journey.id,
+          computeJourneyProgress(journey, history),
+        ]),
+      );
+
+      for (const route of root.querySelectorAll<HTMLElement>('[data-quest-route]')) {
+        const progress = byId.get(route.dataset.journeyId ?? '');
+        if (!progress) continue;
+        route.dataset.state = progress.state;
+
+        const state = route.querySelector<HTMLElement>('[data-quest-state]');
+        const label = route.querySelector<HTMLElement>('[data-progress]');
+        const bar = route.querySelector<HTMLElement>(
+          '[data-quest-route-progress-bar]',
+        );
+        if (state) state.textContent = stateLabel(progress, i18n);
+        if (label) {
+          label.textContent = i18n.progress
+            .replace('{completed}', String(progress.completedCount))
+            .replace('{total}', String(progress.total));
+        }
+        if (bar) {
+          bar.style.width = `${Math.round(
+            (progress.completedCount / Math.max(1, progress.total)) * 100,
+          )}%`;
+        }
+
+        for (const marker of route.querySelectorAll<HTMLElement>('[data-quest-marker]')) {
+          const step = progress.steps.find(
+            (candidate) => candidate.postId === marker.dataset.postId,
+          );
+          if (!step) continue;
+          marker.dataset.state = step.completed
+            ? 'completed'
+            : step.active
+              ? 'active'
+              : step.postId === route.dataset.currentPostId
+                ? 'current'
+                : 'upcoming';
+        }
+      }
+    };
+
+    render();
+    window.addEventListener(
+      'storage',
+      (event) => {
+        if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
+      },
+      { signal },
+    );
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-quest-route-nav]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  .quest-route-nav {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+  }
+
+  .quest-route-nav[hidden] {
+    display: none;
+  }
+
+  .quest-route {
+    border: 2px solid color-mix(in srgb, var(--accent-2) 45%, var(--line));
+    background:
+      linear-gradient(120deg, color-mix(in srgb, var(--accent-2) 6%, var(--card)), var(--card)),
+      var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .quest-route__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0.35em 0.75em;
+    border-bottom: 1px dashed color-mix(in srgb, var(--accent-2) 40%, var(--line));
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-route__state {
+    color: var(--accent);
+  }
+
+  .quest-route[data-state='completed'] .quest-route__state {
+    color: var(--accent-2);
+  }
+
+  .quest-route__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 0.42fr);
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .quest-route__chapter {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.3em var(--space-2);
+    min-width: 0;
+  }
+
+  .quest-route__chapter-index,
+  .quest-route__current-label {
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-route__current {
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+
+  .quest-route__current:hover {
+    color: var(--link);
+  }
+
+  .quest-route__current-label {
+    flex-basis: 100%;
+  }
+
+  .quest-route__progress {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35em;
+    min-width: 0;
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-route__progress i {
+    display: block;
+    height: 7px;
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+  }
+
+  .quest-route__progress b {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width var(--dur);
+  }
+
+  .quest-route__markers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6px, 1fr));
+    gap: 3px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .quest-route__markers li {
+    height: 5px;
+    background: var(--line);
+  }
+
+  .quest-route__markers li[data-state='completed'] {
+    background: var(--accent-2);
+  }
+
+  .quest-route__markers li[data-state='active'],
+  .quest-route__markers li[data-state='current'] {
+    background: var(--accent);
+  }
+
+  .quest-route__nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: var(--space-1);
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .quest-route__step-link,
+  .quest-route__overview {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: 44px;
+    color: var(--text);
+  }
+
+  .quest-route__step-link {
+    min-width: 0;
+    padding: 0.35em 0.6em;
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+    font-size: var(--fs-small);
+    overflow-wrap: anywhere;
+  }
+
+  .quest-route__step-link[rel='next'] {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  .quest-route__step-link:hover {
+    border-color: var(--accent);
+    color: var(--link);
+    text-decoration: none;
+  }
+
+  .quest-route__step-link small,
+  .quest-route__overview {
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-route__step-link small {
+    display: block;
+  }
+
+  .quest-route__overview {
+    justify-content: center;
+    padding: 0 0.55em;
+  }
+
+  .quest-route__overview:hover {
+    color: var(--link);
+  }
+
+  .quest-route__step-placeholder {
+    min-height: 44px;
+  }
+
+  @media (max-width: 640px) {
+    .quest-route__body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .quest-route__nav {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .quest-route__overview {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .quest-route__step-link[rel='next'] {
+      grid-column: 1;
+      grid-row: 2;
+      justify-content: flex-start;
+      text-align: left;
+    }
+
+    .quest-route__step-placeholder {
+      display: none;
+    }
+  }
+</style>

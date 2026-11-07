@@ -1,0 +1,434 @@
+---
+import { UI, type Lang } from '../consts';
+import type { Journey } from '../lib/journeys';
+
+interface Props {
+  lang: Lang;
+  journeys: Journey[];
+}
+
+const { lang, journeys } = Astro.props;
+const t = UI[lang];
+const serializedJourneys = JSON.stringify(journeys).replace(/</g, '\\u003c');
+const i18n = {
+  progress: t.questProgress,
+  completed: t.questCompleted,
+  inProgress: t.questInProgress,
+  notStarted: t.questNotStarted,
+  current: t.questCurrent,
+};
+---
+
+<div
+  class="journey-list"
+  data-journey-list
+  data-lang={lang}
+  data-journeys={serializedJourneys}
+  data-i18n={JSON.stringify(i18n)}
+>
+  {
+    journeys.map((journey) => (
+      <article
+        class="journey-card"
+        data-journey-card
+        data-journey-id={journey.id}
+        data-state="not-started"
+      >
+        <header class="journey-card__head">
+          <span class="journey-card__route">ROUTE {journey.id}</span>
+          <span class="journey-card__state" data-journey-state>
+            {t.questNotStarted}
+          </span>
+        </header>
+        <div class="journey-card__copy">
+          <h2>{journey.title}</h2>
+          <p>{journey.description}</p>
+        </div>
+        <div class="journey-card__progress">
+          <span data-journey-progress>
+            {t.questProgress
+              .replace('{completed}', '0')
+              .replace('{total}', String(journey.steps.length))}
+          </span>
+          <i aria-hidden="true">
+            <b data-journey-progress-bar style="width: 0%"></b>
+          </i>
+        </div>
+        <ol class="journey-card__steps">
+          {journey.steps.map((step) => (
+            <li
+              class="journey-card__step"
+              data-journey-step
+              data-post-id={step.postId}
+              data-state="upcoming"
+            >
+              <span class="journey-card__step-index">
+                {String(step.index + 1).padStart(2, '0')}
+              </span>
+              <a class="journey-card__step-link" href={step.href}>
+                {step.label}
+              </a>
+              <span class="journey-card__step-state" aria-hidden="true"></span>
+            </li>
+          ))}
+        </ol>
+      </article>
+    ))
+  }
+</div>
+
+<script>
+  import {
+    PERSONAL_LIBRARY_STORAGE_KEY,
+    readPersonalLibrary,
+    type PersonalLibraryLang,
+  } from '../lib/personal-library';
+  import {
+    computeJourneyProgress,
+    type Journey,
+    type JourneyProgress,
+  } from '../lib/journeys';
+
+  interface JourneyListI18n {
+    progress: string;
+    completed: string;
+    inProgress: string;
+    notStarted: string;
+    current: string;
+  }
+
+  function parseJson(value: string | undefined): unknown {
+    try {
+      return JSON.parse(value ?? 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function parseJourneys(value: string | undefined): Journey[] {
+    const parsed = parseJson(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((candidate) => {
+      if (!candidate || typeof candidate !== 'object') return [];
+      const item = candidate as Record<string, unknown>;
+      if (
+        typeof item.id !== 'string' ||
+        typeof item.slug !== 'string' ||
+        (item.lang !== 'zh' && item.lang !== 'en') ||
+        typeof item.title !== 'string' ||
+        typeof item.description !== 'string' ||
+        typeof item.draft !== 'boolean' ||
+        typeof item.order !== 'number' ||
+        !Array.isArray(item.steps)
+      ) {
+        return [];
+      }
+      const steps = item.steps.flatMap((step) => {
+        if (!step || typeof step !== 'object') return [];
+        const value = step as Record<string, unknown>;
+        if (
+          typeof value.index !== 'number' ||
+          typeof value.postId !== 'string' ||
+          typeof value.label !== 'string' ||
+          typeof value.title !== 'string' ||
+          typeof value.href !== 'string'
+        ) {
+          return [];
+        }
+        return [{
+          index: value.index,
+          postId: value.postId,
+          label: value.label,
+          title: value.title,
+          href: value.href,
+        }];
+      });
+      return [{
+        id: item.id,
+        slug: item.slug,
+        lang: item.lang,
+        title: item.title,
+        description: item.description,
+        draft: item.draft,
+        order: item.order,
+        steps,
+      }];
+    });
+  }
+
+  function parseI18n(value: string | undefined): JourneyListI18n {
+    const parsed = parseJson(value);
+    const source = parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : {};
+    const pick = (key: keyof JourneyListI18n): string =>
+      typeof source[key] === 'string' ? (source[key] as string) : '';
+    return {
+      progress: pick('progress'),
+      completed: pick('completed'),
+      inProgress: pick('inProgress'),
+      notStarted: pick('notStarted'),
+      current: pick('current'),
+    };
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function stateLabel(progress: JourneyProgress, i18n: JourneyListI18n): string {
+    if (progress.state === 'completed') return i18n.completed;
+    if (progress.state === 'in-progress') return i18n.inProgress;
+    return i18n.notStarted;
+  }
+
+  let controller: AbortController | null = null;
+  let activeRoot: HTMLElement | null = null;
+
+  function init(): void {
+    const root = document.querySelector<HTMLElement>('[data-journey-list]');
+    if (!root) return;
+    if (controller && activeRoot === root) return;
+
+    controller?.abort();
+    const activeController = new AbortController();
+    const { signal } = activeController;
+    controller = activeController;
+    activeRoot = root;
+
+    const lang: PersonalLibraryLang = root.dataset.lang === 'en' ? 'en' : 'zh';
+    const journeys = parseJourneys(root.dataset.journeys);
+    const i18n = parseI18n(root.dataset.i18n);
+    if (!journeys.length) return;
+
+    const render = (): void => {
+      const history = readPersonalLibrary(getStorage());
+      const byId = new Map(
+        journeys.map((journey) => [
+          journey.id,
+          computeJourneyProgress(journey, history),
+        ]),
+      );
+
+      for (const card of root.querySelectorAll<HTMLElement>('[data-journey-card]')) {
+        const progress = byId.get(card.dataset.journeyId ?? '');
+        if (!progress) continue;
+        card.dataset.state = progress.state;
+
+        const state = card.querySelector<HTMLElement>('[data-journey-state]');
+        const label = card.querySelector<HTMLElement>('[data-journey-progress]');
+        const bar = card.querySelector<HTMLElement>('[data-journey-progress-bar]');
+        if (state) state.textContent = stateLabel(progress, i18n);
+        if (label) {
+          label.textContent = i18n.progress
+            .replace('{completed}', String(progress.completedCount))
+            .replace('{total}', String(progress.total));
+        }
+        if (bar) {
+          bar.style.width = `${Math.round(
+            (progress.completedCount / Math.max(1, progress.total)) * 100,
+          )}%`;
+        }
+
+        for (const stepElement of card.querySelectorAll<HTMLElement>('[data-journey-step]')) {
+          const step = progress.steps.find(
+            (candidate) => candidate.postId === stepElement.dataset.postId,
+          );
+          if (!step) continue;
+          const stateName = step.completed
+            ? 'completed'
+            : step.active
+              ? 'active'
+              : 'upcoming';
+          stepElement.dataset.state = stateName;
+          stepElement.dataset.progress = String(step.progress);
+          const link = stepElement.querySelector<HTMLAnchorElement>('a');
+          if (step.active) {
+            link?.setAttribute('aria-current', 'step');
+          } else {
+            link?.removeAttribute('aria-current');
+          }
+          const stepState = stepElement.querySelector<HTMLElement>(
+            '.journey-card__step-state',
+          );
+          if (stepState) {
+            stepState.textContent = step.completed
+              ? i18n.completed
+              : step.active
+                ? i18n.current
+                : '';
+          }
+        }
+      }
+    };
+
+    render();
+    window.addEventListener('storage',
+      (event) => {
+        if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
+      },
+      { signal },
+    );
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-journey-list]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  .journey-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+
+  .journey-card {
+    min-width: 0;
+    border: 2px solid color-mix(in srgb, var(--accent-2) 50%, var(--line));
+    background:
+      linear-gradient(
+        145deg,
+        color-mix(in srgb, var(--accent-2) 7%, var(--card)),
+        var(--card) 58%
+      );
+    box-shadow: var(--shadow);
+  }
+
+  .journey-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0.45em 0.8em;
+    border-bottom: 2px dashed color-mix(in srgb, var(--accent-2) 40%, var(--line));
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.07em;
+  }
+
+  .journey-card__state {
+    color: var(--accent);
+    text-align: right;
+  }
+
+  .journey-card[data-state='completed'] .journey-card__state {
+    color: var(--accent-2);
+  }
+
+  .journey-card__copy {
+    padding: var(--space-3) var(--space-3) var(--space-2);
+  }
+
+  .journey-card__copy h2 {
+    margin: 0;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-h2);
+    letter-spacing: 0.03em;
+  }
+
+  .journey-card__copy p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  .journey-card__progress {
+    display: grid;
+    gap: var(--space-1);
+    padding: 0 var(--space-3) var(--space-2);
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .journey-card__progress i {
+    display: block;
+    height: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+  }
+
+  .journey-card__progress b {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width var(--dur);
+  }
+
+  .journey-card__steps {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0 var(--space-3) var(--space-3);
+    list-style: none;
+  }
+
+  .journey-card__step {
+    display: grid;
+    grid-template-columns: 2.5em minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    border-top: 1px dashed color-mix(in srgb, var(--line) 65%, transparent);
+  }
+
+  .journey-card__step-index {
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .journey-card__step-link {
+    min-width: 0;
+    color: var(--text);
+    overflow-wrap: anywhere;
+  }
+
+  .journey-card__step-link:hover {
+    color: var(--link);
+  }
+
+  .journey-card__step-state {
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    text-align: right;
+  }
+
+  .journey-card__step[data-state='completed'] .journey-card__step-index,
+  .journey-card__step[data-state='completed'] .journey-card__step-state {
+    color: var(--accent-2);
+  }
+
+  .journey-card__step[data-state='active'] .journey-card__step-index {
+    color: var(--accent);
+  }
+
+  .journey-card__step[data-state='active'] .journey-card__step-link {
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-underline-offset: 0.2em;
+  }
+
+  @media (max-width: 520px) {
+    .journey-card__step {
+      grid-template-columns: 2.25em minmax(0, 1fr);
+      padding: 0.45em 0;
+    }
+
+    .journey-card__step-state {
+      grid-column: 2;
+      text-align: left;
+    }
+  }
+</style>

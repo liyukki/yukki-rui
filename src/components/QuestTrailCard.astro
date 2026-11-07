@@ -1,0 +1,477 @@
+---
+import { UI, type Lang } from '../consts';
+import type { Journey } from '../lib/journeys';
+import { withBase } from '../lib/url';
+import PixelSprite from './PixelSprite.astro';
+
+interface Props {
+  lang: Lang;
+  journeys: Journey[];
+}
+
+const { lang, journeys } = Astro.props;
+const t = UI[lang];
+const fallback = journeys[0];
+const firstStep = fallback?.steps[0];
+const overviewHref = withBase(`${lang}/quests/`);
+const initialProgress = t.questProgress
+  .replace('{completed}', '0')
+  .replace('{total}', String(fallback?.steps.length ?? 0));
+const serializedJourneys = JSON.stringify(journeys).replace(/</g, '\\u003c');
+const i18n = {
+  progress: t.questProgress,
+  nextQuest: t.nextQuest,
+  questContinue: t.questContinue,
+  questOverview: t.questOverview,
+  questCompleted: t.questCompleted,
+  questInProgress: t.questInProgress,
+  questNotStarted: t.questNotStarted,
+};
+---
+{
+  fallback && firstStep && (
+    <section
+      class="quest-trail"
+      data-quest-trail
+      data-lang={lang}
+      data-journey-id={fallback.id}
+      data-journeys={serializedJourneys}
+      data-i18n={JSON.stringify(i18n)}
+      data-state="not-started"
+      data-pagefind-ignore
+      aria-labelledby="quest-trail-title"
+    >
+      <div class="quest-trail__hud">
+        <span>QUEST ROUTE</span>
+        <span class="quest-trail__state" data-quest-state>{t.questNotStarted}</span>
+      </div>
+      <div class="quest-trail__body">
+        <PixelSprite name="sign-post" size={36} />
+        <div class="quest-trail__copy">
+          <p class="quest-trail__eyebrow">{t.questTrail}</p>
+          <h2 id="quest-trail-title" data-quest-title>{fallback.title}</h2>
+          <p data-quest-description>{fallback.description}</p>
+        </div>
+        <div class="quest-trail__progress">
+          <span data-progress>{initialProgress}</span>
+          <i aria-hidden="true">
+            <b data-progress-bar style="width: 0%"></b>
+          </i>
+        </div>
+      </div>
+      <div class="quest-trail__next">
+        <span class="quest-trail__next-label">{t.nextQuest}</span>
+        <a data-quest-next href={firstStep.href}>
+          <span data-quest-next-label>{firstStep.label}</span>
+          <span class="quest-trail__cta">{t.questContinue} ↗</span>
+        </a>
+        <a class="quest-trail__overview" href={overviewHref}>{t.questOverview}</a>
+      </div>
+    </section>
+  )
+}
+
+<script>
+  import { UI } from '../consts';
+  import {
+    PERSONAL_LIBRARY_STORAGE_KEY,
+    readPersonalLibrary,
+    type PersonalLibraryLang,
+  } from '../lib/personal-library';
+  import {
+    selectHomeJourney,
+    type Journey,
+    type JourneyProgress,
+  } from '../lib/journeys';
+
+  interface TrailI18n {
+    progress: string;
+    nextQuest: string;
+    questContinue: string;
+    questOverview: string;
+    questCompleted: string;
+    questInProgress: string;
+    questNotStarted: string;
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function parseJson(value: string | undefined): unknown {
+    try {
+      return JSON.parse(value ?? 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function parseJourneys(value: string | undefined): Journey[] {
+    const parsed = parseJson(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((candidate) => {
+      if (!candidate || typeof candidate !== 'object') return [];
+      const item = candidate as Record<string, unknown>;
+      if (
+        typeof item.id !== 'string' ||
+        typeof item.slug !== 'string' ||
+        (item.lang !== 'zh' && item.lang !== 'en') ||
+        typeof item.title !== 'string' ||
+        typeof item.description !== 'string' ||
+        typeof item.draft !== 'boolean' ||
+        typeof item.order !== 'number' ||
+        !Array.isArray(item.steps)
+      ) {
+        return [];
+      }
+      const steps = item.steps.flatMap((step) => {
+        if (!step || typeof step !== 'object') return [];
+        const value = step as Record<string, unknown>;
+        if (
+          typeof value.index !== 'number' ||
+          typeof value.postId !== 'string' ||
+          typeof value.label !== 'string' ||
+          typeof value.title !== 'string' ||
+          typeof value.href !== 'string'
+        ) {
+          return [];
+        }
+        return [{
+          index: value.index,
+          postId: value.postId,
+          label: value.label,
+          title: value.title,
+          href: value.href,
+        }];
+      });
+      return [{
+        id: item.id,
+        slug: item.slug,
+        lang: item.lang,
+        title: item.title,
+        description: item.description,
+        draft: item.draft,
+        order: item.order,
+        steps,
+      }];
+    });
+  }
+
+  function parseI18n(value: string | undefined): TrailI18n {
+    const parsed = parseJson(value);
+    const source = parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : {};
+    const pick = (key: keyof TrailI18n): string =>
+      typeof source[key] === 'string' ? (source[key] as string) : '';
+    return {
+      progress: pick('progress'),
+      nextQuest: pick('nextQuest'),
+      questContinue: pick('questContinue'),
+      questOverview: pick('questOverview'),
+      questCompleted: pick('questCompleted'),
+      questInProgress: pick('questInProgress'),
+      questNotStarted: pick('questNotStarted'),
+    };
+  }
+
+  function stateLabel(progress: JourneyProgress, i18n: TrailI18n): string {
+    if (progress.state === 'completed') return i18n.questCompleted;
+    if (progress.state === 'in-progress') return i18n.questInProgress;
+    return i18n.questNotStarted;
+  }
+
+  let controller: AbortController | null = null;
+  let activeRoot: HTMLElement | null = null;
+
+  function init(): void {
+    const root = document.querySelector<HTMLElement>('[data-quest-trail]');
+    if (!root) return;
+    if (controller && activeRoot === root) return;
+
+    controller?.abort();
+    const activeController = new AbortController();
+    const { signal } = activeController;
+    controller = activeController;
+    activeRoot = root;
+
+    const journeys = parseJourneys(root.dataset.journeys);
+    const i18n = parseI18n(root.dataset.i18n);
+    if (!journeys.length) {
+      root.hidden = true;
+      return;
+    }
+
+    const title = root.querySelector<HTMLElement>('[data-quest-title]');
+    const description = root.querySelector<HTMLElement>('[data-quest-description]');
+    const state = root.querySelector<HTMLElement>('[data-quest-state]');
+    const progressLabel = root.querySelector<HTMLElement>('[data-progress]');
+    const progressBar = root.querySelector<HTMLElement>('[data-progress-bar]');
+    const nextLink = root.querySelector<HTMLAnchorElement>('[data-quest-next]');
+    const nextLabel = root.querySelector<HTMLElement>('[data-quest-next-label]');
+    const nextCta = nextLink?.querySelector<HTMLElement>('.quest-trail__cta');
+    const nextHeading = root.querySelector<HTMLElement>('[data-quest-next-label]')
+      ?.closest('.quest-trail__next')
+      ?.querySelector<HTMLElement>('.quest-trail__next-label');
+    if (
+      !title ||
+      !description ||
+      !state ||
+      !progressLabel ||
+      !progressBar ||
+      !nextLink ||
+      !nextLabel ||
+      !nextCta
+    ) {
+      root.hidden = true;
+      return;
+    }
+
+    const render = (): void => {
+      const selected = selectHomeJourney(journeys, readPersonalLibrary(getStorage()), rootLang(root));
+      if (!selected) {
+        root.hidden = true;
+        return;
+      }
+      root.hidden = false;
+      root.dataset.state = selected.state;
+      title.textContent = selected.journey.title;
+      description.textContent = selected.journey.description;
+      state.textContent = stateLabel(selected, i18n);
+      progressLabel.textContent = i18n.progress
+        .replace('{completed}', String(selected.completedCount))
+        .replace('{total}', String(selected.total));
+      progressBar.style.width = `${Math.round(
+        (selected.completedCount / Math.max(1, selected.total)) * 100,
+      )}%`;
+
+      if (selected.state === 'completed') {
+        nextLink.href = overviewHref;
+        nextLabel.textContent = i18n.questOverview;
+        nextCta.textContent = i18n.questOverview;
+        if (nextHeading) nextHeading.textContent = i18n.questCompleted;
+      } else {
+        const step = selected.nextStep;
+        if (!step) return;
+        nextLink.href = step.href;
+        nextLabel.textContent = step.label;
+        nextCta.textContent = i18n.questContinue;
+        if (nextHeading) nextHeading.textContent = i18n.nextQuest;
+      }
+    };
+
+    const overviewHref = root.querySelector<HTMLAnchorElement>('.quest-trail__overview')
+      ?.href ?? '';
+    render();
+    window.addEventListener('storage',
+      (event) => {
+        if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
+      },
+      { signal },
+    );
+  }
+
+  function rootLang(root: HTMLElement): PersonalLibraryLang {
+    return root.dataset.lang === 'en' ? 'en' : 'zh';
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-quest-trail]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  .quest-trail {
+    margin-top: var(--space-4);
+    border: 2px solid color-mix(in srgb, var(--accent-2) 55%, var(--line));
+    border-radius: var(--radius);
+    background:
+      linear-gradient(100deg, color-mix(in srgb, var(--accent-2) 9%, var(--card)), var(--card) 60%),
+      var(--card);
+    box-shadow: var(--shadow);
+  }
+
+  .quest-trail__hud {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0.45em 0.8em;
+    border-bottom: 2px dashed color-mix(in srgb, var(--accent-2) 45%, var(--line));
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.09em;
+  }
+
+  .quest-trail__state {
+    color: var(--accent);
+  }
+
+  .quest-trail[data-state='completed'] .quest-trail__state {
+    color: var(--accent-2);
+  }
+
+  .quest-trail__body {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(120px, 0.35fr);
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .quest-trail__copy {
+    min-width: 0;
+  }
+
+  .quest-trail__eyebrow {
+    margin: 0 0 var(--space-1);
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .quest-trail h2 {
+    margin: 0;
+    font-family: var(--font-pixel);
+    font-size: 1.1rem;
+    letter-spacing: 0.03em;
+  }
+
+  .quest-trail p {
+    margin: var(--space-1) 0 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  .quest-trail__progress {
+    display: grid;
+    gap: var(--space-1);
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    text-align: right;
+  }
+
+  .quest-trail__progress i {
+    display: block;
+    height: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg-soft);
+  }
+
+  .quest-trail__progress b {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  }
+
+  .quest-trail__next {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .quest-trail__next-label {
+    flex: none;
+    color: var(--accent);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-trail__next > a:not(.quest-trail__overview) {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 44px;
+    padding: 0.5em 0.7em;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--accent-2) 8%, var(--bg-soft));
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .quest-trail__next > a:not(.quest-trail__overview):hover {
+    border-color: var(--accent);
+    text-decoration: none;
+  }
+
+  .quest-trail__cta {
+    flex: none;
+    color: var(--link);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-trail__overview {
+    flex: none;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-dim);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+  }
+
+  .quest-trail__overview:hover {
+    color: var(--link);
+  }
+
+  @media (max-width: 700px) {
+    .quest-trail__body {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .quest-trail__progress {
+      grid-column: 2;
+      text-align: left;
+    }
+
+    .quest-trail__next {
+      flex-wrap: wrap;
+    }
+
+    .quest-trail__overview {
+      margin-left: auto;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .quest-trail__body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .quest-trail__body > :global(img) {
+      display: none;
+    }
+
+    .quest-trail__progress {
+      grid-column: 1;
+    }
+
+    .quest-trail__next {
+      display: grid;
+    }
+
+    .quest-trail__overview {
+      margin-left: 0;
+    }
+
+    .quest-trail__next > a:not(.quest-trail__overview) {
+      display: grid;
+      justify-items: start;
+    }
+  }
+</style>
