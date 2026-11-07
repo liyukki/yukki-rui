@@ -545,7 +545,7 @@ const i18n = {
       );
 
     const focusElement = (element: HTMLElement | null): boolean => {
-      if (!canReceiveFocus(element)) return false;
+      if (!element || !canReceiveFocus(element)) return false;
       element.focus({ preventScroll: true });
       return true;
     };
