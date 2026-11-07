@@ -1,0 +1,636 @@
+---
+import { UI, type Lang } from '../consts';
+
+interface Props {
+  postId: string;
+  lang: Lang;
+  title: string;
+}
+
+const { postId, lang, title } = Astro.props;
+const t = UI[lang];
+const i18n = {
+  annotations: t.annotations,
+  annotationsOpen: t.annotationsOpen,
+  annotationsEmpty: t.annotationsEmpty,
+  annotationsEmptyHint: t.annotationsEmptyHint,
+  annotationHighlight: t.annotationHighlight,
+  annotationAddNote: t.annotationAddNote,
+  annotationQuote: t.annotationQuote,
+  annotationNote: t.annotationNote,
+  annotationNotePlaceholder: t.annotationNotePlaceholder,
+  annotationSave: t.annotationSave,
+  annotationSaved: t.annotationSaved,
+  annotationDelete: t.annotationDelete,
+  annotationDeleted: t.annotationDeleted,
+  annotationCancel: t.annotationCancel,
+  annotationClose: t.annotationClose,
+  annotationStorageUnavailable: t.annotationStorageUnavailable,
+  annotationInvalidSelection: t.annotationInvalidSelection,
+  annotationTooLong: t.annotationTooLong,
+  annotationOverlap: t.annotationOverlap,
+  annotationSaveFailed: t.annotationSaveFailed,
+  annotationDeleteFailed: t.annotationDeleteFailed,
+  annotationMoved: t.annotationMoved,
+  annotationConflict: t.annotationConflict,
+  annotationJumped: t.annotationJumped,
+  annotationToolbar: t.annotationToolbar,
+  annotationExcerpts: t.annotationExcerpts,
+};
+---
+<div
+  class="article-annotations"
+  data-article-annotations
+  data-post-id={postId}
+  data-lang={lang}
+  data-i18n={JSON.stringify(i18n).replace(/</g, '\\u003c')}
+>
+  <button
+    type="button"
+    class="annotation-entry"
+    data-annotations-open
+    aria-haspopup="dialog"
+    aria-controls="article-annotations-dialog"
+    aria-expanded="false"
+    aria-label={`${t.annotationsOpen}: ${title}`}
+    hidden
+  >
+    <span>{t.annotations}</span>
+    <span class="annotation-entry__count" data-annotations-count>0</span>
+  </button>
+
+  <div
+    class="annotation-toolbar"
+    data-annotation-toolbar
+    role="toolbar"
+    aria-label={t.annotationToolbar}
+    hidden
+  >
+    <button type="button" data-annotation-highlight>{t.annotationHighlight}</button>
+    <button type="button" data-annotation-note>{t.annotationAddNote}</button>
+  </div>
+
+  <p
+    class="annotation-status"
+    data-annotation-status
+    role="status"
+    aria-live="polite"
+  ></p>
+
+  <dialog
+    class="annotation-drawer"
+    id="article-annotations-dialog"
+    data-annotations-dialog
+    aria-labelledby="article-annotations-title"
+  >
+    <header class="annotation-drawer__header">
+      <h2 id="article-annotations-title">{t.annotations}</h2>
+      <button
+        type="button"
+        class="annotation-icon-button"
+        data-annotations-close
+        aria-label={t.annotationClose}
+      ><span aria-hidden="true">&times;</span></button>
+    </header>
+    <div class="annotation-drawer__body">
+      <p class="annotation-empty" data-annotations-empty>
+        <strong>{t.annotationsEmpty}</strong>
+        <span>{t.annotationsEmptyHint}</span>
+      </p>
+      <ol class="annotation-list" data-annotations-list></ol>
+    </div>
+  </dialog>
+
+  <dialog
+    class="annotation-editor"
+    id="article-annotation-editor"
+    data-annotation-editor
+    aria-labelledby="article-annotation-editor-title"
+  >
+    <form method="dialog" data-annotation-form>
+      <header class="annotation-editor__header">
+        <h2 id="article-annotation-editor-title" data-annotation-editor-title>
+          {t.annotationAddNote}
+        </h2>
+        <button
+          type="button"
+          class="annotation-icon-button"
+          data-annotation-cancel
+          aria-label={t.annotationClose}
+        ><span aria-hidden="true">&times;</span></button>
+      </header>
+      <blockquote class="annotation-editor__quote" data-annotation-quote></blockquote>
+      <label class="annotation-editor__field">
+        <span>{t.annotationNote}</span>
+        <textarea
+          data-annotation-note-input
+          maxlength="1000"
+          placeholder={t.annotationNotePlaceholder}
+        ></textarea>
+      </label>
+      <div class="annotation-editor__actions">
+        <button type="submit" value="save" data-annotation-save>{t.annotationSave}</button>
+        <button type="button" data-annotation-delete hidden>{t.annotationDelete}</button>
+        <button type="button" data-annotation-cancel>{t.annotationCancel}</button>
+      </div>
+    </form>
+  </dialog>
+</div>
+
+<script>
+  import { UI, type Lang } from '../consts';
+  import {
+    readAnnotationStore,
+    selectAnnotationsForPost,
+    type AnnotationLang,
+  } from '../lib/annotations';
+
+  interface AnnotationI18n {
+    annotations: string;
+    annotationsOpen: string;
+    annotationsEmpty: string;
+    annotationsEmptyHint: string;
+    annotationHighlight: string;
+    annotationAddNote: string;
+    annotationQuote: string;
+    annotationNote: string;
+    annotationNotePlaceholder: string;
+    annotationSave: string;
+    annotationSaved: string;
+    annotationDelete: string;
+    annotationDeleted: string;
+    annotationCancel: string;
+    annotationClose: string;
+    annotationStorageUnavailable: string;
+    annotationInvalidSelection: string;
+    annotationTooLong: string;
+    annotationOverlap: string;
+    annotationSaveFailed: string;
+    annotationDeleteFailed: string;
+    annotationMoved: string;
+    annotationConflict: string;
+    annotationJumped: string;
+    annotationToolbar: string;
+    annotationExcerpts: string;
+  }
+
+  function parseRecord(value: string | undefined): Record<string, unknown> {
+    try {
+      return JSON.parse(value ?? '{}') as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  function readLang(root: HTMLElement): AnnotationLang {
+    return root.dataset.lang === 'en' ? 'en' : 'zh';
+  }
+
+  function readI18n(root: HTMLElement, lang: Lang): AnnotationI18n {
+    const parsed = parseRecord(root.dataset.i18n);
+    const fallback = UI[lang] as Record<string, string>;
+    const keys: (keyof AnnotationI18n)[] = [
+      'annotations',
+      'annotationsOpen',
+      'annotationsEmpty',
+      'annotationsEmptyHint',
+      'annotationHighlight',
+      'annotationAddNote',
+      'annotationQuote',
+      'annotationNote',
+      'annotationNotePlaceholder',
+      'annotationSave',
+      'annotationSaved',
+      'annotationDelete',
+      'annotationDeleted',
+      'annotationCancel',
+      'annotationClose',
+      'annotationStorageUnavailable',
+      'annotationInvalidSelection',
+      'annotationTooLong',
+      'annotationOverlap',
+      'annotationSaveFailed',
+      'annotationDeleteFailed',
+      'annotationMoved',
+      'annotationConflict',
+      'annotationJumped',
+      'annotationToolbar',
+      'annotationExcerpts',
+    ];
+    const i18n = {} as AnnotationI18n;
+    for (const key of keys) {
+      i18n[key] =
+        typeof parsed[key] === 'string'
+          ? (parsed[key] as string)
+          : (fallback[key] ?? String(key));
+    }
+    return i18n;
+  }
+
+  function getStorage(): Storage | null {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  let controller: AbortController | null = null;
+
+  function closeDialogs(root: HTMLElement): void {
+    root.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach((dialog) => {
+      dialog.close();
+    });
+  }
+
+  function init(): void {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+
+    const root = document.querySelector<HTMLElement>('[data-article-annotations]');
+    if (!root) return;
+
+    const lang = readLang(root);
+    const postId = root.dataset.postId;
+    if (!postId) return;
+
+    const i18n = readI18n(root, lang);
+    const entry = root.querySelector<HTMLButtonElement>('[data-annotations-open]');
+    const count = root.querySelector<HTMLElement>('[data-annotations-count]');
+    const drawer = root.querySelector<HTMLDialogElement>('[data-annotations-dialog]');
+    const drawerClose = root.querySelector<HTMLButtonElement>('[data-annotations-close]');
+    const status = root.querySelector<HTMLElement>('[data-annotation-status]');
+    if (!entry || !count || !drawer || !drawerClose || !status) return;
+
+    const storage = getStorage();
+    if (!storage) return;
+
+    const records = selectAnnotationsForPost(readAnnotationStore(storage), lang, postId);
+    count.textContent = String(records.length);
+    entry.hidden = false;
+
+    const setExpanded = (expanded: boolean): void => {
+      entry.setAttribute('aria-expanded', String(expanded));
+    };
+
+    entry.addEventListener(
+      'click',
+      () => {
+        setExpanded(true);
+        drawer.showModal();
+      },
+      { signal },
+    );
+    drawerClose.addEventListener('click', () => drawer.close(), { signal });
+    drawer.addEventListener('close', () => setExpanded(false), { signal });
+    drawer.addEventListener(
+      'cancel',
+      () => {
+        setExpanded(false);
+        status.textContent = '';
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      'astro:before-swap',
+      () => {
+        closeDialogs(root);
+        setExpanded(false);
+      },
+      { signal },
+    );
+  }
+
+  const start = (): void => {
+    if (document.querySelector('[data-article-annotations]')) init();
+  };
+
+  document.addEventListener('astro:page-load', start);
+  if (document.readyState !== 'loading') start();
+</script>
+
+<style>
+  .article-annotations {
+    min-width: 0;
+  }
+
+  .annotation-entry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 44px;
+    margin-top: var(--space-3);
+    padding: 0.45em 0.9em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    font: inherit;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition:
+      border-color var(--dur),
+      color var(--dur),
+      background var(--dur),
+      transform var(--dur);
+  }
+
+  .annotation-entry:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+    color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .annotation-entry[hidden],
+  .annotation-toolbar[hidden],
+  .annotation-editor [data-annotation-delete][hidden] {
+    display: none;
+  }
+
+  .annotation-entry__count {
+    display: inline-grid;
+    min-width: 1.7em;
+    min-height: 1.7em;
+    place-items: center;
+    padding: 0 0.35em;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: var(--fs-tiny);
+    line-height: 1;
+  }
+
+  .annotation-toolbar {
+    position: fixed;
+    z-index: 80;
+    display: flex;
+    gap: 0.25rem;
+    max-width: calc(100vw - 2 * var(--space-2));
+    padding: 0.25rem;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-hover);
+  }
+
+  .annotation-toolbar button,
+  .annotation-editor__actions button,
+  .annotation-icon-button {
+    min-width: 44px;
+    min-height: 44px;
+    border: 2px solid transparent;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    cursor: pointer;
+  }
+
+  .annotation-toolbar button {
+    padding: 0.35em 0.7em;
+  }
+
+  .annotation-toolbar button:hover,
+  .annotation-toolbar button:focus-visible,
+  .annotation-editor__actions button:hover,
+  .annotation-icon-button:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+    color: var(--accent);
+  }
+
+  .annotation-status {
+    margin: var(--space-2) 0 0;
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  .annotation-status:empty {
+    display: none;
+  }
+
+  dialog {
+    color: var(--text);
+  }
+
+  dialog::backdrop {
+    background: color-mix(in srgb, var(--text) 38%, transparent);
+    backdrop-filter: blur(2px);
+  }
+
+  .annotation-drawer {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(420px, 100%);
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-left: 2px solid var(--line);
+    border-radius: 0;
+    background: var(--card);
+    box-shadow: -8px 0 0 0 var(--card-edge);
+    overflow: hidden;
+  }
+
+  .annotation-drawer[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .annotation-drawer__header,
+  .annotation-editor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .annotation-drawer__header {
+    flex: none;
+    padding: var(--space-3);
+    border-bottom: 2px solid var(--line);
+    background: var(--bg-soft);
+  }
+
+  .annotation-drawer__header h2,
+  .annotation-editor__header h2 {
+    margin: 0;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-h2);
+    letter-spacing: 0.04em;
+  }
+
+  .annotation-icon-button {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+
+  .annotation-drawer__body {
+    min-height: 0;
+    padding: var(--space-3);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .annotation-empty {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-4) var(--space-2);
+    color: var(--text-dim);
+    text-align: center;
+  }
+
+  .annotation-empty strong {
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-body);
+    letter-spacing: 0.04em;
+  }
+
+  .annotation-empty[hidden] {
+    display: none;
+  }
+
+  .annotation-list {
+    display: grid;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .annotation-editor {
+    width: min(560px, calc(100vw - 2 * var(--space-3)));
+    max-width: none;
+    max-height: calc(100dvh - 2 * var(--space-3));
+    margin: auto;
+    padding: 0;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-hover);
+    overflow: auto;
+  }
+
+  .annotation-editor form {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .annotation-editor__quote {
+    max-height: 10rem;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-left: var(--px) solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--text-dim);
+    overflow: auto;
+  }
+
+  .annotation-editor__field {
+    display: grid;
+    gap: var(--space-1);
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+  }
+
+  .annotation-editor__field textarea {
+    width: 100%;
+    min-height: 7rem;
+    resize: vertical;
+    padding: var(--space-2);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    color: var(--text);
+    font: inherit;
+    line-height: 1.55;
+  }
+
+  .annotation-editor__field textarea:focus-visible {
+    outline: 3px solid var(--accent-2);
+    outline-offset: 2px;
+  }
+
+  .annotation-editor__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .annotation-editor__actions button {
+    padding: 0.35em 0.8em;
+    border-color: var(--line);
+    background: var(--bg-soft);
+  }
+
+  .annotation-editor__actions [data-annotation-save] {
+    margin-right: auto;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .annotation-editor__actions [data-annotation-delete] {
+    color: #c54f68;
+  }
+
+  :global(.post-body mark[data-annotation-id]) {
+    padding: 0.02em 0.08em;
+    border-bottom: 2px solid var(--accent);
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--accent-2) 28%, transparent);
+    color: inherit;
+    cursor: pointer;
+    scroll-margin-top: 7rem;
+  }
+
+  :global(.post-body mark.annotation-pulse) {
+    animation: annotation-pulse 700ms var(--ease-pop);
+  }
+
+  @keyframes annotation-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+    40% {
+      box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 32%, transparent);
+    }
+  }
+
+  @media (max-width: 760px) {
+    .annotation-drawer {
+      inset: 0;
+      width: 100%;
+      height: 100dvh;
+      max-height: 100dvh;
+      margin: 0;
+      border-left: 0;
+      box-shadow: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.post-body mark.annotation-pulse) {
+      animation: none;
+    }
+  }
+</style>

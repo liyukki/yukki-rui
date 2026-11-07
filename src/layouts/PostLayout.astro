@@ -4,6 +4,7 @@
  * 语言切换只在确有真实译文时指向译文页，否则 Header 回目标语言首页。
  */
 import Comments from '../components/Comments.astro';
+import ArticleAnnotations from '../components/ArticleAnnotations.astro';
 import PostExtras from '../components/PostExtras.astro';
 import PostLikes from '../components/PostLikes.astro';
 import PostNav from '../components/PostNav.astro';
@@ -134,6 +135,7 @@ const jsonLd = {
         href={postHref(lang, post.id)}
       />
     </header>
+    <ArticleAnnotations postId={post.id} lang={lang} title={post.data.title} />
     <PostToc headings={tocHeadings} lang={lang} variant="inline" label={UI[lang].toc} />
     <ReadingSettings t={UI[lang]} />
     <div class="post-layout">
