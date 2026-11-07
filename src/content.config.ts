@@ -127,4 +127,28 @@ const pages = defineCollection({
   }),
 });
 
-export const collections = { posts, site, pages };
+const journeys = defineCollection({
+  loader: glob({
+    pattern: '**/*.json',
+    base: './src/content/journeys',
+    generateId: ({ data }) => `${data.lang}:${data.slug}`,
+  }),
+  schema: z.object({
+    slug: z.string().min(1),
+    lang: z.enum(['zh', 'en']),
+    title: z.string().min(1),
+    description: z.string().min(1),
+    draft: z.boolean().default(false),
+    order: z.number().int().default(0),
+    steps: z
+      .array(
+        z.object({
+          postId: z.string().min(1),
+          label: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
+        }),
+      )
+      .min(2),
+  }),
+});
+
+export const collections = { posts, site, pages, journeys };

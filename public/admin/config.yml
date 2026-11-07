@@ -72,6 +72,30 @@ collections:
       - { label: 精选置顶（仅影响首页列表顺序，归档与 RSS 不变）, name: featured, widget: boolean, default: false }
       - { label: 正文, name: body, widget: markdown, hint: '代码块：先把正文写完，再把光标放到要变代码的那段、用样式下拉转成「代码块」（块后面有段落时按 ↓ 才能接着写）。卡在块里时点「以 Markdown 编辑」手写围栏即可' }
 
+  - name: journeys
+    label: 阅读任务线
+    folder: src/content/journeys
+    create: true
+    delete: true
+    extension: json
+    format: json
+    identifier_field: slug
+    summary: '{{title}}（{{lang}}）'
+    sortable_fields: [order, title]
+    fields:
+      - { label: 标识 slug, name: slug, widget: string }
+      - { label: 语言, name: lang, widget: select, options: [{ label: 中文, value: zh }, { label: English, value: en }], default: zh }
+      - { label: 标题, name: title, widget: string }
+      - { label: 简介, name: description, widget: text }
+      - { label: 草稿, name: draft, widget: boolean, default: false }
+      - { label: 排序, name: order, widget: number, value_type: int, default: 0 }
+      - label: 阅读步骤
+        name: steps
+        widget: list
+        fields:
+          - { label: 文章 ID, name: postId, widget: string }
+          - { label: 章节名（可空，默认文章标题）, name: label, widget: string, required: false }
+
   - name: site
     label: 个人资料
     icon: settings

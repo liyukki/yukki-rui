@@ -1,0 +1,12 @@
+{
+  "slug": "site-notes",
+  "lang": "en",
+  "title": "Notes From This Site",
+  "description": "Two short stops through the first experiments on this site.",
+  "draft": false,
+  "order": 1,
+  "steps": [
+    { "postId": "hello-world.en", "label": "Start with hello" },
+    { "postId": "an-experiment", "label": "Try one small experiment" }
+  ]
+}

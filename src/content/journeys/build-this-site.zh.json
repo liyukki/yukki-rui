@@ -1,0 +1,13 @@
+{
+  "slug": "build-this-site",
+  "lang": "zh",
+  "title": "从零搭起这座小站",
+  "description": "从第一篇文章到把站点真正发布上线。",
+  "draft": false,
+  "order": 1,
+  "steps": [
+    { "postId": "hello-world", "label": "从第一条日志开始" },
+    { "postId": "writing-in-markdown", "label": "让文字有结构" },
+    { "postId": "building-this-site", "label": "把想法搬到线上" }
+  ]
+}
