@@ -97,6 +97,9 @@ try {
     assert.deepEqual(result.broken, [], '集成构建存在坏链接');
     const article = readFileSync(join(output, 'zh', 'posts', published, 'index.html'), 'utf8');
     assert.ok(article.includes(`<strong>Verified Markdown body ${key}</strong>`), 'Markdown 正文没有正确 render');
+    assert.ok(article.includes('data-article-annotations'), '文章页缺少批注增强壳');
+    assert.ok(article.includes('data-annotations-open'), '文章页缺少摘录入口');
+    assert.ok(!article.includes('data-annotation-id="'), '批注数据不应写进初始 HTML');
     assert.ok(!article.includes(draft), '草稿译文被作为文章页面的目标');
     assert.ok(!article.includes('hreflang="en" href'), '无已发布译文时不应声明英文 hreflang');
     assert.ok(!existsSync(join(output, 'en', 'posts', draft, 'index.html')), '英文草稿产出了生产页面');

@@ -16,6 +16,8 @@ const i18n = {
   annotationsEmptyHint: t.annotationsEmptyHint,
   annotationHighlight: t.annotationHighlight,
   annotationAddNote: t.annotationAddNote,
+  annotationEdit: t.annotationEdit,
+  annotationJump: t.annotationJump,
   annotationQuote: t.annotationQuote,
   annotationNote: t.annotationNote,
   annotationNotePlaceholder: t.annotationNotePlaceholder,
@@ -67,7 +69,13 @@ const i18n = {
     hidden
   >
     <button type="button" data-annotation-highlight>{t.annotationHighlight}</button>
-    <button type="button" data-annotation-note>{t.annotationAddNote}</button>
+    <button
+      type="button"
+      data-annotation-note
+      aria-haspopup="dialog"
+      aria-controls="article-annotation-editor"
+      aria-expanded="false"
+    >{t.annotationAddNote}</button>
   </div>
 
   <p
@@ -143,9 +151,15 @@ const i18n = {
     ANNOTATION_QUOTE_LIMIT,
     ANNOTATION_STORAGE_KEY,
     createAnnotationAnchor,
+    createAnnotationRecord,
     readAnnotationStore,
+    removeAnnotation,
     resolveAnnotationAnchors,
     selectAnnotationsForPost,
+    updateAnnotationNote,
+    upsertAnnotation,
+    writeAnnotationStore,
+    type AnnotationAnchor,
     type AnnotationLang,
     type AnnotationRecord,
     type AnnotationStore,
@@ -166,6 +180,11 @@ const i18n = {
     problem: 'none' | 'empty' | 'invalid' | 'too-long';
   }
 
+  interface EditorState {
+    editingId: string | null;
+    anchor: AnnotationAnchor | null;
+  }
+
   interface AnnotationI18n {
     annotations: string;
     annotationsOpen: string;
@@ -173,6 +192,8 @@ const i18n = {
     annotationsEmptyHint: string;
     annotationHighlight: string;
     annotationAddNote: string;
+    annotationEdit: string;
+    annotationJump: string;
     annotationQuote: string;
     annotationNote: string;
     annotationNotePlaceholder: string;
@@ -217,6 +238,8 @@ const i18n = {
       'annotationsEmptyHint',
       'annotationHighlight',
       'annotationAddNote',
+      'annotationEdit',
+      'annotationJump',
       'annotationQuote',
       'annotationNote',
       'annotationNotePlaceholder',
@@ -424,9 +447,44 @@ const i18n = {
     const count = root.querySelector<HTMLElement>('[data-annotations-count]');
     const drawer = root.querySelector<HTMLDialogElement>('[data-annotations-dialog]');
     const drawerClose = root.querySelector<HTMLButtonElement>('[data-annotations-close]');
+    const empty = root.querySelector<HTMLElement>('[data-annotations-empty]');
+    const list = root.querySelector<HTMLOListElement>('[data-annotations-list]');
     const toolbar = root.querySelector<HTMLElement>('[data-annotation-toolbar]');
+    const highlightButton =
+      root.querySelector<HTMLButtonElement>('[data-annotation-highlight]');
+    const noteButton = root.querySelector<HTMLButtonElement>('[data-annotation-note]');
     const status = root.querySelector<HTMLElement>('[data-annotation-status]');
-    if (!entry || !count || !drawer || !drawerClose || !toolbar || !status) {
+    const editor = root.querySelector<HTMLDialogElement>('[data-annotation-editor]');
+    const form = root.querySelector<HTMLFormElement>('[data-annotation-form]');
+    const editorTitle =
+      root.querySelector<HTMLElement>('[data-annotation-editor-title]');
+    const editorQuote = root.querySelector<HTMLElement>('[data-annotation-quote]');
+    const noteInput =
+      root.querySelector<HTMLTextAreaElement>('[data-annotation-note-input]');
+    const deleteButton =
+      root.querySelector<HTMLButtonElement>('[data-annotation-delete]');
+    const cancelButtons = [
+      ...root.querySelectorAll<HTMLButtonElement>('[data-annotation-cancel]'),
+    ];
+    if (
+      !entry ||
+      !count ||
+      !drawer ||
+      !drawerClose ||
+      !empty ||
+      !list ||
+      !toolbar ||
+      !highlightButton ||
+      !noteButton ||
+      !status ||
+      !editor ||
+      !form ||
+      !editorTitle ||
+      !editorQuote ||
+      !noteInput ||
+      !deleteButton ||
+      cancelButtons.length === 0
+    ) {
       return;
     }
 
@@ -436,11 +494,60 @@ const i18n = {
     let store: AnnotationStore = readAnnotationStore(storage);
     let selectedRecords: AnnotationRecord[] = [];
     let selectionFrame = 0;
+    let pendingSnapshot: SelectionSnapshot | null = null;
+    let editorReturnFocus: HTMLElement | null = null;
+    let editorState: EditorState = { editingId: null, anchor: null };
+
+    const setStatus = (message: string): void => {
+      status.textContent = message;
+    };
+
+    const formatCount = (value: number): string =>
+      i18n.annotationExcerpts.replace('{count}', String(value));
+
+    const formatDate = (value: number): string =>
+      Number.isNaN(new Date(value).getTime())
+        ? ''
+        : new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          }).format(new Date(value));
 
     const hideToolbar = (): void => {
       toolbar.hidden = true;
       toolbar.style.removeProperty('left');
       toolbar.style.removeProperty('top');
+    };
+
+    const findMark = (id: string): HTMLElement | null =>
+      [...body.querySelectorAll<HTMLElement>('mark[data-annotation-id]')].find(
+        (mark) => mark.dataset.annotationId === id,
+      ) ?? null;
+
+    const findCardButton = (
+      action: 'edit' | 'delete',
+      id: string,
+    ): HTMLButtonElement | null =>
+      [...list.querySelectorAll<HTMLButtonElement>(`[data-annotation-${action}]`)].find(
+        (button) =>
+          action === 'edit'
+            ? button.dataset.annotationEdit === id
+            : button.dataset.annotationDelete === id,
+      ) ?? null;
+
+    const canReceiveFocus = (element: HTMLElement | null): boolean =>
+      Boolean(
+        element?.isConnected &&
+          !element.hidden &&
+          getComputedStyle(element).visibility !== 'hidden' &&
+          element.getClientRects().length > 0,
+      );
+
+    const focusElement = (element: HTMLElement | null): boolean => {
+      if (!canReceiveFocus(element)) return false;
+      element.focus({ preventScroll: true });
+      return true;
     };
 
     const renderHighlights = (): void => {
@@ -495,6 +602,307 @@ const i18n = {
       }
 
       count.textContent = String(selectedRecords.length);
+      entry.title = formatCount(selectedRecords.length);
+    };
+
+    const navigateToAnnotation = (id: string): void => {
+      drawer.close();
+      requestAnimationFrame(() => {
+        const mark = findMark(id);
+        if (!mark) return;
+        mark.scrollIntoView({ block: 'center' });
+        mark.focus({ preventScroll: true });
+        mark.classList.add('annotation-pulse');
+        const removePulse = (): void => mark.classList.remove('annotation-pulse');
+        mark.addEventListener('animationend', removePulse, { once: true });
+        window.setTimeout(removePulse, 700);
+        setStatus(i18n.annotationJumped);
+      });
+    };
+
+    const makeCardButton = (
+      label: string,
+      action: 'jump' | 'edit' | 'delete',
+      id: string,
+    ): HTMLButtonElement => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'annotation-card__action';
+      button.textContent = label;
+      if (action === 'jump') {
+        button.addEventListener('click', () => navigateToAnnotation(id));
+      } else if (action === 'edit') {
+        button.dataset.annotationEdit = id;
+      } else {
+        button.dataset.annotationDelete = id;
+      }
+      return button;
+    };
+
+    const renderDrawer = (): void => {
+      const { text } = textSegments(body);
+      const resolved = resolveAnnotationAnchors(selectedRecords, text);
+      list.replaceChildren();
+      empty.hidden = resolved.length > 0;
+      count.textContent = String(selectedRecords.length);
+      entry.title = formatCount(selectedRecords.length);
+
+      for (const item of resolved) {
+        const { record } = item;
+        const listItem = document.createElement('li');
+        listItem.className = 'annotation-card';
+        listItem.dataset.annotationId = record.id;
+
+        const quote = document.createElement('blockquote');
+        quote.className = 'annotation-card__quote';
+        quote.textContent = record.quote;
+        quote.setAttribute('aria-label', i18n.annotationQuote);
+        listItem.append(quote);
+
+        if (record.note) {
+          const note = document.createElement('p');
+          note.className = 'annotation-card__note';
+          note.textContent = record.note;
+          listItem.append(note);
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'annotation-card__meta';
+        const date = document.createElement('time');
+        const dateValue = new Date(record.updatedAt);
+        if (!Number.isNaN(dateValue.getTime())) {
+          date.dateTime = dateValue.toISOString();
+          date.textContent = formatDate(record.updatedAt);
+        }
+        meta.append(date);
+
+        if (item.status === 'missing' || item.status === 'conflict') {
+          const resolution = document.createElement('span');
+          resolution.className = 'annotation-card__status';
+          resolution.textContent =
+            item.status === 'missing'
+              ? i18n.annotationMoved
+              : i18n.annotationConflict;
+          meta.append(resolution);
+        }
+        listItem.append(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'annotation-card__actions';
+        if (item.start !== null && item.end !== null) {
+          actions.append(makeCardButton(i18n.annotationJump, 'jump', record.id));
+        }
+        if (item.status !== 'conflict') {
+          actions.append(makeCardButton(i18n.annotationEdit, 'edit', record.id));
+        }
+        actions.append(makeCardButton(i18n.annotationDelete, 'delete', record.id));
+        listItem.append(actions);
+        list.append(listItem);
+      }
+    };
+
+    const commitStore = (
+      nextStore: AnnotationStore,
+      successMessage: string,
+      failureMessage: string,
+    ): boolean => {
+      if (!writeAnnotationStore(storage, nextStore)) {
+        setStatus(failureMessage);
+        return false;
+      }
+      store = nextStore;
+      renderHighlights();
+      renderDrawer();
+      setStatus(successMessage);
+      return true;
+    };
+
+    const closeEditor = (focusMarkId: string | null = null): void => {
+      const editingId = editorState.editingId;
+      const invoker = editorReturnFocus;
+      editor.close();
+      editorState = { editingId: null, anchor: null };
+      editorReturnFocus = null;
+      noteButton.setAttribute('aria-expanded', 'false');
+
+      requestAnimationFrame(() => {
+        const candidates = [
+          focusMarkId ? findMark(focusMarkId) : null,
+          editingId ? findCardButton('edit', editingId) : null,
+          drawer.open ? drawerClose : null,
+          invoker,
+          drawer.open ? null : entry,
+        ];
+        for (const candidate of candidates) {
+          if (focusElement(candidate)) return;
+        }
+        body.tabIndex = -1;
+        body.focus({ preventScroll: true });
+      });
+    };
+
+    const openEditor = (
+      state: EditorState,
+      record: AnnotationRecord | null,
+      invoker: HTMLElement | null,
+    ): void => {
+      editorReturnFocus = invoker;
+      editorState = state;
+      editorTitle.textContent = record ? i18n.annotationEdit : i18n.annotationAddNote;
+      editorQuote.textContent = record?.quote ?? state.anchor?.quote ?? '';
+      editorQuote.setAttribute('aria-label', i18n.annotationQuote);
+      noteInput.value = record?.note ?? '';
+      deleteButton.hidden = !record;
+      noteButton.setAttribute('aria-expanded', 'true');
+      if (!editor.open) editor.showModal();
+      requestAnimationFrame(() => {
+        noteInput.focus({ preventScroll: true });
+        noteInput.setSelectionRange(noteInput.value.length, noteInput.value.length);
+      });
+    };
+
+    const openRecordEditor = (
+      record: AnnotationRecord,
+      invoker: HTMLElement | null,
+    ): void => {
+      openEditor({ editingId: record.id, anchor: null }, record, invoker);
+    };
+
+    const overlapsExisting = (anchor: AnnotationAnchor): boolean => {
+      const { text } = textSegments(body);
+      return resolveAnnotationAnchors(selectedRecords, text).some(
+        (item) =>
+          item.start !== null &&
+          item.end !== null &&
+          anchor.start < item.end &&
+          anchor.end > item.start,
+      );
+    };
+
+    const currentPendingAnchor = (): AnnotationAnchor | null => {
+      const snapshot = selectionSnapshot(body);
+      const { text } = textSegments(body);
+      const valid = (anchor: AnnotationAnchor | null): anchor is AnnotationAnchor =>
+        Boolean(
+          anchor &&
+            anchor.start >= 0 &&
+            anchor.end > anchor.start &&
+            anchor.end <= text.length &&
+            text.slice(anchor.start, anchor.end) === anchor.quote,
+        );
+
+      if (valid(snapshot.anchor)) {
+        pendingSnapshot = snapshot;
+        return snapshot.anchor;
+      }
+      if (valid(pendingSnapshot?.anchor ?? null)) {
+        return pendingSnapshot!.anchor;
+      }
+      setStatus(
+        snapshot.problem === 'too-long'
+          ? i18n.annotationTooLong
+          : i18n.annotationInvalidSelection,
+      );
+      return null;
+    };
+
+    const saveNewAnnotation = (anchor: AnnotationAnchor, note: string): string | null => {
+      if (overlapsExisting(anchor)) {
+        setStatus(i18n.annotationOverlap);
+        return null;
+      }
+
+      let record: AnnotationRecord;
+      try {
+        record = createAnnotationRecord(
+          {
+            lang,
+            postId,
+            quote: anchor.quote,
+            note,
+            start: anchor.start,
+            end: anchor.end,
+            prefix: anchor.prefix,
+            suffix: anchor.suffix,
+          },
+          Date.now(),
+        );
+      } catch {
+        setStatus(i18n.annotationSaveFailed);
+        return null;
+      }
+
+      const nextStore = upsertAnnotation(store, record);
+      if (!commitStore(nextStore, i18n.annotationSaved, i18n.annotationSaveFailed)) {
+        return null;
+      }
+      return record.id;
+    };
+
+    const quickHighlight = (): void => {
+      const anchor = currentPendingAnchor();
+      if (!anchor) return;
+      const id = saveNewAnnotation(anchor, '');
+      if (!id) return;
+      pendingSnapshot = null;
+      hideToolbar();
+      window.getSelection()?.removeAllRanges();
+    };
+
+    const openNewNoteEditor = (): void => {
+      const anchor = currentPendingAnchor();
+      if (!anchor) return;
+      hideToolbar();
+      openEditor({ editingId: null, anchor }, null, noteButton);
+    };
+
+    const saveEditor = (): void => {
+      const note = noteInput.value.trim();
+      if (editorState.editingId) {
+        const nextStore = updateAnnotationNote(
+          store,
+          editorState.editingId,
+          note,
+          Date.now(),
+        );
+        const updated = nextStore.records.find(
+          (record) => record.id === editorState.editingId,
+        );
+        if (!updated || updated.note !== note) {
+          setStatus(i18n.annotationSaveFailed);
+          return;
+        }
+        if (
+          !commitStore(nextStore, i18n.annotationSaved, i18n.annotationSaveFailed)
+        ) {
+          return;
+        }
+        closeEditor(updated.id);
+        return;
+      }
+
+      const anchor = editorState.anchor;
+      if (!anchor) {
+        setStatus(i18n.annotationInvalidSelection);
+        return;
+      }
+      const id = saveNewAnnotation(anchor, note);
+      if (!id) return;
+      pendingSnapshot = null;
+      window.getSelection()?.removeAllRanges();
+      closeEditor(id);
+    };
+
+    const deleteEditingAnnotation = (): void => {
+      const id = editorState.editingId;
+      if (!id) return;
+      const nextStore = removeAnnotation(store, id);
+      if (
+        !commitStore(nextStore, i18n.annotationDeleted, i18n.annotationDeleteFailed)
+      ) {
+        return;
+      }
+      closeEditor();
     };
 
     const placeToolbar = (range: Range): void => {
@@ -523,9 +931,11 @@ const i18n = {
     const inspectSelection = (): void => {
       const snapshot = selectionSnapshot(body);
       if (!snapshot.anchor || !snapshot.range || snapshot.problem !== 'none') {
+        pendingSnapshot = null;
         hideToolbar();
         return;
       }
+      pendingSnapshot = snapshot;
       placeToolbar(snapshot.range);
     };
 
@@ -542,13 +952,16 @@ const i18n = {
     };
 
     renderHighlights();
+    renderDrawer();
+    noteButton.setAttribute('aria-expanded', 'false');
     entry.hidden = false;
 
     entry.addEventListener(
       'click',
       () => {
+        renderDrawer();
         setExpanded(true);
-        drawer.showModal();
+        if (!drawer.open) drawer.showModal();
       },
       { signal },
     );
@@ -558,11 +971,78 @@ const i18n = {
       'cancel',
       () => {
         setExpanded(false);
-        status.textContent = '';
+        setStatus('');
       },
       { signal },
     );
 
+    list.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const edit = target.closest<HTMLButtonElement>('[data-annotation-edit]');
+        if (edit?.dataset.annotationEdit) {
+          const record = store.records.find(
+            (candidate) => candidate.id === edit.dataset.annotationEdit,
+          );
+          if (record) openRecordEditor(record, edit);
+          return;
+        }
+        const remove = target.closest<HTMLButtonElement>('[data-annotation-delete]');
+        if (remove?.dataset.annotationDelete) {
+          const id = remove.dataset.annotationDelete;
+          const nextStore = removeAnnotation(store, id);
+          if (
+            !commitStore(
+              nextStore,
+              i18n.annotationDeleted,
+              i18n.annotationDeleteFailed,
+            )
+          ) {
+            return;
+          }
+          requestAnimationFrame(() => {
+            const next = findCardButton('delete', id) ?? drawerClose;
+            focusElement(next);
+          });
+        }
+      },
+      { signal },
+    );
+
+    form.addEventListener(
+      'submit',
+      (event) => {
+        event.preventDefault();
+        saveEditor();
+      },
+      { signal },
+    );
+    cancelButtons.forEach((button) => {
+      button.addEventListener('click', () => closeEditor(), { signal });
+    });
+    deleteButton.addEventListener('click', deleteEditingAnnotation, { signal });
+    editor.addEventListener(
+      'cancel',
+      () => {
+        editorState = { editingId: null, anchor: null };
+        editorReturnFocus = null;
+        noteButton.setAttribute('aria-expanded', 'false');
+      },
+      { signal },
+    );
+    editor.addEventListener(
+      'close',
+      () => {
+        editorState = { editingId: null, anchor: null };
+        noteButton.setAttribute('aria-expanded', 'false');
+      },
+      { signal },
+    );
+
+    noteButton.addEventListener('click', openNewNoteEditor, { signal });
+    highlightButton.addEventListener('click', quickHighlight, { signal });
     toolbar.addEventListener('pointerdown', (event) => event.preventDefault(), { signal });
     document.addEventListener('selectionchange', scheduleSelection, { signal });
     document.addEventListener('pointerup', scheduleSelection, { signal });
@@ -572,18 +1052,52 @@ const i18n = {
       'keydown',
       (event) => {
         if (event.key !== 'Escape') return;
+        pendingSnapshot = null;
         hideToolbar();
-        window.getSelection()?.removeAllRanges();
       },
       { signal },
     );
     window.addEventListener('scroll', hideToolbar, { signal, passive: true });
+
+    body.addEventListener(
+      'click',
+      (event) => {
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const mark = target.closest<HTMLElement>('mark[data-annotation-id]');
+        const id = mark?.dataset.annotationId;
+        if (!id) return;
+        const record = store.records.find((candidate) => candidate.id === id);
+        if (record) openRecordEditor(record, mark);
+      },
+      { signal },
+    );
+    body.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const mark = target.closest<HTMLElement>('mark[data-annotation-id]');
+        const id = mark?.dataset.annotationId;
+        if (!id) return;
+        const record = store.records.find((candidate) => candidate.id === id);
+        if (!record) return;
+        event.preventDefault();
+        openRecordEditor(record, mark);
+      },
+      { signal },
+    );
+
     window.addEventListener(
       'storage',
       (event) => {
         if (event.key !== ANNOTATION_STORAGE_KEY) return;
         store = readAnnotationStore(storage);
         renderHighlights();
+        renderDrawer();
       },
       { signal },
     );
@@ -591,9 +1105,14 @@ const i18n = {
     surfaceCleanup = () => {
       if (selectionFrame) cancelAnimationFrame(selectionFrame);
       selectionFrame = 0;
+      pendingSnapshot = null;
+      editorState = { editingId: null, anchor: null };
+      editorReturnFocus = null;
+      closeDialogs(root);
       hideToolbar();
       unwrapHighlights(body);
-      status.textContent = '';
+      setStatus('');
+      noteButton.setAttribute('aria-expanded', 'false');
       window.getSelection()?.removeAllRanges();
     };
 
@@ -819,6 +1338,78 @@ const i18n = {
     list-style: none;
   }
 
+  .annotation-drawer__body :global(.annotation-card) {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-3);
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    box-shadow: 3px 3px 0 var(--card-edge);
+  }
+
+  .annotation-drawer__body :global(.annotation-card__quote),
+  .annotation-drawer__body :global(.annotation-card__note) {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .annotation-drawer__body :global(.annotation-card__quote) {
+    color: var(--text);
+    font-size: var(--fs-body);
+    line-height: 1.55;
+  }
+
+  .annotation-drawer__body :global(.annotation-card__note) {
+    padding-top: var(--space-2);
+    border-top: 1px dashed var(--line);
+    color: var(--text-dim);
+    font-size: var(--fs-small);
+    white-space: pre-wrap;
+  }
+
+  .annotation-drawer__body :global(.annotation-card__meta) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: var(--fs-tiny);
+  }
+
+  .annotation-drawer__body :global(.annotation-card__status) {
+    color: var(--accent);
+  }
+
+  .annotation-drawer__body :global(.annotation-card__actions) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .annotation-drawer__body :global(.annotation-card__action) {
+    min-height: 44px;
+    padding: 0.3em 0.65em;
+    border: 2px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    color: var(--text);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-small);
+    cursor: pointer;
+  }
+
+  .annotation-drawer__body :global(.annotation-card__action:hover),
+  .annotation-drawer__body :global(.annotation-card__action:focus-visible),
+  .annotation-entry:focus-visible,
+  .annotation-icon-button:focus-visible {
+    border-color: var(--accent);
+    color: var(--accent);
+    outline: 3px solid var(--accent-2);
+    outline-offset: 2px;
+  }
+
   .annotation-editor {
     width: min(560px, calc(100vw - 2 * var(--space-3)));
     max-width: none;
@@ -903,6 +1494,11 @@ const i18n = {
     color: inherit;
     cursor: pointer;
     scroll-margin-top: 7rem;
+  }
+
+  :global(.post-body mark[data-annotation-id]:focus-visible) {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
   }
 
   :global(.post-body mark.annotation-pulse) {

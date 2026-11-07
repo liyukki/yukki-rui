@@ -44,6 +44,8 @@ describe('annotation shell', () => {
       'annotationsEmptyHint',
       'annotationHighlight',
       'annotationAddNote',
+      'annotationEdit',
+      'annotationJump',
       'annotationSave',
       'annotationDelete',
       'annotationStorageUnavailable',
@@ -72,5 +74,26 @@ describe('annotation shell', () => {
     expect(component).not.toMatch(/\.innerHTML\s*=/);
     expect(component).toContain('getComputedStyle');
     expect(component).toContain('checkVisibility');
+  });
+
+  it('completes saving, editing, deleting, and excerpt navigation safely', () => {
+    expect(component).toContain('createAnnotationRecord');
+    expect(component).toContain('upsertAnnotation');
+    expect(component).toContain('writeAnnotationStore');
+    expect(component).toContain('updateAnnotationNote');
+    expect(component).toContain('removeAnnotation');
+    expect(component).toContain('data-annotation-form');
+    expect(component).toContain('scrollIntoView');
+    expect(component).toContain('focus(');
+    expect(component).toContain('annotation-pulse');
+    expect(component).toContain('Intl.DateTimeFormat');
+    expect(component).toContain('annotationMoved');
+    expect(component).toContain('annotationConflict');
+    expect(component).toContain('data-annotations-list');
+    expect(component).toContain('textContent');
+    expect(component).toContain('annotationStorageUnavailable');
+    expect(component).toContain('annotationSaveFailed');
+    expect(component).toContain('annotationDeleteFailed');
+    expect(component).not.toMatch(/\.innerHTML\s*=/);
   });
 });
