@@ -1,5 +1,5 @@
 ---
-import { UI, type Lang } from '../consts';
+import { type Lang } from '../consts';
 import type { Journey } from '../lib/journeys';
 import { withBase } from '../lib/url';
 import PixelSprite from './PixelSprite.astro';
@@ -232,7 +232,11 @@ const i18n = {
     }
 
     const render = (): void => {
-      const selected = selectHomeJourney(journeys, readPersonalLibrary(getStorage()), rootLang(root));
+      const selected = selectHomeJourney(
+        journeys,
+        readPersonalLibrary(getStorage()).history,
+        rootLang(root),
+      );
       if (!selected) {
         root.hidden = true;
         return;

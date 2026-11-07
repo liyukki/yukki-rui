@@ -81,7 +81,6 @@ const i18n = {
   import {
     PERSONAL_LIBRARY_STORAGE_KEY,
     readPersonalLibrary,
-    type PersonalLibraryLang,
   } from '../lib/personal-library';
   import {
     computeJourneyProgress,
@@ -200,13 +199,12 @@ const i18n = {
     controller = activeController;
     activeRoot = root;
 
-    const lang: PersonalLibraryLang = root.dataset.lang === 'en' ? 'en' : 'zh';
     const journeys = parseJourneys(root.dataset.journeys);
     const i18n = parseI18n(root.dataset.i18n);
     if (!journeys.length) return;
 
     const render = (): void => {
-      const history = readPersonalLibrary(getStorage());
+      const history = readPersonalLibrary(getStorage()).history;
       const byId = new Map(
         journeys.map((journey) => [
           journey.id,

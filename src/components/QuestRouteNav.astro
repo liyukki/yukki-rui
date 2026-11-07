@@ -277,7 +277,7 @@ const overviewHref = withBase(`${lang}/quests/`);
     }
 
     const render = (): void => {
-      const history = readPersonalLibrary(getStorage());
+      const history = readPersonalLibrary(getStorage()).history;
       const byId = new Map(
         journeys.map((journey) => [
           journey.id,

@@ -53,6 +53,7 @@ describe('quest UI contracts', () => {
       expect(card).toContain(token);
     }
     expect(card).not.toMatch(/\.innerHTML\s*=/);
+    expect(card).toContain('readPersonalLibrary(getStorage()).history');
   });
 
   it('renders a stable journey list before local progress enhancement', () => {
@@ -70,6 +71,7 @@ describe('quest UI contracts', () => {
       expect(list).toContain(token);
     }
     expect(list).not.toMatch(/\.innerHTML\s*=/);
+    expect(list).toContain('readPersonalLibrary(getStorage()).history');
   });
 
   it('renders one compact route per matching journey before enhancement', () => {
@@ -88,6 +90,7 @@ describe('quest UI contracts', () => {
       expect(route).toContain(token);
     }
     expect(route).not.toMatch(/\.innerHTML\s*=/);
+    expect(route).toContain('readPersonalLibrary(getStorage()).history');
   });
 
   it('generates both language quest pages from validated content', () => {
