@@ -53,4 +53,24 @@ describe('annotation shell', () => {
       expect(consts.match(new RegExp(`${key}:`, 'g'))?.length).toBe(2);
     }
   });
+
+  it('maps selections safely and renders Range highlights across lifecycle swaps', () => {
+    expect(component).toContain('TreeWalker');
+    expect(component).toContain('createTreeWalker');
+    expect(component).toContain('createAnnotationAnchor');
+    expect(component).toContain('resolveAnnotationAnchors');
+    expect(component).toContain('selectionchange');
+    expect(component).toContain('pointerup');
+    expect(component).toContain('keydown');
+    expect(component).toContain('range.getBoundingClientRect');
+    expect(component).toContain('range.surroundContents');
+    expect(component).toContain('data-annotation-first');
+    expect(component).toContain('data-annotation-last');
+    expect(component).toContain("document.addEventListener('astro:before-swap'");
+    expect(component).toContain("document.addEventListener('astro:page-load'");
+    expect(component).not.toMatch(/selection\.toString\(\)/);
+    expect(component).not.toMatch(/\.innerHTML\s*=/);
+    expect(component).toContain('getComputedStyle');
+    expect(component).toContain('checkVisibility');
+  });
 });

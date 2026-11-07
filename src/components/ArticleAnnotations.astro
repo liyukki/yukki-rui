@@ -140,10 +140,31 @@ const i18n = {
 <script>
   import { UI, type Lang } from '../consts';
   import {
+    ANNOTATION_QUOTE_LIMIT,
+    ANNOTATION_STORAGE_KEY,
+    createAnnotationAnchor,
     readAnnotationStore,
+    resolveAnnotationAnchors,
     selectAnnotationsForPost,
     type AnnotationLang,
+    type AnnotationRecord,
+    type AnnotationStore,
   } from '../lib/annotations';
+
+  const EXCLUDED =
+    'script, style, button, input, select, textarea, svg, [data-annotation-ignore]';
+
+  interface TextSegment {
+    node: Text;
+    start: number;
+    end: number;
+  }
+
+  interface SelectionSnapshot {
+    anchor: ReturnType<typeof createAnnotationAnchor>;
+    range: Range | null;
+    problem: 'none' | 'empty' | 'invalid' | 'too-long';
+  }
 
   interface AnnotationI18n {
     annotations: string;
@@ -235,7 +256,145 @@ const i18n = {
     }
   }
 
+  function isEligibleText(node: Text): boolean {
+    const parent = node.parentElement;
+    if (!parent || !node.data.length || parent.closest(EXCLUDED)) return false;
+    if (parent.closest('[hidden], [aria-hidden="true"]')) return false;
+    const checkVisibility = (
+      parent as HTMLElement & { checkVisibility?: () => boolean }
+    ).checkVisibility;
+    if (typeof checkVisibility === 'function' && !checkVisibility.call(parent)) {
+      return false;
+    }
+    const style = getComputedStyle(parent);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  }
+
+  function textSegments(body: HTMLElement): { segments: TextSegment[]; text: string } {
+    const walker: TreeWalker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    const segments: TextSegment[] = [];
+    let text = '';
+
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeType !== Node.TEXT_NODE || !isEligibleText(node as Text)) continue;
+      const value = (node as Text).data;
+      const start = text.length;
+      text += value;
+      segments.push({
+        node: node as Text,
+        start,
+        end: start + value.length,
+      });
+    }
+
+    return { segments, text };
+  }
+
+  function boundaryOffset(
+    body: HTMLElement,
+    segments: TextSegment[],
+    container: Node,
+    offset: number,
+    edge: 'start' | 'end',
+  ): number | null {
+    if (container !== body && !body.contains(container)) return null;
+
+    if (container.nodeType === Node.TEXT_NODE) {
+      const node = container as Text;
+      const segment = segments.find((candidate) => candidate.node === node);
+      if (!segment || offset < 0 || offset > node.data.length) return null;
+      return segment.start + offset;
+    }
+
+    if (container.nodeType !== Node.ELEMENT_NODE) return null;
+    const element = container as Element;
+    if (element !== body && element.closest(EXCLUDED)) return null;
+    if (
+      element !== body &&
+      element.closest('[hidden], [aria-hidden="true"]')
+    ) {
+      return null;
+    }
+
+    const point = document.createRange();
+    try {
+      point.setStart(container, offset);
+    } catch {
+      return null;
+    }
+    point.collapse(true);
+
+    if (edge === 'start') {
+      for (const segment of segments) {
+        const segmentRange = document.createRange();
+        segmentRange.selectNodeContents(segment.node);
+        if (point.compareBoundaryPoints(Range.START_TO_START, segmentRange) <= 0) {
+          return segment.start;
+        }
+      }
+      return null;
+    }
+
+    let end: number | null = null;
+    for (const segment of segments) {
+      const segmentRange = document.createRange();
+      segmentRange.selectNodeContents(segment.node);
+      if (point.compareBoundaryPoints(Range.END_TO_END, segmentRange) >= 0) {
+        end = segment.end;
+      } else {
+        break;
+      }
+    }
+    return end;
+  }
+
+  function selectionSnapshot(body: HTMLElement): SelectionSnapshot {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return { anchor: null, range: null, problem: 'empty' };
+    }
+
+    const range = selection.getRangeAt(0);
+    const { segments, text } = textSegments(body);
+    const start = boundaryOffset(
+      body,
+      segments,
+      range.startContainer,
+      range.startOffset,
+      'start',
+    );
+    const end = boundaryOffset(
+      body,
+      segments,
+      range.endContainer,
+      range.endOffset,
+      'end',
+    );
+    if (start === null || end === null || end <= start) {
+      return { anchor: null, range, problem: 'invalid' };
+    }
+
+    const anchor = createAnnotationAnchor(text, start, end);
+    if (!anchor) {
+      return {
+        anchor: null,
+        range,
+        problem: end - start > ANNOTATION_QUOTE_LIMIT ? 'too-long' : 'invalid',
+      };
+    }
+
+    return { anchor, range, problem: 'none' };
+  }
+
+  function unwrapHighlights(body: HTMLElement): void {
+    body.querySelectorAll<HTMLElement>('mark[data-annotation-id]').forEach((mark) => {
+      mark.replaceWith(document.createTextNode(mark.textContent ?? ''));
+    });
+    body.normalize();
+  }
+
   let controller: AbortController | null = null;
+  let surfaceCleanup: (() => void) | null = null;
 
   function closeDialogs(root: HTMLElement): void {
     root.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach((dialog) => {
@@ -245,6 +404,8 @@ const i18n = {
 
   function init(): void {
     controller?.abort();
+    surfaceCleanup?.();
+    surfaceCleanup = null;
     controller = new AbortController();
     const { signal } = controller;
 
@@ -254,25 +415,134 @@ const i18n = {
     const lang = readLang(root);
     const postId = root.dataset.postId;
     if (!postId) return;
+    const article = root.closest('article');
+    const body = article?.querySelector<HTMLElement>('.post-body');
+    if (!body) return;
 
     const i18n = readI18n(root, lang);
     const entry = root.querySelector<HTMLButtonElement>('[data-annotations-open]');
     const count = root.querySelector<HTMLElement>('[data-annotations-count]');
     const drawer = root.querySelector<HTMLDialogElement>('[data-annotations-dialog]');
     const drawerClose = root.querySelector<HTMLButtonElement>('[data-annotations-close]');
+    const toolbar = root.querySelector<HTMLElement>('[data-annotation-toolbar]');
     const status = root.querySelector<HTMLElement>('[data-annotation-status]');
-    if (!entry || !count || !drawer || !drawerClose || !status) return;
+    if (!entry || !count || !drawer || !drawerClose || !toolbar || !status) {
+      return;
+    }
 
     const storage = getStorage();
     if (!storage) return;
 
-    const records = selectAnnotationsForPost(readAnnotationStore(storage), lang, postId);
-    count.textContent = String(records.length);
-    entry.hidden = false;
+    let store: AnnotationStore = readAnnotationStore(storage);
+    let selectedRecords: AnnotationRecord[] = [];
+    let selectionFrame = 0;
+
+    const hideToolbar = (): void => {
+      toolbar.hidden = true;
+      toolbar.style.removeProperty('left');
+      toolbar.style.removeProperty('top');
+    };
+
+    const renderHighlights = (): void => {
+      unwrapHighlights(body);
+      const { segments, text } = textSegments(body);
+      selectedRecords = selectAnnotationsForPost(store, lang, postId);
+      const resolved = resolveAnnotationAnchors(selectedRecords, text);
+      const jobs: {
+        record: AnnotationRecord;
+        segment: TextSegment;
+        localStart: number;
+        localEnd: number;
+        first: boolean;
+        last: boolean;
+      }[] = [];
+
+      for (const item of resolved) {
+        if (item.start === null || item.end === null) continue;
+        const parts = segments.filter(
+          (segment) => segment.end > item.start! && segment.start < item.end!,
+        );
+        parts.forEach((segment, index) => {
+          jobs.push({
+            record: item.record,
+            segment,
+            localStart: Math.max(0, item.start! - segment.start),
+            localEnd: Math.min(segment.node.data.length, item.end! - segment.start),
+            first: index === 0,
+            last: index === parts.length - 1,
+          });
+        });
+      }
+
+      jobs.sort(
+        (a, b) =>
+          b.segment.start + b.localStart - (a.segment.start + a.localStart),
+      );
+
+      for (const job of jobs) {
+        const { node } = job.segment;
+        if (!node.isConnected || job.localEnd <= job.localStart) continue;
+        const range = document.createRange();
+        range.setStart(node, Math.min(job.localStart, node.data.length));
+        range.setEnd(node, Math.min(job.localEnd, node.data.length));
+        const mark = document.createElement('mark');
+        mark.dataset.annotationId = job.record.id;
+        mark.setAttribute('data-annotation-first', String(job.first));
+        mark.setAttribute('data-annotation-last', String(job.last));
+        mark.title = job.record.quote;
+        if (job.first) mark.tabIndex = 0;
+        range.surroundContents(mark);
+      }
+
+      count.textContent = String(selectedRecords.length);
+    };
+
+    const placeToolbar = (range: Range): void => {
+      toolbar.hidden = false;
+      const rect = range.getBoundingClientRect();
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const margin = 8;
+
+      let top = rect.top - toolbarRect.height - margin;
+      if (top < margin) top = rect.bottom + margin;
+      top = Math.max(
+        margin,
+        Math.min(top, window.innerHeight - toolbarRect.height - margin),
+      );
+
+      const centered = rect.left + rect.width / 2 - toolbarRect.width / 2;
+      const left = Math.max(
+        margin,
+        Math.min(centered, window.innerWidth - toolbarRect.width - margin),
+      );
+
+      toolbar.style.left = `${Math.round(left)}px`;
+      toolbar.style.top = `${Math.round(top)}px`;
+    };
+
+    const inspectSelection = (): void => {
+      const snapshot = selectionSnapshot(body);
+      if (!snapshot.anchor || !snapshot.range || snapshot.problem !== 'none') {
+        hideToolbar();
+        return;
+      }
+      placeToolbar(snapshot.range);
+    };
+
+    const scheduleSelection = (): void => {
+      if (selectionFrame) cancelAnimationFrame(selectionFrame);
+      selectionFrame = requestAnimationFrame(() => {
+        selectionFrame = 0;
+        inspectSelection();
+      });
+    };
 
     const setExpanded = (expanded: boolean): void => {
       entry.setAttribute('aria-expanded', String(expanded));
     };
+
+    renderHighlights();
+    entry.hidden = false;
 
     entry.addEventListener(
       'click',
@@ -293,14 +563,47 @@ const i18n = {
       { signal },
     );
 
+    toolbar.addEventListener('pointerdown', (event) => event.preventDefault(), { signal });
+    document.addEventListener('selectionchange', scheduleSelection, { signal });
+    document.addEventListener('pointerup', scheduleSelection, { signal });
+    document.addEventListener('keyup', scheduleSelection, { signal });
+    document.addEventListener('touchend', scheduleSelection, { signal });
     document.addEventListener(
-      'astro:before-swap',
-      () => {
-        closeDialogs(root);
-        setExpanded(false);
+      'keydown',
+      (event) => {
+        if (event.key !== 'Escape') return;
+        hideToolbar();
+        window.getSelection()?.removeAllRanges();
       },
       { signal },
     );
+    window.addEventListener('scroll', hideToolbar, { signal, passive: true });
+    window.addEventListener(
+      'storage',
+      (event) => {
+        if (event.key !== ANNOTATION_STORAGE_KEY) return;
+        store = readAnnotationStore(storage);
+        renderHighlights();
+      },
+      { signal },
+    );
+
+    surfaceCleanup = () => {
+      if (selectionFrame) cancelAnimationFrame(selectionFrame);
+      selectionFrame = 0;
+      hideToolbar();
+      unwrapHighlights(body);
+      status.textContent = '';
+      window.getSelection()?.removeAllRanges();
+    };
+
+    document.addEventListener('astro:before-swap', () => {
+        closeDialogs(root);
+        setExpanded(false);
+        surfaceCleanup?.();
+        surfaceCleanup = null;
+        controller?.abort();
+      }, { signal });
   }
 
   const start = (): void => {
