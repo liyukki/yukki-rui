@@ -13,6 +13,9 @@ import type { ReadingRecord } from '../src/lib/personal-library';
 
 const contentConfig = readFileSync('src/content.config.ts', 'utf8');
 const cms = readFileSync('public/admin/config.yml', 'utf8');
+const englishJourney = JSON.parse(
+  readFileSync('src/content/journeys/site-notes.en.json', 'utf8'),
+) as JourneyInput;
 
 const posts: JourneyPost[] = [
   { id: 'a', lang: 'zh', title: 'A', href: '/zh/posts/a/' },
@@ -60,6 +63,13 @@ describe('journeys content contract', () => {
     expect(cms).toContain('name: steps');
     expect(cms).toContain('name: postId');
     expect(cms).toContain('name: label');
+  });
+
+  it('uses the generated content ids for the English example route', () => {
+    expect(englishJourney.steps.map((step) => step.postId)).toEqual([
+      'hello-worlden',
+      'an-experiment',
+    ]);
   });
 });
 
