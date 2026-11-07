@@ -54,6 +54,7 @@ describe('quest UI contracts', () => {
     }
     expect(card).not.toMatch(/\.innerHTML\s*=/);
     expect(card).toContain('readPersonalLibrary(getStorage()).history');
+    expect(card).toMatch(/import\s+\{\s*UI[^}]*\}\s+from\s+'\.\.\/consts'/);
   });
 
   it('renders a stable journey list before local progress enhancement', () => {
