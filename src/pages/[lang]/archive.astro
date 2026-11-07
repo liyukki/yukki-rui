@@ -1,11 +1,17 @@
 ---
 /** 归档：按年份倒序列出全部已发布文章。纯静态，构建期完成分组。 */
+import { getCollection } from 'astro:content';
 import PixelSprite from '../../components/PixelSprite.astro';
 import { SITE, UI, type Lang } from '../../consts';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { groupPostsByYear } from '../../lib/archive';
+import {
+  resolveJourneys,
+  selectPublishedJourneys,
+  type JourneyInput,
+} from '../../lib/journeys';
 import { getPostsByDate } from '../../lib/posts';
-import { postHref } from '../../lib/url';
+import { postHref, withBase } from '../../lib/url';
 
 export function getStaticPaths() {
   return SITE.langs.map((lang) => ({ params: { lang } }));
@@ -14,8 +20,24 @@ export function getStaticPaths() {
 const lang = Astro.params.lang as Lang;
 const posts = await getPostsByDate(lang);
 const years = groupPostsByYear(posts);
+const journeyEntries = (await getCollection('journeys'))
+  .filter((entry) => entry.data.lang === lang)
+  .map((entry) => entry.data as JourneyInput);
+const journeys = selectPublishedJourneys(
+  resolveJourneys(
+    journeyEntries,
+    posts.map((post) => ({
+      id: post.id,
+      lang,
+      title: post.data.title,
+      href: postHref(lang, post.id),
+    })),
+  ),
+  lang,
+);
 const total = posts.length;
 const countTemplate = UI[lang].archiveCount;
+const questOverviewHref = withBase(`${lang}/quests/`);
 const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', {
   month: '2-digit',
   day: '2-digit',
@@ -28,6 +50,14 @@ const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', {
       <span class="eyebrow">ARCHIVE LEDGER</span>
       <h1>{UI[lang].archive}</h1>
       <p>{UI[lang].archiveHint}</p>
+      {
+        journeys.length > 0 && (
+          <a class="archive-quest-link" href={questOverviewHref}>
+            {UI[lang].questOverview}
+            <span aria-hidden="true">&gt;</span>
+          </a>
+        )
+      }
     </header>
     {
       total === 0 ? (
@@ -63,6 +93,17 @@ const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', {
   .archive-year {
     padding: var(--space-3) var(--space-4);
     margin-bottom: var(--space-3);
+  }
+  .archive-quest-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    min-height: 44px;
+    margin-top: var(--space-2);
+    color: var(--link);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-tiny);
+    letter-spacing: 0.04em;
   }
   .archive-year__title {
     display: flex;

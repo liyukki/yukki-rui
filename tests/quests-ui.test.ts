@@ -8,6 +8,10 @@ const card = read('src/components/QuestTrailCard.astro');
 const list = read('src/components/JourneyList.astro');
 const route = read('src/components/QuestRouteNav.astro');
 const page = read('src/pages/[lang]/quests.astro');
+const home = read('src/pages/[lang]/index.astro');
+const archive = read('src/pages/[lang]/archive.astro');
+const postPage = read('src/pages/[lang]/posts/[...id].astro');
+const layout = read('src/layouts/PostLayout.astro');
 const consts = readFileSync('src/consts.ts', 'utf8');
 
 describe('quest UI contracts', () => {
@@ -99,5 +103,21 @@ describe('quest UI contracts', () => {
       expect(page).toContain(token);
     }
     expect(page).toContain('journeys.length === 0');
+  });
+
+  it('integrates quests across home, archive, and article routes', () => {
+    expect(home.indexOf('<PersonalShelf')).toBeLessThan(
+      home.indexOf('<QuestTrailCard'),
+    );
+    expect(home.indexOf('<QuestTrailCard')).toBeLessThan(
+      home.indexOf('<section id="latest"'),
+    );
+    expect(home).toContain('<QuestTrailCard');
+    expect(postPage).toContain('journeys');
+    expect(layout).toContain('<QuestRouteNav');
+    expect(layout.indexOf('<QuestRouteNav')).toBeLessThan(
+      layout.indexOf('post-related'),
+    );
+    expect(archive).toContain('journeys.length > 0');
   });
 });

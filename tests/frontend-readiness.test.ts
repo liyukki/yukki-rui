@@ -36,6 +36,8 @@ const REQUIRED = [
   'en/tags/index.html',
   'zh/archive/index.html',
   'en/archive/index.html',
+  'zh/quests/index.html',
+  'en/quests/index.html',
   'zh/search/index.html',
   'en/search/index.html',
   'zh/now/index.html',

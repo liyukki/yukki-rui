@@ -10,10 +10,12 @@ import PostNav from '../components/PostNav.astro';
 import PostBookmark from '../components/PostBookmark.astro';
 import PostShare from '../components/PostShare.astro';
 import PostToc from '../components/PostToc.astro';
+import QuestRouteNav from '../components/QuestRouteNav.astro';
 import ReadingProgressTracker from '../components/ReadingProgressTracker.astro';
 import ReadingSettings from '../components/ReadingSettings.astro';
 import TagList from '../components/TagList.astro';
 import { SITE, UI } from '../consts';
+import type { Journey } from '../lib/journeys';
 import { postLikeKey } from '../lib/post-likes';
 import type { Post } from '../lib/posts';
 import { ogImagePath } from '../lib/og';
@@ -37,8 +39,19 @@ interface Props {
   next?: Post;
   /** 与当前文章共享标签的推荐；缺省时不渲染区块。 */
   related?: Post[];
+  journeys?: Journey[];
+  postId?: string;
 }
-const { post, translations, headings, prev, next, related = [] } = Astro.props;
+const {
+  post,
+  translations,
+  headings,
+  prev,
+  next,
+  related = [],
+  journeys = [],
+  postId,
+} = Astro.props;
 const lang = post.data.lang;
 const alternate = translations
   ? postHref(translations.data.lang, translations.id)
@@ -129,6 +142,9 @@ const jsonLd = {
       </div>
       <PostToc headings={tocHeadings} lang={lang} variant="aside" label={UI[lang].toc} />
     </div>
+    {journeys.length > 0 && postId && (
+      <QuestRouteNav lang={lang} journeys={journeys} postId={postId} />
+    )}
     {related.length > 0 && (
       <section class="post-related" data-pagefind-ignore aria-labelledby="related-title">
         <h2 id="related-title">{UI[lang].relatedPosts}</h2>

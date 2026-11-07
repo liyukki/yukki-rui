@@ -1,9 +1,16 @@
 ---
-import { render } from 'astro:content';
+import { getCollection, render } from 'astro:content';
 import { SITE } from '../../../consts';
 import PostLayout from '../../../layouts/PostLayout.astro';
+import {
+  resolveJourneys,
+  selectJourneysForPost,
+  selectPublishedJourneys,
+  type JourneyInput,
+} from '../../../lib/journeys';
 import { getPosts, getPostsByDate, getTranslations, type Post } from '../../../lib/posts';
 import { selectRelatedPosts } from '../../../lib/related';
+import { postHref } from '../../../lib/url';
 
 export async function getStaticPaths() {
   const byLanguage = await Promise.all(SITE.langs.map(async (lang) =>
@@ -23,7 +30,32 @@ const index = siblings.findIndex((entry) => entry.id === post.id);
 const newer = index > 0 ? siblings[index - 1] : undefined;
 const older = index >= 0 ? siblings[index + 1] : undefined;
 const related = selectRelatedPosts(post, siblings);
+const journeyEntries = (await getCollection('journeys'))
+  .filter((entry) => entry.data.lang === post.data.lang)
+  .map((entry) => entry.data as JourneyInput);
+const journeys = selectPublishedJourneys(
+  resolveJourneys(
+    journeyEntries,
+    siblings.map((entry) => ({
+      id: entry.id,
+      lang: post.data.lang,
+      title: entry.data.title,
+      href: postHref(post.data.lang, entry.id),
+    })),
+  ),
+  post.data.lang,
+);
+const postJourneys = selectJourneysForPost(journeys, post.id);
 ---
-<PostLayout post={post} translations={translation} headings={headings} prev={older} next={newer} related={related}>
+<PostLayout
+  post={post}
+  translations={translation}
+  headings={headings}
+  prev={older}
+  next={newer}
+  related={related}
+  journeys={postJourneys}
+  postId={post.id}
+>
   <Content />
 </PostLayout>
