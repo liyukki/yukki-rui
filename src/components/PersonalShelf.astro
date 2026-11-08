@@ -54,6 +54,7 @@ const archiveHref = withBase(`${lang}/archive/`);
   import {
     PERSONAL_LIBRARY_STORAGE_KEY,
     readPersonalLibrary,
+    readingResumeHref,
     selectBookmarks,
     selectContinueReading,
     type CatalogEntry,
@@ -181,7 +182,9 @@ const archiveHref = withBase(`${lang}/archive/`);
 
       if (resume) {
         const progress = formatProgress(i18n.readingProgress, resume.progress);
-        continueList.replaceChildren(createShelfRow(resume.title, resume.href, progress));
+        continueList.replaceChildren(
+          createShelfRow(resume.title, readingResumeHref(resume), progress),
+        );
       } else {
         continueList.replaceChildren();
       }
@@ -280,15 +283,18 @@ const archiveHref = withBase(`${lang}/archive/`);
     list-style: none;
   }
 
-  .personal-shelf__item {
+  .personal-shelf :global(.personal-shelf__item) {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
   }
 
-  .personal-shelf__link {
+  .personal-shelf :global(.personal-shelf__link) {
+    display: flex;
+    align-items: center;
     min-width: 0;
+    min-height: 44px;
     flex: 1;
     padding: 0.5em 0.7em;
     border: 1px solid var(--line);
@@ -302,14 +308,14 @@ const archiveHref = withBase(`${lang}/archive/`);
       transform var(--dur);
   }
 
-  .personal-shelf__link:hover {
+  .personal-shelf :global(.personal-shelf__link:hover) {
     border-color: var(--accent);
     color: var(--link);
     text-decoration: none;
     transform: translateX(2px);
   }
 
-  .personal-shelf__progress {
+  .personal-shelf :global(.personal-shelf__progress) {
     flex: none;
   }
 
@@ -327,13 +333,13 @@ const archiveHref = withBase(`${lang}/archive/`);
       margin-left: calc(var(--space-2) + 1.2em);
     }
 
-    .personal-shelf__item {
+    .personal-shelf :global(.personal-shelf__item) {
       align-items: flex-start;
       flex-direction: column;
       gap: var(--space-1);
     }
 
-    .personal-shelf__link {
+    .personal-shelf :global(.personal-shelf__link) {
       width: 100%;
     }
   }

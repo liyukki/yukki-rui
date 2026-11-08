@@ -5,6 +5,7 @@ import {
   normalizePersonalLibrary,
   readPersonalLibrary,
   recordReading,
+  readingResumeHref,
   selectBookmarks,
   selectContinueReading,
   toggleBookmark,
@@ -76,6 +77,36 @@ describe('normalizePersonalLibrary', () => {
     });
     expect(value.bookmarks).toHaveLength(1);
     expect(value.bookmarks[0].savedAt).toBe(200);
+  });
+
+  it('preserves valid resume anchors while keeping legacy records compatible', () => {
+    const value = normalizePersonalLibrary({
+      history: [
+        reading({
+          resumeAnchor: 'unread-section',
+          resumeOffset: -120,
+        }),
+        reading({
+          id: 'legacy',
+          resumeAnchor: '',
+          resumeOffset: Number.NaN,
+          updatedAt: 200,
+        }),
+      ],
+      bookmarks: [],
+    });
+
+    expect(value.history.find((entry) => entry.id === 'alpha')).toMatchObject({
+      progress: 25,
+      resumeAnchor: 'unread-section',
+      resumeOffset: -120,
+    });
+    expect(value.history.find((entry) => entry.id === 'legacy')).not.toHaveProperty(
+      'resumeAnchor',
+    );
+    expect(value.history.find((entry) => entry.id === 'legacy')).not.toHaveProperty(
+      'resumeOffset',
+    );
   });
 
   it('caps history at 20 and bookmarks at 50', () => {
@@ -212,5 +243,32 @@ describe('personal library selectors', () => {
       { id: 'beta', title: 'Beta', href: '/zh/posts/beta/' },
     ]);
     expect(selectBookmarks(value, catalog, 'zh', 1)).toHaveLength(1);
+  });
+
+  it('builds a resumable continue-reading URL without changing canonical metadata', () => {
+    const record = reading({
+      progress: 42,
+      resumeAnchor: 'unread-section',
+      resumeOffset: 180,
+    });
+
+    const href = readingResumeHref(record);
+
+    expect(href).toBe(
+      '/zh/posts/alpha/?resume=42&anchor=unread-section&offset=180#unread-section',
+    );
+    expect(
+      selectContinueReading({ history: [record], bookmarks: [] }, catalog, 'zh'),
+    ).toMatchObject({
+      href: '/zh/posts/alpha/',
+      resumeAnchor: 'unread-section',
+      resumeOffset: 180,
+    });
+  });
+
+  it('still produces a progress fallback for legacy records without an anchor', () => {
+    expect(readingResumeHref(reading({ progress: 63 }))).toBe(
+      '/zh/posts/alpha/?resume=63',
+    );
   });
 });

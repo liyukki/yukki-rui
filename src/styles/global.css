@@ -313,6 +313,7 @@ img { max-width: 100%; height: auto; }
 /* 文章正文 */
 .post-body { font-size: var(--reading-size); line-height: var(--reading-line); max-width: var(--reading-width); margin-inline: auto; }
 .post-body h1, .post-body h2, .post-body h3 { margin-top: var(--space-5); }
+.post-body h2[id], .post-body h3[id] { scroll-margin-top: 5rem; }
 .post-body h2 {
   font-family: var(--font-pixel);
   letter-spacing: 0.04em;

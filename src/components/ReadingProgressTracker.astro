@@ -15,17 +15,29 @@ const entry = { id: postId, lang, title, href };
 
 <script>
   import {
+    personalLibraryKey,
     readPersonalLibrary,
     recordReading,
     writePersonalLibrary,
     type PersonalLibraryLang,
+    type ReadingRecord,
   } from '../lib/personal-library';
+  import {
+    readingProgressAt,
+    scrollTargetForProgress,
+  } from '../lib/reading-position';
 
   interface TrackerEntry {
     id: string;
     lang: PersonalLibraryLang;
     title: string;
     href: string;
+  }
+
+  interface ResumeRequest {
+    progress: number | null;
+    anchor: string | null;
+    offset: number | null;
   }
 
   function readEntry(root: HTMLElement): TrackerEntry | null {
@@ -58,6 +70,81 @@ const entry = { id: postId, lang, title, href };
     }
   }
 
+  function readResumeRequest(): ResumeRequest | null {
+    const url = new URL(window.location.href);
+    const query = url.searchParams;
+    if (!query.has('resume') && !query.has('anchor') && !query.has('offset')) {
+      return null;
+    }
+
+    const rawProgress = Number.parseFloat(query.get('resume') ?? '');
+    const rawOffset = Number.parseFloat(query.get('offset') ?? '');
+    const rawAnchor = (query.get('anchor') ?? '').trim();
+    return {
+      progress:
+        Number.isFinite(rawProgress) && rawProgress >= 0 && rawProgress <= 100
+          ? rawProgress
+          : null,
+      anchor: rawAnchor.length > 0 && rawAnchor.length <= 200 ? rawAnchor : null,
+      offset:
+        Number.isFinite(rawOffset) && Math.abs(rawOffset) <= 1_000_000
+          ? Math.round(rawOffset)
+          : null,
+    };
+  }
+
+  function clearResumeUrl(): void {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('resume');
+    url.searchParams.delete('anchor');
+    url.searchParams.delete('offset');
+    url.hash = '';
+    history.replaceState(history.state, '', `${url.pathname}${url.search}`);
+  }
+
+  function watchedReading(entry: TrackerEntry): ReadingRecord | null {
+    const library = readPersonalLibrary(getStorage());
+    return (
+      library.history.find(
+        (record) =>
+          personalLibraryKey(record.lang, record.id) ===
+          personalLibraryKey(entry.lang, entry.id),
+      ) ?? null
+    );
+  }
+
+  function readingSignature(record: ReadingRecord): string {
+    return [
+      record.progress,
+      record.resumeAnchor ?? '',
+      record.resumeOffset ?? '',
+    ].join(':');
+  }
+
+  async function waitForArticleLayout(body: HTMLElement): Promise<void> {
+    const pendingImages = [...body.querySelectorAll<HTMLImageElement>('img')]
+      .filter((image) => !image.complete)
+      .map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            const settle = (): void => resolve();
+            image.addEventListener('load', settle, { once: true });
+            image.addEventListener('error', settle, { once: true });
+            window.setTimeout(settle, 2500);
+          }),
+      );
+
+    await Promise.all(pendingImages);
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Font loading is best-effort; layout can still settle without it.
+    }
+    await new Promise<void>((resolve) =>
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
+    );
+  }
+
   let controller: AbortController | null = null;
   let cleanup: (() => void) | null = null;
   let activeRoot: HTMLElement | null = null;
@@ -65,7 +152,6 @@ const entry = { id: postId, lang, title, href };
   function init(): void {
     const root = document.querySelector<HTMLElement>('[data-reading-tracker]');
     if (!root) {
-      cleanup?.();
       return;
     }
     if (controller && activeRoot === root) return;
@@ -81,72 +167,196 @@ const entry = { id: postId, lang, title, href };
     controller = activeController;
     activeRoot = root;
 
-    let lastProgress = -1;
+    const body = document.querySelector<HTMLElement>('.post-body');
+    if (!body) {
+      activeController.abort();
+      controller = null;
+      activeRoot = null;
+      return;
+    }
+
+    const previous = watchedReading(entry);
+    let lastSignature = previous ? readingSignature(previous) : '';
     let frame = 0;
-    let finished = false;
+    let paused = false;
+    let destroyed = false;
+    let hasUserIntent = false;
+
+    const currentBounds = () => ({
+      bodyTop: body.getBoundingClientRect().top + window.scrollY,
+      bodyHeight: body.offsetHeight,
+      viewportHeight: window.innerHeight,
+    });
 
     const currentProgress = (): number => {
-      const distance = document.documentElement.scrollHeight - window.innerHeight;
-      if (distance <= 0) return 100;
-      return Math.min(100, Math.max(0, Math.round((window.scrollY / distance) * 100)));
+      return readingProgressAt(window.scrollY, currentBounds());
+    };
+
+    const currentResumePosition = (): Pick<ReadingRecord, 'resumeAnchor' | 'resumeOffset'> => {
+      const headings = [
+        ...body.querySelectorAll<HTMLElement>('h2[id], h3[id]'),
+      ];
+      if (headings.length === 0) return {};
+
+      const header = document.querySelector<HTMLElement>('.site-header');
+      const readingLine = Math.max(0, header?.getBoundingClientRect().bottom ?? 0) + 24;
+      let nearest = headings[0];
+      for (const heading of headings) {
+        const distance = Math.abs(heading.getBoundingClientRect().top - readingLine);
+        const nearestDistance = Math.abs(
+          nearest.getBoundingClientRect().top - readingLine,
+        );
+        if (distance < nearestDistance) nearest = heading;
+      }
+      return {
+        resumeAnchor: nearest.id,
+        resumeOffset: Math.round(nearest.getBoundingClientRect().top),
+      };
     };
 
     const flush = (): void => {
+      if (!hasUserIntent) return;
       const progress = currentProgress();
-      if (progress === lastProgress) return;
-      lastProgress = progress;
+
+      const resumePosition = currentResumePosition();
       const storage = getStorage();
       const library = readPersonalLibrary(storage);
-      const next = recordReading(library, {
+      const record: ReadingRecord = {
         ...entry,
         progress,
         updatedAt: Date.now(),
-      });
+        ...resumePosition,
+      };
+      const signature = readingSignature(record);
+      if (signature === lastSignature) return;
+
+      const next = recordReading(library, record);
       writePersonalLibrary(storage, next);
+      lastSignature = signature;
     };
 
     const schedule = (): void => {
-      if (frame) return;
+      if (frame || paused || destroyed) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         flush();
       });
     };
 
-    const finish = (): void => {
-      if (finished) return;
-      finished = true;
+    const markActivity = (): void => {
+      schedule();
+    };
+
+    cleanup = (): void => {
+      destroyed = true;
       if (frame) {
         window.cancelAnimationFrame(frame);
         frame = 0;
       }
-      flush();
-      activeController.abort();
       if (controller === activeController) controller = null;
       if (activeRoot === root) activeRoot = null;
-      if (cleanup === finish) cleanup = null;
     };
-    cleanup = finish;
 
-    window.addEventListener('scroll', schedule, { signal, passive: true });
+    const markUserIntent = (): void => {
+      hasUserIntent = true;
+    };
+
+    window.addEventListener('scroll', markActivity, { signal, passive: true });
+    window.addEventListener('wheel', markUserIntent, { signal, passive: true });
+    window.addEventListener('touchstart', markUserIntent, { signal, passive: true });
+    window.addEventListener('keydown', markUserIntent, { signal });
+    window.addEventListener('pointerdown', markUserIntent, { signal, passive: true });
     window.addEventListener('resize', schedule, { signal, passive: true });
-    window.addEventListener('pagehide', finish, { signal });
-    document.addEventListener(
-      'visibilitychange',
+    window.addEventListener(
+      'pagehide',
       () => {
-        if (document.visibilityState === 'hidden') finish();
+        flush();
+        paused = true;
       },
       { signal },
     );
-    document.addEventListener('astro:before-swap', finish, { signal });
+    window.addEventListener(
+      'pageshow',
+      () => {
+        paused = false;
+        schedule();
+      },
+      { signal },
+    );
+    document.addEventListener(
+      'visibilitychange',
+      () => {
+        if (document.visibilityState === 'hidden') {
+          flush();
+          paused = true;
+          return;
+        }
+        paused = false;
+        schedule();
+      },
+      { signal },
+    );
 
-    flush();
+    const restore = async (): Promise<void> => {
+      const request = readResumeRequest();
+      if (!request) {
+        flush();
+        return;
+      }
+
+      await waitForArticleLayout(body);
+      if (destroyed) return;
+
+      const bounds = currentBounds();
+      const anchor =
+        request.anchor !== null ? document.getElementById(request.anchor) : null;
+      let target: number | null = null;
+
+      if (anchor && body.contains(anchor)) {
+        const anchorTop = anchor.getBoundingClientRect().top + window.scrollY;
+        target = anchorTop - (request.offset ?? 0);
+      } else if (request.progress !== null) {
+        target = scrollTargetForProgress(request.progress, bounds);
+      }
+
+      if (target === null) {
+        clearResumeUrl();
+        flush();
+        return;
+      }
+
+      const maxScroll = Math.max(
+        0,
+        document.documentElement.scrollHeight - window.innerHeight,
+      );
+      const previousScrollBehavior = document.documentElement.style.scrollBehavior;
+      document.documentElement.style.scrollBehavior = 'auto';
+      window.scrollTo(0, Math.min(maxScroll, Math.max(0, target)));
+      document.documentElement.style.scrollBehavior = previousScrollBehavior;
+      await new Promise<void>((resolve) =>
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() => resolve()),
+        ),
+      );
+      if (destroyed) return;
+      clearResumeUrl();
+      flush();
+    };
+
+    void restore();
   }
 
   const start = (): void => {
     if (document.querySelector('[data-reading-tracker]')) init();
   };
 
+  document.addEventListener('astro:before-swap', () => {
+    cleanup?.();
+    controller?.abort();
+    cleanup = null;
+    controller = null;
+    activeRoot = null;
+  });
   document.addEventListener('astro:page-load', start);
   if (document.readyState !== 'loading') start();
 </script>

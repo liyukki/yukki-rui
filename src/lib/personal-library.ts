@@ -9,6 +9,8 @@ export interface ReadingRecord {
   href: string;
   progress: number;
   updatedAt: number;
+  resumeAnchor?: string;
+  resumeOffset?: number;
 }
 
 export interface BookmarkRecord {
@@ -69,6 +71,16 @@ function progressValue(value: unknown): number | null {
     : null;
 }
 
+function resumeAnchorValue(value: unknown): string | null {
+  return stringValue(value, 200);
+}
+
+function resumeOffsetValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(-1_000_000, Math.min(1_000_000, Math.round(value)))
+    : null;
+}
+
 export function personalLibraryKey(lang: PersonalLibraryLang, id: string): string {
   return `${lang}:${id}`;
 }
@@ -82,7 +94,12 @@ function normalizeReadingRecord(value: unknown): ReadingRecord | null {
   const progress = progressValue(record.progress);
   const updatedAt = timestampValue(record.updatedAt);
   if (!id || !lang || !title || !href || progress === null || updatedAt === null) return null;
-  return { id, lang, title, href, progress, updatedAt };
+  const normalized: ReadingRecord = { id, lang, title, href, progress, updatedAt };
+  const resumeAnchor = resumeAnchorValue(record.resumeAnchor);
+  const resumeOffset = resumeOffsetValue(record.resumeOffset);
+  if (resumeAnchor !== null) normalized.resumeAnchor = resumeAnchor;
+  if (resumeOffset !== null) normalized.resumeOffset = resumeOffset;
+  return normalized;
 }
 
 function normalizeBookmarkRecord(value: unknown): BookmarkRecord | null {
@@ -238,6 +255,22 @@ export function selectContinueReading(
     };
   }
   return null;
+}
+
+export function readingResumeHref(record: ReadingRecord): string {
+  const normalized = normalizeReadingRecord(record);
+  const href = normalized?.href ?? record.href;
+  const progress = normalized?.progress ?? progressValue(record.progress) ?? 0;
+  const hashIndex = href.indexOf('#');
+  const hrefWithoutHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+  const separator = hrefWithoutHash.includes('?') ? '&' : '?';
+  const anchor = resumeAnchorValue(record.resumeAnchor);
+  const offset = resumeOffsetValue(record.resumeOffset);
+  let resumeHref = `${hrefWithoutHash}${separator}resume=${progress}`;
+  if (anchor !== null) resumeHref += `&anchor=${encodeURIComponent(anchor)}`;
+  if (offset !== null) resumeHref += `&offset=${offset}`;
+  if (anchor !== null) resumeHref += `#${encodeURIComponent(anchor)}`;
+  return resumeHref;
 }
 
 export function selectBookmarks(

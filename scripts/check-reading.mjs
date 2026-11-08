@@ -12,6 +12,9 @@ const ORIGIN = LIVE_ORIGIN || `http://127.0.0.1:${PORT}`;
 const BASE = process.env.LIVE_BASE ?? '/';
 const POST = `${BASE}zh/posts/writing-in-markdown/`;
 const POST_WITH_IMAGE = `${BASE}zh/posts/在线后台成功上线/`;
+const RESUME_POST = `${BASE}zh/posts/writing-in-markdown/`;
+const HOME = `${BASE}zh/`;
+const PERSONAL_LIBRARY_KEY = 'yukki-personal-library-v1';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -111,6 +114,31 @@ try {
   const activeCount = await page.locator('.post-toc--aside a.is-active').count().catch(() => 0);
   check('侧栏目录高亮当前标题', activeCount >= 1, `active=${activeCount}`);
 
+  const tocTarget = aside.locator('a[href^="#"]').nth(1);
+  const tocHash = await tocTarget.getAttribute('href');
+  if (tocHash) {
+    await tocTarget.click();
+    await page.waitForTimeout(900);
+    const landing = await page.evaluate((hash) => {
+      const heading = document.getElementById(decodeURIComponent(hash.slice(1)));
+      const header = document.querySelector('.site-header');
+      if (!heading || !header) return null;
+      return {
+        headingTop: heading.getBoundingClientRect().top,
+        headerBottom: header.getBoundingClientRect().bottom,
+      };
+    }, tocHash);
+    check(
+      '目录锚点落在固定页头下方',
+      landing !== null
+        && landing.headingTop >= landing.headerBottom - 1
+        && landing.headingTop <= landing.headerBottom + 40,
+      landing ? `heading=${landing.headingTop.toFixed(1)} header=${landing.headerBottom.toFixed(1)}` : 'missing',
+    );
+  } else {
+    check('目录锚点落在固定页头下方', false, 'missing hash');
+  }
+
   // 6. 代码复制
   const copyBtn = page.locator('.post-body pre .code-copy').first();
   const copyCount = await page.locator('.post-body pre .code-copy').count().catch(() => 0);
@@ -136,10 +164,32 @@ try {
     const lightbox = page.locator('[data-img-lightbox]');
     const open = await lightbox.isVisible().catch(() => false);
     check('点击图片打开灯箱', open);
+    const focusedOnOpen = await page.evaluate(() =>
+      document.activeElement?.classList.contains('img-lightbox__close') === true,
+    );
+    check('灯箱打开后焦点进入对话框', focusedOnOpen);
+    await page.keyboard.press('Tab');
+    const trappedForward = await page.evaluate(() =>
+      document.querySelector('[data-img-lightbox]')?.contains(document.activeElement) === true,
+    );
+    await page.keyboard.press('Shift+Tab');
+    const trappedBackward = await page.evaluate(() =>
+      document.querySelector('[data-img-lightbox]')?.contains(document.activeElement) === true,
+    );
+    check('灯箱 Tab 焦点不会逃到页面背景', trappedForward && trappedBackward);
+    const backgroundInert = await page.evaluate(() =>
+      document.querySelector('main')?.inert === true,
+    );
+    check('灯箱打开时背景内容进入 inert', backgroundInert);
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
     const closed = (await page.locator('[data-img-lightbox]').count()) === 0;
     check('Esc 关闭灯箱', closed);
+    const focusReturned = await page.evaluate(() =>
+      document.activeElement?.matches('.post-body img') === true
+        && document.querySelector('main')?.inert === false,
+    );
+    check('关闭灯箱后焦点回到原图并恢复背景', focusReturned);
   } else {
     check('图片灯箱（该文章无图片，跳过）', true, 'skipped');
   }
@@ -288,9 +338,238 @@ try {
     check('相关文章区块(本文暂无同标签文章,跳过)', true, 'skipped');
   }
 
-  // 14. 移动端布局
+  // 14. 继续阅读：保存正文位置，回首页后从断点恢复，且顶部打开不会清零
+  await page.goto(ORIGIN + RESUME_POST, { waitUntil: 'load' });
+  await page.evaluate((key) => localStorage.removeItem(key), PERSONAL_LIBRARY_KEY);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForTimeout(700);
+  const resumeSource = await page.evaluate(() => {
+    const body = document.querySelector('.post-body');
+    if (!body) return null;
+    const bodyTop = body.getBoundingClientRect().top + window.scrollY;
+    const bodyHeight = body.offsetHeight;
+    const viewportHeight = window.innerHeight;
+    const readingRange = Math.max(0, bodyHeight - viewportHeight);
+    document.documentElement.style.scrollBehavior = 'auto';
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: 1 }));
+    window.scrollTo(0, bodyTop + readingRange * 0.4);
+    return {
+      scrollY: window.scrollY,
+      bodyTop,
+      bodyHeight,
+      viewportHeight,
+    };
+  });
+  await page.waitForTimeout(700);
+  const savedReading = await page.evaluate((key) => {
+    try {
+      const library = JSON.parse(localStorage.getItem(key) ?? 'null');
+      return library?.history?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, PERSONAL_LIBRARY_KEY);
+  check(
+    '阅读记录保存正文断点',
+    resumeSource !== null
+      && savedReading?.progress > 0
+      && savedReading?.progress < 100
+      && typeof savedReading?.resumeAnchor === 'string'
+      && Number.isFinite(savedReading?.resumeOffset),
+    savedReading
+      ? `progress=${savedReading.progress} anchor=${savedReading.resumeAnchor} offset=${savedReading.resumeOffset}`
+      : 'missing record',
+  );
+
+  await page.goto(ORIGIN + HOME, { waitUntil: 'load' });
+  await page.waitForSelector('[data-continue-list] a', { timeout: 5000 }).catch(() => {});
+  const continueLink = page.locator('[data-continue-list] a').first();
+  const continueHref = await continueLink.getAttribute('href', { timeout: 3000 }).catch(() => null);
+  const continueUrl = new URL(continueHref ?? '', ORIGIN);
+  check(
+    '继续阅读入口带断点参数与标题锚点',
+    continueUrl.searchParams.has('resume')
+      && continueUrl.searchParams.has('anchor')
+      && continueUrl.hash.length > 1,
+    continueHref ?? '',
+  );
+
+  if (continueHref) {
+    await continueLink.click();
+    await page.waitForFunction(
+      (pathname) => window.location.pathname === pathname,
+      new URL(RESUME_POST, ORIGIN).pathname,
+      { timeout: 10000 },
+    ).catch(() => {});
+    await page.waitForFunction(
+      (scrollY) => Math.abs(window.scrollY - scrollY) <= 12,
+      resumeSource?.scrollY ?? 0,
+      { timeout: 8000 },
+    ).catch(() => {});
+  }
+  const restoredScroll = await page.evaluate(() => window.scrollY);
+  const cleanedUrl = new URL(page.url());
+  check(
+    '继续阅读恢复到离开位置并清理参数',
+    resumeSource !== null
+      && Math.abs(restoredScroll - resumeSource.scrollY) <= 12
+      && !cleanedUrl.searchParams.has('resume')
+      && !cleanedUrl.searchParams.has('anchor')
+      && !cleanedUrl.searchParams.has('offset'),
+    `expected=${resumeSource?.scrollY} actual=${restoredScroll} url=${cleanedUrl.pathname}${cleanedUrl.search}`,
+  );
+
+  const beforeTopOpen = await page.evaluate((key) => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? 'null')?.history?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, PERSONAL_LIBRARY_KEY);
+  await page.goto(ORIGIN + RESUME_POST, { waitUntil: 'load' });
+  await page.evaluate(() => {
+    history.scrollRestoration = 'manual';
+    window.scrollTo(0, 0);
+  });
+  await page.waitForTimeout(700);
+  const afterTopOpen = await page.evaluate((key) => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? 'null')?.history?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, PERSONAL_LIBRARY_KEY);
+  check(
+    '从顶部重新打开不会清零已有进度',
+    beforeTopOpen !== null
+      && afterTopOpen?.progress === beforeTopOpen.progress
+      && afterTopOpen?.resumeAnchor === beforeTopOpen.resumeAnchor
+      && afterTopOpen?.updatedAt === beforeTopOpen.updatedAt,
+    beforeTopOpen && afterTopOpen
+      ? `before=${beforeTopOpen.progress}/${beforeTopOpen.resumeAnchor} after=${afterTopOpen.progress}/${afterTopOpen.resumeAnchor}`
+      : 'missing record',
+  );
+
+  const visibilitySupported = await page.evaluate(() => {
+    try {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (visibilitySupported) {
+    await page.waitForTimeout(150);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'visible',
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new WheelEvent('wheel', { deltaY: 1 }));
+      const body = document.querySelector('.post-body');
+      if (body) {
+        const bodyTop = body.getBoundingClientRect().top + window.scrollY;
+        const readingRange = Math.max(0, body.offsetHeight - window.innerHeight);
+        window.scrollTo(0, bodyTop + readingRange * 0.75);
+      }
+    });
+  } else {
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      window.dispatchEvent(new PageTransitionEvent('pageshow'));
+      window.dispatchEvent(new WheelEvent('wheel', { deltaY: 1 }));
+      const body = document.querySelector('.post-body');
+      if (body) {
+        const bodyTop = body.getBoundingClientRect().top + window.scrollY;
+        const readingRange = Math.max(0, body.offsetHeight - window.innerHeight);
+        window.scrollTo(0, bodyTop + readingRange * 0.75);
+      }
+    });
+  }
+  await page.waitForTimeout(800);
+  const afterVisibility = await page.evaluate((key) => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? 'null')?.history?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, PERSONAL_LIBRARY_KEY);
+  check(
+    '切换标签页后阅读跟踪会继续',
+    beforeTopOpen !== null
+      && afterVisibility?.progress > beforeTopOpen.progress,
+    `before=${beforeTopOpen?.progress} after=${afterVisibility?.progress}`,
+  );
+
+  const bodyEnd = await page.evaluate(() => {
+    const body = document.querySelector('.post-body');
+    if (!body) return null;
+    const bodyTop = body.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo(0, bodyTop + body.offsetHeight - window.innerHeight);
+    return {
+      remainingDocument:
+        document.documentElement.scrollHeight - window.innerHeight - window.scrollY,
+    };
+  });
+  await page.waitForTimeout(700);
+  const bodyEndRecord = await page.evaluate((key) => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? 'null')?.history?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, PERSONAL_LIBRARY_KEY);
+  check(
+    '进度按正文计算，不被评论区和页脚稀释',
+    bodyEnd !== null
+      && bodyEnd.remainingDocument > 100
+      && bodyEndRecord?.progress === 100,
+    bodyEnd
+      ? `remaining=${bodyEnd.remainingDocument} progress=${bodyEndRecord?.progress}`
+      : 'missing body',
+  );
+
+  if (savedReading) {
+    await page.evaluate(
+      ({ key, record }) => {
+        localStorage.setItem(key, JSON.stringify({ history: [record], bookmarks: [] }));
+      },
+      { key: PERSONAL_LIBRARY_KEY, record: savedReading },
+    );
+  }
+
+  // 15. 移动端布局
   const mobile = await context.newPage();
   await mobile.setViewportSize({ width: 390, height: 844 });
+  await mobile.goto(ORIGIN + HOME, { waitUntil: 'load' });
+  await mobile.waitForSelector('[data-continue-list] a', { timeout: 5000 }).catch(() => {});
+  const shelfLink = mobile.locator('[data-continue-list] a').first();
+  const shelfStyle = await shelfLink.evaluate((link) => {
+    const style = getComputedStyle(link);
+    const rect = link.getBoundingClientRect();
+    return {
+      display: style.display,
+      minHeight: Number.parseFloat(style.minHeight),
+      height: rect.height,
+      paddingLeft: Number.parseFloat(style.paddingLeft),
+      borderLeft: Number.parseFloat(style.borderLeftWidth),
+    };
+  }).catch(() => null);
+  check(
+    '移动端继续阅读链接有完整触控样式',
+    shelfStyle !== null
+      && (shelfStyle.display === 'flex' || shelfStyle.display === 'block')
+      && shelfStyle.height >= 44
+      && shelfStyle.paddingLeft > 0
+      && shelfStyle.borderLeft > 0,
+    shelfStyle ? JSON.stringify(shelfStyle) : 'missing link',
+  );
+
   await mobile.goto(ORIGIN + POST, { waitUntil: 'load' });
   const inlineVisible = await mobile.locator('.post-toc--inline').isVisible().catch(() => false);
   const asideDisplay = await mobile.locator('.post-toc--aside').evaluate((el) => getComputedStyle(el).display).catch(() => 'missing');
@@ -299,9 +578,41 @@ try {
   check('窄屏没有横向溢出', overflow <= 2, `overflow=${overflow}px`);
   const navColumns = await mobile.locator('.post-nav').evaluate((el) => getComputedStyle(el).gridTemplateColumns).catch(() => '');
   check('窄屏上下篇单列', navColumns.split(' ').length <= 2, navColumns);
+  const touchTargets = await mobile.evaluate(() => {
+    const comments = document.querySelector('#comments');
+    const sampleReply = document.createElement('button');
+    sampleReply.type = 'button';
+    sampleReply.className = 'comment-reply-button';
+    sampleReply.textContent = 'Reply';
+    const sampleReaction = document.createElement('button');
+    sampleReaction.type = 'button';
+    sampleReaction.className = 'comment-reaction';
+    sampleReaction.textContent = 'Like';
+    comments?.append(sampleReply, sampleReaction);
+    const measure = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return 0;
+      const rect = element.getBoundingClientRect();
+      return Math.min(rect.width, rect.height);
+    };
+    const result = {
+      reply: measure('.comment-reply-button'),
+      reaction: measure('.comment-reaction'),
+      copy: measure('.code-copy'),
+      submit: measure('#comments .comment-form .btn-primary'),
+    };
+    sampleReply.remove();
+    sampleReaction.remove();
+    return result;
+  });
+  check(
+    '交互控件触控目标不小于 44px',
+    Object.values(touchTargets).every((value) => value >= 44),
+    JSON.stringify(touchTargets),
+  );
   await mobile.close();
 
-  // 10. 无脚本异常
+  // 16. 无脚本异常
   check('无页面脚本异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300));
 } finally {
   await browser.close().catch(() => {});

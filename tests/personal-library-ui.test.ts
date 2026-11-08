@@ -35,16 +35,23 @@ describe('reading progress tracker', () => {
       'recordReading',
       'writePersonalLibrary',
       'readPersonalLibrary',
+      'resumeAnchor',
+      'resumeOffset',
+      'document.fonts.ready',
+      'scrollTargetForProgress',
     ]) {
       expect(tracker).toContain(token);
     }
+    expect(tracker).toContain("querySelector<HTMLElement>('.post-body')");
     expect(tracker).not.toMatch(/\.innerHTML\s*=/);
   });
 
-  it('guards browser storage access and avoids duplicate final writes', () => {
+  it('guards browser storage access and keeps tracking alive across visibility changes', () => {
     expect(tracker).toContain('function getStorage');
     expect(tracker).not.toContain("signal.addEventListener('abort'");
     expect(tracker).not.toContain('flush(true)');
+    expect(tracker).toContain("document.visibilityState === 'hidden'");
+    expect(tracker).not.toMatch(/visibilityState === 'hidden'[\s\S]{0,160}finish\(\)/);
   });
 });
 
@@ -151,6 +158,12 @@ describe('home personal shelf', () => {
     }
     expect(shelf).toContain('function getStorage');
     expect(shelf).not.toMatch(/\.innerHTML\s*=/);
+  });
+
+  it('links continue reading to the saved position and styles runtime rows globally', () => {
+    expect(shelf).toContain('readingResumeHref(resume)');
+    expect(shelf).toContain(':global(.personal-shelf__link)');
+    expect(shelf).toMatch(/:global\(\.personal-shelf__link\)[\s\S]{0,500}min-height:\s*44px/);
   });
 
   it('is integrated above the recent posts section', () => {

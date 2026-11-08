@@ -40,6 +40,8 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
 </div>
 
 <script>
+  import { readingProgressAt } from '../lib/reading-position';
+
   /**
    * 交互初始化：所有 window/document 监听都挂在 AbortController 上，
    * 转场后 init() 重跑时先 abort 旧 controller，保证不重复绑定。
@@ -67,12 +69,18 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
     const backToTop = document.querySelector<HTMLButtonElement>('[data-back-to-top]');
     if (backToTop && backToTop.parentElement !== document.body) document.body.append(backToTop);
     const progressBar = progress?.querySelector<HTMLElement>('span') ?? null;
+    const postBody = document.querySelector<HTMLElement>('.post-body');
 
     const updateScrollState = (): void => {
       if (progressBar) {
-        const distance = document.documentElement.scrollHeight - window.innerHeight;
-        const ratio = distance > 0 ? Math.min(1, Math.max(0, window.scrollY / distance)) : 0;
-        progressBar.style.width = `${(ratio * 100).toFixed(2)}%`;
+        const progressValue = postBody
+          ? readingProgressAt(window.scrollY, {
+              bodyTop: postBody.getBoundingClientRect().top + window.scrollY,
+              bodyHeight: postBody.offsetHeight,
+              viewportHeight: window.innerHeight,
+            })
+          : 0;
+        progressBar.style.width = `${progressValue.toFixed(2)}%`;
       }
       if (backToTop) backToTop.hidden = window.scrollY <= 600;
     };
@@ -223,6 +231,7 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
     let lightbox: HTMLDivElement | null = null;
     let opener: HTMLImageElement | null = null;
     let previousBodyOverflow = '';
+    let previousMainInert = false;
 
     function closeLightbox(): void {
       if (!lightbox) return;
@@ -230,6 +239,9 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
       lightbox = null;
       document.body.style.overflow = previousBodyOverflow;
       previousBodyOverflow = '';
+      const main = document.querySelector<HTMLElement>('main');
+      if (main) main.inert = previousMainInert;
+      previousMainInert = false;
       const target = opener;
       opener = null;
       if (target?.isConnected) target.focus();
@@ -262,6 +274,9 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
 
       previousBodyOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
+      const main = document.querySelector<HTMLElement>('main');
+      previousMainInert = main?.inert ?? false;
+      if (main) main.inert = true;
       lightbox = box;
       opener = source;
 
@@ -298,6 +313,29 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
       (event) => {
         if (event.key === 'Escape') {
           closeLightbox();
+          return;
+        }
+        if (event.key === 'Tab' && lightbox) {
+          const focusable = [
+            ...lightbox.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+          ];
+          if (focusable.length === 0) {
+            event.preventDefault();
+            lightbox.focus();
+            return;
+          }
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          const active = document.activeElement;
+          if (event.shiftKey && (active === first || !lightbox.contains(active))) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && (active === last || !lightbox.contains(active))) {
+            event.preventDefault();
+            first.focus();
+          }
           return;
         }
         const target = event.target;
@@ -391,6 +429,11 @@ const closeText = closeLabel ?? (lang === 'zh' ? '关闭' : 'Close');
     top: 6px;
     right: 6px;
     z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0.15em 0.55em;
     border: 2px solid var(--line);
     border-radius: var(--radius);
