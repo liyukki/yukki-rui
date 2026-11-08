@@ -52,6 +52,7 @@ const archiveHref = withBase(`${lang}/archive/`);
 <script>
   import { UI } from '../consts';
   import {
+    PERSONAL_LIBRARY_CHANGE_EVENT,
     PERSONAL_LIBRARY_STORAGE_KEY,
     readPersonalLibrary,
     readingResumeHref,
@@ -205,6 +206,7 @@ const archiveHref = withBase(`${lang}/archive/`);
       },
       { signal },
     );
+    window.addEventListener(PERSONAL_LIBRARY_CHANGE_EVENT, render, { signal });
   }
 
   const start = (): void => {

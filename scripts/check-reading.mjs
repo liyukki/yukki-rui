@@ -343,6 +343,14 @@ try {
   await page.evaluate((key) => localStorage.removeItem(key), PERSONAL_LIBRARY_KEY);
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(700);
+  await page.waitForSelector('[data-quest-route] [data-progress]', {
+    timeout: 5000,
+  }).catch(() => {});
+  const questProgressBefore = await page
+    .locator('[data-quest-route] [data-progress]')
+    .first()
+    .innerText()
+    .catch(() => '');
   const resumeSource = await page.evaluate(() => {
     const body = document.querySelector('.post-body');
     if (!body) return null;
@@ -532,6 +540,22 @@ try {
     bodyEnd
       ? `remaining=${bodyEnd.remainingDocument} progress=${bodyEndRecord?.progress}`
       : 'missing body',
+  );
+  const questAfterComplete = await page
+    .locator('[data-quest-route]')
+    .first()
+    .evaluate((route) => ({
+      label: route.querySelector('[data-progress]')?.textContent?.trim() ?? '',
+      state: route.getAttribute('data-state') ?? '',
+    }))
+    .catch(() => ({ label: '', state: '' }));
+  check(
+    '同页阅读进度会同步刷新任务卡',
+    questProgressBefore.length > 0
+      && questAfterComplete.label.length > 0
+      && questAfterComplete.label !== questProgressBefore
+      && questAfterComplete.state === 'in-progress',
+    `before=${JSON.stringify(questProgressBefore)} after=${JSON.stringify(questAfterComplete)}`,
   );
 
   if (savedReading) {

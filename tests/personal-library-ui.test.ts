@@ -85,6 +85,9 @@ describe('article bookmark control', () => {
     expect(bookmark).not.toMatch(/\.innerHTML\s*=/);
     expect(bookmark).toMatch(/label\.textContent\s*=/);
     expect(bookmark).toMatch(/status\.textContent\s*=/);
+    expect(bookmark).toMatch(
+      /addEventListener\(\s*PERSONAL_LIBRARY_CHANGE_EVENT/,
+    );
   });
 
   it('guards browser storage access before reading or writing', () => {
@@ -142,6 +145,8 @@ describe('home personal shelf', () => {
       'selectBookmarks(library, catalog, lang, 4)',
       "'storage'",
       'PERSONAL_LIBRARY_STORAGE_KEY',
+      'PERSONAL_LIBRARY_CHANGE_EVENT',
+      'addEventListener(PERSONAL_LIBRARY_CHANGE_EVENT',
     ]) {
       expect(shelf).toContain(token);
     }

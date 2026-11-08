@@ -149,6 +149,7 @@ const overviewHref = withBase(`${lang}/quests/`);
 
 <script>
   import {
+    PERSONAL_LIBRARY_CHANGE_EVENT,
     PERSONAL_LIBRARY_STORAGE_KEY,
     readPersonalLibrary,
   } from '../lib/personal-library';
@@ -329,6 +330,11 @@ const overviewHref = withBase(`${lang}/quests/`);
       (event) => {
         if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
       },
+      { signal },
+    );
+    window.addEventListener(
+      PERSONAL_LIBRARY_CHANGE_EVENT,
+      render,
       { signal },
     );
   }

@@ -74,6 +74,7 @@ const i18n = {
 <script>
   import { UI } from '../consts';
   import {
+    PERSONAL_LIBRARY_CHANGE_EVENT,
     PERSONAL_LIBRARY_STORAGE_KEY,
     readPersonalLibrary,
     type PersonalLibraryLang,
@@ -275,6 +276,11 @@ const i18n = {
       (event) => {
         if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
       },
+      { signal },
+    );
+    window.addEventListener(
+      PERSONAL_LIBRARY_CHANGE_EVENT,
+      render,
       { signal },
     );
   }

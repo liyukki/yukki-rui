@@ -79,6 +79,7 @@ const i18n = {
 
 <script>
   import {
+    PERSONAL_LIBRARY_CHANGE_EVENT,
     PERSONAL_LIBRARY_STORAGE_KEY,
     readPersonalLibrary,
   } from '../lib/personal-library';
@@ -269,6 +270,11 @@ const i18n = {
       (event) => {
         if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render();
       },
+      { signal },
+    );
+    window.addEventListener(
+      PERSONAL_LIBRARY_CHANGE_EVENT,
+      render,
       { signal },
     );
   }

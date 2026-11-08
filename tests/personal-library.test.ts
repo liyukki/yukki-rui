@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PERSONAL_LIBRARY_STORAGE_KEY,
   emptyPersonalLibrary,
@@ -14,6 +14,10 @@ import {
   type CatalogEntry,
   type ReadingRecord,
 } from '../src/lib/personal-library';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const catalog: CatalogEntry[] = [
   { id: 'alpha', lang: 'zh', title: 'Alpha', href: '/zh/posts/alpha/' },
@@ -163,6 +167,37 @@ describe('personal library storage', () => {
     expect(writePersonalLibrary(brokenWrite, emptyPersonalLibrary())).toBe(false);
     expect(writePersonalLibrary(null, emptyPersonalLibrary())).toBe(false);
     expect(PERSONAL_LIBRARY_STORAGE_KEY).toBe('yukki-personal-library-v1');
+  });
+
+  it('announces successful writes within the current tab', () => {
+    const currentWindow = new EventTarget();
+    const listener = vi.fn();
+    currentWindow.addEventListener('yukki-personal-library-change', listener);
+    vi.stubGlobal('window', currentWindow);
+
+    const storage = { setItem: vi.fn() };
+    expect(
+      writePersonalLibrary(storage, {
+        history: [reading({ progress: 100 })],
+        bookmarks: [],
+      }),
+    ).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not announce failed writes', () => {
+    const currentWindow = new EventTarget();
+    const listener = vi.fn();
+    currentWindow.addEventListener('yukki-personal-library-change', listener);
+    vi.stubGlobal('window', currentWindow);
+
+    const storage = {
+      setItem() {
+        throw new Error('blocked');
+      },
+    };
+    expect(writePersonalLibrary(storage, emptyPersonalLibrary())).toBe(false);
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

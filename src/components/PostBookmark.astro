@@ -44,6 +44,7 @@ const i18n = {
 <script>
   import { UI } from '../consts';
   import {
+    PERSONAL_LIBRARY_CHANGE_EVENT,
     PERSONAL_LIBRARY_STORAGE_KEY,
     personalLibraryKey,
     readPersonalLibrary,
@@ -188,6 +189,11 @@ const i18n = {
       (event) => {
         if (event.key === PERSONAL_LIBRARY_STORAGE_KEY) render(isBookmarked());
       },
+      { signal },
+    );
+    window.addEventListener(
+      PERSONAL_LIBRARY_CHANGE_EVENT,
+      () => render(isBookmarked()),
       { signal },
     );
   }

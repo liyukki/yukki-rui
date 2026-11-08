@@ -34,6 +34,7 @@ export interface CatalogEntry {
 }
 
 export const PERSONAL_LIBRARY_STORAGE_KEY = 'yukki-personal-library-v1';
+export const PERSONAL_LIBRARY_CHANGE_EVENT = 'yukki-personal-library-change';
 export const PERSONAL_LIBRARY_HISTORY_LIMIT = 20;
 export const PERSONAL_LIBRARY_BOOKMARK_LIMIT = 50;
 
@@ -174,6 +175,10 @@ export function writePersonalLibrary(
       PERSONAL_LIBRARY_STORAGE_KEY,
       JSON.stringify(normalizePersonalLibrary(value)),
     );
+    if (typeof window !== 'undefined') {
+      // Native storage events only reach other tabs, so notify this tab directly.
+      window.dispatchEvent(new Event(PERSONAL_LIBRARY_CHANGE_EVENT));
+    }
     return true;
   } catch {
     return false;

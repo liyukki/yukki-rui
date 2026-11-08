@@ -54,6 +54,9 @@ describe('quest UI contracts', () => {
     }
     expect(card).not.toMatch(/\.innerHTML\s*=/);
     expect(card).toContain('readPersonalLibrary(getStorage()).history');
+    expect(card).toMatch(
+      /addEventListener\(\s*PERSONAL_LIBRARY_CHANGE_EVENT/,
+    );
     expect(card).toMatch(/import\s+\{\s*UI[^}]*\}\s+from\s+'\.\.\/consts'/);
   });
 
@@ -73,6 +76,9 @@ describe('quest UI contracts', () => {
     }
     expect(list).not.toMatch(/\.innerHTML\s*=/);
     expect(list).toContain('readPersonalLibrary(getStorage()).history');
+    expect(list).toMatch(
+      /addEventListener\(\s*PERSONAL_LIBRARY_CHANGE_EVENT/,
+    );
   });
 
   it('renders one compact route per matching journey before enhancement', () => {
@@ -92,6 +98,9 @@ describe('quest UI contracts', () => {
     }
     expect(route).not.toMatch(/\.innerHTML\s*=/);
     expect(route).toContain('readPersonalLibrary(getStorage()).history');
+    expect(route).toMatch(
+      /addEventListener\(\s*PERSONAL_LIBRARY_CHANGE_EVENT/,
+    );
   });
 
   it('generates both language quest pages from validated content', () => {
