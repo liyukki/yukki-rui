@@ -40,6 +40,7 @@ const archiveHref = withBase(`${lang}/archive/`);
   title={`${UI[lang].quests} - ${SITE.title}`}
   description={UI[lang].questsHint}
   lang={lang}
+  alternate={withBase(lang === 'zh' ? 'en/quests/' : 'zh/quests/')}
 >
   <article class="prose rise subpage quests-page">
     <header class="subpage-heading">

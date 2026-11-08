@@ -4,6 +4,7 @@ description: Astro、两处免费托管，以及为什么不需要买服务器�
 pubDate: 2026-10-15
 lang: zh
 tags: [技术, 指南]
+translationKey: building-this-site
 ---
 
 ## 为什么不用服务器

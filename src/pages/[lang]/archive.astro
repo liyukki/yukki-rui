@@ -43,7 +43,12 @@ const dateFmt = new Intl.DateTimeFormat(lang === 'zh' ? 'zh-CN' : 'en', {
   day: '2-digit',
 });
 ---
-<BaseLayout title={`${UI[lang].archive} · ${SITE.title}`} description={UI[lang].archiveHint} lang={lang}>
+<BaseLayout
+  title={`${UI[lang].archive} · ${SITE.title}`}
+  description={UI[lang].archiveHint}
+  lang={lang}
+  alternate={withBase(lang === 'zh' ? 'en/archive/' : 'zh/archive/')}
+>
   <article class="prose rise subpage">
     <header class="subpage-heading">
       <PixelSprite name="chest" size={48} />

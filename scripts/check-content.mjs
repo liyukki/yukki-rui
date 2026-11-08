@@ -20,12 +20,15 @@ const contentDirectory = join(project, 'src', 'content', 'posts');
 const key = `verification-${randomUUID().slice(0, 8)}`;
 const published = `${key}-published`;
 const publishedEn = `${key}-published-en`;
+const pairedZh = `${key}-paired-zh`;
+const pairedEn = `${key}-paired-en`;
 const draft = `${key}-draft`;
 const draftZh = `${key}-draft-zh`;
 const scheduled = `${key}-scheduled`;
 const featuredOld = `${key}-featured`;
 const sameDayA = `${key}-same-a`;
 const sameDayB = `${key}-same-b`;
+const zhOnlyTag = `${key}-zh-only`;
 
 /** 给 RSS 全文断言提供可重复的探针：图片、srcset、作者手写根路径。 */
 function bodyFor(lang, isDraft) {
@@ -76,9 +79,11 @@ try {
     const original = join(originalProject, file);
     if (existsSync(original)) cpSync(original, join(project, file), { recursive: true });
   }
-  for (const [id, lang, isDraft, translationKey, publishAt, featured, pubDate] of [
-    [published, 'zh', false, `${key}-published`, '', false, '2099-12-31'],
+  for (const [id, lang, isDraft, translationKey, publishAt, featured, pubDate, extraTag = ''] of [
+    [published, 'zh', false, `${key}-published`, '', false, '2099-12-31', zhOnlyTag],
     [publishedEn, 'en', false, `${key}-published-en`, '', false, '2099-12-31'],
+    [pairedZh, 'zh', false, `${key}-paired`, '', false, '2099-12-28'],
+    [pairedEn, 'en', false, `${key}-paired`, '', false, '2099-12-28'],
     [draft, 'en', true, `${key}-draft`, '', false, '2099-12-30'],
     [draftZh, 'zh', true, `${key}-draft`, '', false, '2099-12-30'],
     [scheduled, 'zh', false, `${key}-scheduled`, '2099-12-29', false, '2099-12-29'],
@@ -88,12 +93,26 @@ try {
   ]) {
     const path = join(contentDirectory, `${id}.md`);
     const publishAtLine = publishAt ? `\npublishAt: ${publishAt}` : '';
+    const tags = extraTag ? `[verification, ${extraTag}]` : '[verification]';
     // 测试文章只存在于临时源码副本；即使进程被强制终止也不会污染原项目。
-    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: ${pubDate}\nlang: ${lang}\ntags: [verification]\ndraft: ${isDraft}\ntranslationKey: ${translationKey}${publishAtLine}\nfeatured: ${featured}\n---\n\n${bodyFor(lang, isDraft)}`, { flag: 'wx' });
+    writeFileSync(path, `---\ntitle: ${id}\ndescription: Content verification\npubDate: ${pubDate}\nlang: ${lang}\ntags: ${tags}\ndraft: ${isDraft}\ntranslationKey: ${translationKey}${publishAtLine}\nfeatured: ${featured}\n---\n\n${bodyFor(lang, isDraft)}`, { flag: 'wx' });
   }
   for (const [name, base] of [['root', '/'], ['subpath', '/yukki-rui/']]) {
     const output = join(directory, name);
     const { site, result } = buildForBase(base, output, project);
+    const absolute = (path) => new URL(`${base}${path}`, site).href;
+    const assertLanguageAlternate = (html, hreflang, path, label) => {
+      const href = absolute(path);
+      assert.ok(
+        html.includes(`<link rel="alternate" hreflang="${hreflang}" href="${href}"`),
+        `${label} 缺少指向真实对应页的 ${hreflang} hreflang`,
+      );
+      const languageLink = html.match(/<a[^>]*data-lang-target="(?:en|zh)"[^>]*>/)?.[0] ?? '';
+      assert.ok(
+        languageLink.includes(`href="${base}${path}"`),
+        `${label} 的语言按钮没有指向真实对应页`,
+      );
+    };
     assert.deepEqual(result.broken, [], '集成构建存在坏链接');
     const article = readFileSync(join(output, 'zh', 'posts', published, 'index.html'), 'utf8');
     assert.ok(article.includes(`<strong>Verified Markdown body ${key}</strong>`), 'Markdown 正文没有正确 render');
@@ -102,9 +121,50 @@ try {
     assert.ok(!article.includes('data-annotation-id="'), '批注数据不应写进初始 HTML');
     assert.ok(!article.includes(draft), '草稿译文被作为文章页面的目标');
     assert.ok(!article.includes('hreflang="en" href'), '无已发布译文时不应声明英文 hreflang');
+    const disabledSwitch = article.match(/<span[^>]*data-language-unavailable[^>]*>/)?.[0] ?? '';
+    assert.ok(disabledSwitch, '无已发布译文时语言按钮没有显示不可用状态');
+    assert.ok(!disabledSwitch.includes('href='), '无已发布译文时语言按钮仍生成链接');
+    const pairedZhArticle = readFileSync(join(output, 'zh', 'posts', pairedZh, 'index.html'), 'utf8');
+    const pairedEnArticle = readFileSync(join(output, 'en', 'posts', pairedEn, 'index.html'), 'utf8');
+    assertLanguageAlternate(
+      pairedZhArticle,
+      'en',
+      `en/posts/${pairedEn}/`,
+      '已配对中文文章',
+    );
+    assertLanguageAlternate(
+      pairedEnArticle,
+      'zh-CN',
+      `zh/posts/${pairedZh}/`,
+      '已配对英文文章',
+    );
     assert.ok(!existsSync(join(output, 'en', 'posts', draft, 'index.html')), '英文草稿产出了生产页面');
     assert.ok(!existsSync(join(output, 'zh', 'posts', draftZh, 'index.html')), '中文草稿产出了生产页面');
     assert.ok(!existsSync(join(output, 'zh', 'posts', scheduled, 'index.html')), '未到点的定时文章产出了生产页面');
+    for (const page of ['archive', 'search', 'tags', 'quests']) {
+      assertLanguageAlternate(
+        readFileSync(join(output, 'zh', page, 'index.html'), 'utf8'),
+        'en',
+        `en/${page}/`,
+        `中文 ${page} 页面`,
+      );
+      assertLanguageAlternate(
+        readFileSync(join(output, 'en', page, 'index.html'), 'utf8'),
+        'zh-CN',
+        `zh/${page}/`,
+        `英文 ${page} 页面`,
+      );
+    }
+    assertLanguageAlternate(
+      readFileSync(join(output, 'zh', 'tags', 'verification', 'index.html'), 'utf8'),
+      'en',
+      'en/tags/verification/',
+      '中英共有标签详情页',
+    );
+    const zhOnlyTagHtml = readFileSync(join(output, 'zh', 'tags', zhOnlyTag, 'index.html'), 'utf8');
+    const tagFallbackLink = zhOnlyTagHtml.match(/<a[^>]*data-lang-target="en"[^>]*>/)?.[0] ?? '';
+    assert.ok(tagFallbackLink.includes(`href="${base}en/tags/"`), '单语言标签页没有降级到另一语言标签总览');
+    assert.ok(!zhOnlyTagHtml.includes('hreflang="en" href'), '单语言标签页仍声明了不存在的英文等价页');
     const rss = readFileSync(join(output, 'rss.xml'), 'utf8');
     const englishRss = readFileSync(join(output, 'rss-en.xml'), 'utf8');
     assert.ok(!rss.includes(scheduled), '未到点的定时文章进入了 RSS');
@@ -191,7 +251,7 @@ try {
     const adminHtml = readFileSync(join(output, 'admin', 'index.html'), 'utf8');
     assert.ok(adminHtml.includes('./upload-helper.js'), 'admin/index.html 缺少上传助手脚本引用');
     assert.ok(existsSync(join(output, 'admin', 'upload-helper.js')), 'admin/upload-helper.js 没有产出到构建目录');
-    console.log(`✓ base = ${base}：Markdown 渲染、草稿页面、草稿译文、双语 RSS 全文与地址补全、个人资料集合和后台产物集成检查通过`);
+    console.log(`✓ base = ${base}：Markdown 渲染、语言切换与 hreflang、草稿页面、双语 RSS、个人资料集合和后台产物集成检查通过`);
   }
 } catch (error) {
   console.error(error.message);

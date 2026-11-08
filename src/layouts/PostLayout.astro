@@ -1,7 +1,7 @@
 ---
 /**
  * 文章页布局：标题、日期、阅读时长、标签、目录、正文 slot、上一篇/下一篇与（可选）评论。
- * 语言切换只在确有真实译文时指向译文页，否则 Header 回目标语言首页。
+ * 语言切换只在确有真实译文时指向译文页；没有译文时显示不可用，不回语言首页。
  */
 import Comments from '../components/Comments.astro';
 import ArticleAnnotations from '../components/ArticleAnnotations.astro';

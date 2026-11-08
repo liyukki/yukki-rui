@@ -4,6 +4,7 @@ description: 演出前的期待、紧张，以及 MyGO!!!!! 和 hitorie 的四�
 pubDate: 2026-11-08
 lang: zh
 tags: [演出, 音乐, 随笔]
+translationKey: ready-to-sing
 ---
 
 最近总有一种很具体的高兴。

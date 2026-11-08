@@ -1,8 +1,8 @@
 ---
-/** 标签归档页：同一原始标签筛选文章。无跨语言对应关系，不声明另一语言 hreflang。 */
+/** 标签归档页：另一语言存在同名标签时互指；否则语言按钮降级到标签总览。 */
 import PostCard from '../../../components/PostCard.astro';
 import PixelSprite from '../../../components/PixelSprite.astro';
-import { withBase } from '../../../lib/url';
+import { tagHref, withBase } from '../../../lib/url';
 import { SITE, UI, type Lang } from '../../../consts';
 import BaseLayout from '../../../layouts/BaseLayout.astro';
 import { getPostsByDate, getTagNames } from '../../../lib/posts';
@@ -20,8 +20,18 @@ interface Props { tag: string }
 const { tag } = Astro.props;
 const lang = Astro.params.lang as Lang;
 const posts = (await getPostsByDate(lang)).filter((post) => post.data.tags.includes(tag));
+const otherLang = lang === 'zh' ? 'en' : 'zh';
+const otherTags = await getTagNames(otherLang);
+const alternate = otherTags.includes(tag) ? tagHref(otherLang, tag) : undefined;
+const languageSwitchUrl = alternate ?? withBase(`${otherLang}/tags/`);
 ---
-<BaseLayout title={`#${tag} · ${SITE.title}`} description={`${UI[lang].allTags}: ${tag}`} lang={lang}>
+<BaseLayout
+  title={`#${tag} · ${SITE.title}`}
+  description={`${UI[lang].allTags}: ${tag}`}
+  lang={lang}
+  alternate={alternate}
+  languageSwitchUrl={languageSwitchUrl}
+>
   <article class="rise subpage">
     <header class="subpage-heading"><PixelSprite name="gem-gold" size={48} /><span class="eyebrow">TOPIC ARCHIVE</span><h1>#{tag}</h1><p>{posts.length} {lang === 'zh' ? '篇记录' : posts.length === 1 ? 'entry' : 'entries'} · <a href={withBase(`${lang}/tags/`)}>{UI[lang].allTags}</a></p></header>
     <div class="post-list">

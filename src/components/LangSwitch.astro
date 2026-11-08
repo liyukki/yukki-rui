@@ -1,19 +1,38 @@
 ---
-/** 语言切换：有对应页时跳对应页，否则回目标语言首页；点击时记住语言偏好。 */
+/** 语言切换：只跳转到真实存在的对应页；缺少译文时显示不可用状态。 */
 import { UI, type Lang } from '../consts';
-import { langHref } from '../lib/url';
+import { resolveLanguageSwitch } from '../lib/language-switch';
 
 interface Props {
   lang: Lang;
-  /** 另一语言对应页路径（已含 base）；无则回目标语言首页 */
-  alternateUrl?: string;
+  /** 语言按钮目标（已含 base）；缺失时不生成链接。 */
+  languageSwitchUrl?: string;
 }
-const { lang, alternateUrl } = Astro.props;
-const target = alternateUrl ?? langHref(lang === 'zh' ? 'en' : 'zh');
+const { lang, languageSwitchUrl } = Astro.props;
+const target = resolveLanguageSwitch(lang, languageSwitchUrl);
+const hrefLang = target.lang === 'en' ? 'en' : 'zh-CN';
 ---
-<a class="icon-btn" href={target} hreflang={lang === 'zh' ? 'en' : 'zh-CN'} aria-label={UI[lang].languageSwitch} data-lang-target={lang === 'zh' ? 'en' : 'zh'}>
-  {UI[lang].languageSwitch}
-</a>
+{target.href ? (
+  <a
+    class="icon-btn"
+    href={target.href}
+    hreflang={hrefLang}
+    aria-label={UI[lang].languageSwitch}
+    data-lang-target={target.lang}
+  >
+    {UI[lang].languageSwitch}
+  </a>
+) : (
+  <span
+    class="icon-btn lang-switch--disabled"
+    aria-disabled="true"
+    aria-label={UI[lang].languageUnavailable}
+    title={UI[lang].languageUnavailable}
+    data-language-unavailable
+  >
+    {UI[lang].languageSwitch}
+  </span>
+)}
 <script is:inline>
   (() => {
     const init = () => {
@@ -29,3 +48,16 @@ const target = alternateUrl ?? langHref(lang === 'zh' ? 'en' : 'zh');
     document.addEventListener('astro:page-load', init);
   })();
 </script>
+<style>
+  .lang-switch--disabled {
+    cursor: not-allowed;
+    opacity: 0.68;
+    box-shadow: none;
+  }
+
+  .lang-switch--disabled:hover {
+    transform: none;
+    border-color: var(--line);
+    box-shadow: none;
+  }
+</style>

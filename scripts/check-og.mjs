@@ -110,8 +110,19 @@ function measure(png) {
   return { background: counts[0], text: counts[1], accent: counts[2], colors: colors.size, dominantShare: dominant / total };
 }
 
-const meta = (html, property) => (html.match(new RegExp(`<meta[^>]*property=["']${property}["'][^>]*content=["']([^"']*)["']`, 'i')) ?? [, ''])[1];
-const link = (html, rel) => (html.match(new RegExp(`<link[^>]*rel=["']${rel}["'][^>]*href=["']([^"']*)["']`, 'i')) ?? [, ''])[1];
+/** 读取属性值时允许另一种引号出现在值里，例如 og:title 里的英文撇号。 */
+const attribute = (tag, name) => {
+  const match = tag.match(new RegExp(`\\s${name}=(?:"([^"]*)"|'([^']*)')`, 'i'));
+  return match?.[1] ?? match?.[2] ?? '';
+};
+const meta = (html, property) => {
+  const tag = html.match(new RegExp(`<meta[^>]*\\sproperty=["']${property}["'][^>]*>`, 'i'))?.[0] ?? '';
+  return attribute(tag, 'content');
+};
+const link = (html, rel) => {
+  const tag = html.match(new RegExp(`<link[^>]*\\srel=["']${rel}["'][^>]*>`, 'i'))?.[0] ?? '';
+  return attribute(tag, 'href');
+};
 
 function readJsonLd(html, page) {
   const blocks = [...html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);

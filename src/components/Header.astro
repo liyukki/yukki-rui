@@ -8,10 +8,10 @@ import ThemeToggle from './ThemeToggle.astro';
 
 interface Props {
   lang: Lang;
-  alternateUrl?: string;
+  languageSwitchUrl?: string;
   currentPath?: string;
 }
-const { lang, alternateUrl, currentPath = '' } = Astro.props;
+const { lang, languageSwitchUrl, currentPath = '' } = Astro.props;
 
 function normalizeNavPath(path: string): string {
   const normalized = path.replace(/\/{2,}/g, '/');
@@ -32,7 +32,7 @@ const navItems = NAV[lang].map((item) => {
   <div class="wrap">
     <a class="site-name" href={langHref(lang)}><PixelSprite name="coin-sprite" size={20} />{SITE.name}</a>
     <div class="header-tools">
-      <LangSwitch lang={lang} alternateUrl={alternateUrl} />
+      <LangSwitch lang={lang} languageSwitchUrl={languageSwitchUrl} />
       <ThemeToggle lang={lang} />
       <button
         class="icon-btn nav-toggle"

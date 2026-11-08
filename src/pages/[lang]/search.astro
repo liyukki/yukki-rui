@@ -24,7 +24,12 @@ const i18n = {
   error: UI[lang].searchError,
 };
 ---
-<BaseLayout title={`${UI[lang].search} · ${SITE.title}`} description={UI[lang].searchHint} lang={lang}>
+<BaseLayout
+  title={`${UI[lang].search} · ${SITE.title}`}
+  description={UI[lang].searchHint}
+  lang={lang}
+  alternate={withBase(lang === 'zh' ? 'en/search/' : 'zh/search/')}
+>
   <article class="prose rise subpage">
     <header class="subpage-heading">
       <PixelSprite name="key" size={48} />

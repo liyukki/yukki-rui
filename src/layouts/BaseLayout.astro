@@ -22,10 +22,22 @@ interface Props {
   jsonLd?: Record<string, unknown>;
   /** 另一语言对应页（已含 base）；同时传给 BaseHead 的 hreflang 与 Header 的语言按钮 */
   alternate?: string;
+  /** 语言按钮目标（已含 base）；默认为 alternate，可单独提供非严格等价的入口。 */
+  languageSwitchUrl?: string;
   /** 当前文章 id；仅文章页传入，供聊天窗优先检索本文。 */
   aiArticleId?: string;
 }
-const { title, description, lang, ogType, ogImage, jsonLd, alternate, aiArticleId } = Astro.props;
+const {
+  title,
+  description,
+  lang,
+  ogType,
+  ogImage,
+  jsonLd,
+  alternate,
+  languageSwitchUrl,
+  aiArticleId,
+} = Astro.props;
 ---
 <html lang={lang === 'zh' ? 'zh-CN' : 'en'}>
   <head>
@@ -68,7 +80,7 @@ const { title, description, lang, ogType, ogImage, jsonLd, alternate, aiArticleI
     <div class="bg-orbs" aria-hidden="true"></div>
     <NoteRain />
     <div class="scanlines" aria-hidden="true"></div>
-    <Header lang={lang} alternateUrl={alternate} currentPath={Astro.url.pathname} />
+    <Header lang={lang} languageSwitchUrl={languageSwitchUrl ?? alternate} currentPath={Astro.url.pathname} />
     <main id="main-content" class="wrap" tabindex="-1">
       <slot />
     </main>

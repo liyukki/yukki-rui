@@ -98,7 +98,7 @@ tags: [随笔]
 | `publishAt` | 定时发布时间，按 UTC 判断；到点后由定时工作流触发重建 |
 | `featured: true` | 只把文章排到首页列表前面，不改变标签页、归档、RSS 或上下篇顺序 |
 
-没有译文时，语言导航可跳目标语言首页，但 SEO 的 `hreflang` 不把首页声明成文章译文。
+已发布文章必须用相同的 `translationKey` 成对提供中英文版本。语言按钮只跳转到真实对应页；缺少对应页时会显示不可用，不会静默跳到目标语言首页，`hreflang` 也只声明真正的等价页面。`tests/language-switch.test.ts` 会检查所有已发布文章都有稳定 Key，且恰好有一个另一语言版本。
 
 文章链接使用真实 `post.id`。默认 glob loader 会将文件名转换为 slug：当前 `hello-world.en.md` 的 ID 是 `hello-worlden`，不是 `hello-world` 或 `hello-world.en`。使用 `getTranslations()` 和 `postHref()`，不要推测另一语言的 URL。
 
